@@ -225,7 +225,7 @@ export function initStudioArchitecture(ctx) {
         ["corridor_key", "wand-2", "CorridorKey matte", "Матт CorridorKey", "Refines the selected mask layer into a clean matte and foreground.", "Уточняет выбранный слой-маску до чистого матта и переднего плана."],
         ["ltx_alpha", "sparkles", "LTX Alpha matte (heavy, 22B)", "LTX Alpha матт (тяжёлый, 22B)", "RGB → alpha with the LTX-2.5 Alpha-Gen IC-LoRA. ~1 min per 33 frames + model load.", "RGB → альфа через IC-LoRA Alpha-Gen LTX-2.5. ~1 мин на 33 кадра + загрузка модели."],
         ["text_mask", "type", "SAM 3.1: mask by text", "SAM 3.1: маска по тексту", "Type what to mask ('person', 'red car'): SAM 3.1 finds and tracks it through the clip.", "Напишите, что маскировать («человек», «красная машина»): SAM 3.1 найдёт и проведёт по клипу."],
-        ["depth", "mountain", "Depth (video)", "Глубина (видео)", "Depth Anything V2 on every frame.", "Depth Anything V2 на каждом кадре."],
+        ["depth", "mountain", "Depth (video)", "Глубина (видео)", "Depth Anything V2 / 3 or Apple Depth Pro on every frame; optionally without the character (background and camera only).", "Depth Anything V2 / 3 или Apple Depth Pro на каждом кадре; можно без персонажа (только фон и камера)."],
         ["composite", "layers", "Composite: subject over a background", "Сведение: объект поверх фона", "Subject by its mask from one source over another background, with colour harmonization and light wrap.", "Объект по маске из одного источника поверх другого фона, с гармонизацией цвета и обтеканием светом."],
         ["depth_da3", "mountain-snow", "Depth: Depth Anything 3", "Глубина: Depth Anything 3", "Depth Anything 3 Mono-Large: sharper object edges, flatter gradients than V2.", "Depth Anything 3 Mono-Large: чётче края объектов, но ровнее градиент, чем у V2."],
         ["canny", "scan-line", "Canny (video)", "Контуры (видео)", "Canny edges on every frame.", "Контуры Canny на каждом кадре."],
@@ -4543,7 +4543,7 @@ export function initStudioArchitecture(ctx) {
 
                 if (isVid) {
                     switchMainDimension("2D");
-                    showToastNotification("🎬 Видеогенерация запущена под капотом (2D-плеер)");
+                    showToastNotification("🎬 Видеогенерация запущена под капотом (окно Video)");
                 } else {
                     switchMainDimension("1D");
                     showToastNotification("🖼️ Диффузия кадра запущена под капотом: live-превью на холсте 1D");
@@ -5235,7 +5235,7 @@ export function initStudioArchitecture(ctx) {
         if (mainViewDim === "1D" && typeof active1DUndoFn === "function") {
             if (active1DUndoFn()) {
                 addLog("UI", "Undo 1D paint/crop action");
-                showToastNotification(uiText("Undo (1D Layer)", "Отменено (1D Слой)"));
+                showToastNotification(uiText("Undo (Image layer)", "Отменено (слой Image)"));
                 return;
             }
         }
@@ -5267,7 +5267,7 @@ export function initStudioArchitecture(ctx) {
         if (mainViewDim === "1D" && typeof active1DRedoFn === "function") {
             if (active1DRedoFn()) {
                 addLog("UI", "Redo 1D paint action");
-                showToastNotification(uiText("Redo (1D Layer)", "Повторено (1D Слой)"));
+                showToastNotification(uiText("Redo (Image layer)", "Повторено (слой Image)"));
                 return;
             }
         }
@@ -5968,8 +5968,8 @@ export function initStudioArchitecture(ctx) {
         if (typeof window.__vfxUpdateStatusBar === "function") {
             const dimNames = {
                 "3D": "3D Perspective",
-                "2D": "2D Video Player",
-                "1D": "1D Plate Annotation",
+                "2D": "Video",
+                "1D": "Image",
                 "BOARD": "Node Graph / Canvas"
             };
             window.__vfxUpdateStatusBar({ mode: dimNames[dim] || dim });
@@ -6135,12 +6135,12 @@ export function initStudioArchitecture(ctx) {
                             <button class="vfx-btn" id="btn-dim-1d"
                                 ${tipAttr("1D: Static Image & Mask/Annotation Layer", "1D: Статичное Изображение и Маски", "Full-screen zoomable image viewer with a non-destructive drawing/mask layer and bottom text comments.", "Просмотр статичного изображения на весь экран с масштабированием, отключаемым слоем рисования/масок и текстовыми комментариями внизу.", "Viewport: 1D")}
                                 style="${pillStyle(mainViewDim === '1D')}">
-                                <i data-lucide="image" style="width:12px; height:12px;"></i><span>1D</span>
+                                <i data-lucide="image" style="width:12px; height:12px;"></i><span>Image</span>
                             </button>
                             <button class="vfx-btn" id="btn-dim-2d"
                                 ${tipAttr("2D: Video Player & Review", "2D: Видеоплеер", "Review generated LTX-2.5 clips, alpha passes, and uploaded project videos.", "Просмотр сгенерированных видео (LTX-2.5, пассы) и загруженных исходников проекта.", "Viewport: 2D")}
                                 style="${pillStyle(mainViewDim === '2D')}">
-                                <i data-lucide="film" style="width:12px; height:12px;"></i><span>2D</span>
+                                <i data-lucide="film" style="width:12px; height:12px;"></i><span>Video</span>
                             </button>
                             <button class="vfx-btn" id="btn-dim-3d"
                                 ${tipAttr("3D: Camera Track, Point Cloud & Geometry", "3D: Трекинг, Облако точек и Сцена", "Interactive 3D perspective/camera viewport with GLOMAP point cloud, proxy cubes, and generated 3D objects.", "Интерактивное 3D-окно: трекинг камеры GLOMAP, 3D-облако точек, кубы-прокси и 3D-объекты Hunyuan3D / TRELLIS.2.", "Viewport: 3D")}
@@ -6518,10 +6518,10 @@ export function initStudioArchitecture(ctx) {
             let typePill = "";
             let subBadge = "";
             if (type === "1d-image") {
-                typePill = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(59, 130, 246, 0.25); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 3px; font-family: 'JetBrains Mono', monospace;">1D</span>`;
+                typePill = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(59, 130, 246, 0.25); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 3px; font-family: 'JetBrains Mono', monospace;">IMG</span>`;
                 subBadge = item.badge || "IMG";
             } else if (type === "2d-video") {
-                typePill = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 2px; padding: 0 3px; font-family: 'JetBrains Mono', monospace;">2D</span>`;
+                typePill = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 2px; padding: 0 3px; font-family: 'JetBrains Mono', monospace;">VID</span>`;
                 subBadge = `${item.fps || 24}fps`;
             } else if (type === "3d-scene") {
                 typePill = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(245, 158, 11, 0.25); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 2px; padding: 0 3px; font-family: 'JetBrains Mono', monospace;">3D</span>`;
@@ -6777,7 +6777,7 @@ export function initStudioArchitecture(ctx) {
             addImgBtn.id = "btn-top-add-photo";
             addImgBtn.className = "vfx-btn";
             addImgBtn.style.cssText = "height: 38px; padding: 0 9px; background: rgba(255,255,255,0.02); border: 1px dashed rgba(59, 130, 246, 0.4); color: rgba(255,255,255,0.85); font-size: 10px; font-weight: 500; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; gap: 4px;";
-            addImgBtn.innerHTML = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(59, 130, 246, 0.25); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 3px;">1D</span> <i data-lucide="plus" style="width:11px; height:11px;"></i><span>${uiText("Photo", "Фото")}</span>`;
+            addImgBtn.innerHTML = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(59, 130, 246, 0.25); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 3px;">IMG</span> <i data-lucide="plus" style="width:11px; height:11px;"></i><span>${uiText("Photo", "Фото")}</span>`;
             addImgBtn.setAttribute("data-tip-t-en", "Add Photo to Project");
             addImgBtn.setAttribute("data-tip-t-ru", "Добавить фото в проект");
             addImgBtn.setAttribute("data-tip-d-en", "Upload a photo from disk into the 1D project media strip.");
@@ -6791,7 +6791,7 @@ export function initStudioArchitecture(ctx) {
             addVidBtn.id = "btn-top-add-video";
             addVidBtn.className = "vfx-btn";
             addVidBtn.style.cssText = "height: 38px; padding: 0 9px; background: rgba(255,255,255,0.02); border: 1px dashed rgba(168, 85, 247, 0.4); color: rgba(255,255,255,0.85); font-size: 10px; font-weight: 500; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; gap: 4px;";
-            addVidBtn.innerHTML = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 2px; padding: 0 3px;">2D</span> <i data-lucide="plus" style="width:11px; height:11px;"></i><span>${uiText("Video", "Видео")}</span>`;
+            addVidBtn.innerHTML = `<span style="font-size: 7.5px; font-weight: 700; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 2px; padding: 0 3px;">VID</span> <i data-lucide="plus" style="width:11px; height:11px;"></i><span>${uiText("Video", "Видео")}</span>`;
             addVidBtn.setAttribute("data-tip-t-en", "Add Video to Project");
             addVidBtn.setAttribute("data-tip-t-ru", "Добавить видео в проект");
             addVidBtn.setAttribute("data-tip-d-en", "Upload a video file (.mp4/.mov) into the 2D project media strip.");
@@ -7014,7 +7014,7 @@ export function initStudioArchitecture(ctx) {
                     onToggleExpand: () => { expandedAssetId = imgItem.id; renderTopViewportBar(); },
                     onClick: () => {
                         activeImageId = imgItem.id;
-                        addLog("UI", `Select 1D Photo → ${imgItem.title}`);
+                        addLog("UI", `Select image → ${imgItem.title}`);
                         switchMainDimension("1D");
                     },
                     onDelete: () => {
@@ -7026,7 +7026,7 @@ export function initStudioArchitecture(ctx) {
                                 if (activeImageId === imgItem.id) activeImageId = mediaImages1D[0]?.id || null;
                                 saveProject1DImages();
                                 if (typeof saveCurrentProject === "function") saveCurrentProject();
-                                addLog("UI", `Deleted 1D image: ${imgItem.title}`);
+                                addLog("UI", `Deleted image: ${imgItem.title}`);
                                 renderTopViewportBar();
                                 renderMainViewport();
                             }
@@ -7051,7 +7051,7 @@ export function initStudioArchitecture(ctx) {
                     onToggleExpand: () => { expandedAssetId = vidItem.id; fetchVideoLayers(vidItem.id, true).then(() => renderTopViewportBar()); renderTopViewportBar(); },
                     onClick: () => {
                         activeVideoId = vidItem.id;
-                        addLog("UI", `Select 2D Video → ${vidItem.title}`);
+                        addLog("UI", `Select video → ${vidItem.title}`);
                         switchMainDimension("2D");
                     },
                     onDelete: () => {
@@ -7063,7 +7063,7 @@ export function initStudioArchitecture(ctx) {
                                 if (activeVideoId === vidItem.id) activeVideoId = mediaVideos2D[0]?.id || null;
                                 saveProject2DVideos();
                                 if (typeof saveCurrentProject === "function") saveCurrentProject();
-                                addLog("UI", `Deleted 2D video: ${vidItem.title}`);
+                                addLog("UI", `Deleted video: ${vidItem.title}`);
                                 renderTopViewportBar();
                                 renderMainViewport();
                             }
@@ -8311,7 +8311,7 @@ export function initStudioArchitecture(ctx) {
             imgObj._layersDirty = true;
             imgObj.activeLayerId = null;
             activateLayer1D(layer.id);
-            addLog("UI", `1D layer added: ${layer.name} (${type})`);
+            addLog("UI", `Image layer added: ${layer.name} (${type})`);
             return layer;
         }
         window.__vfxAddLayer1D = addLayer1D;
@@ -8769,7 +8769,7 @@ export function initStudioArchitecture(ctx) {
                     showToastNotification(skelCount
                         ? uiText(`Pose: ${skelCount} editable skeleton(s) (${res.seconds}s)`, `Поза: редактируемых скелетов ${skelCount} (${res.seconds} с)`)
                         : uiText(`${label} layer added (${res.seconds}s)`, `Слой ${label} добавлен (${res.seconds} с)`));
-                    addLog("VFX", `1D preprocess ${kind} → layer (${res.seconds}s, prompt ${res.prompt_id})`);
+                    addLog("VFX", `Image preprocess ${kind} → layer (${res.seconds}s, prompt ${res.prompt_id})`);
                 } catch (err) {
                     showToastNotification(uiText(`${label} error: ${err.message}`, `Ошибка ${label}: ${err.message}`), true);
                     addLog("ERROR", `1D preprocess ${kind} failed: ${err.message}`);
@@ -9718,7 +9718,7 @@ export function initStudioArchitecture(ctx) {
                     frameNotesInp.style.height = `${newH}px`;
                     prefs.commentBarHeight = newH;
                     savePrefs();
-                    showToastNotification(uiText(`1D Notes height adjusted to text (${newH}px)`, `Высота заметок 1D подогнана под текст (${newH}px)`));
+                    showToastNotification(uiText(`Image notes height adjusted to text (${newH}px)`, `Высота заметок Image подогнана под текст (${newH}px)`));
                 };
             }
 
@@ -9816,7 +9816,7 @@ export function initStudioArchitecture(ctx) {
             const c2d = annotCanvas.getContext("2d");
             c2d.clearRect(0, 0, annotCanvas.width, annotCanvas.height);
             imgObj.layerDataUrl = null;
-            addLog("UI", `Cleared 1D annotation layer on ${imgObj.title}`);
+            addLog("UI", `Cleared image annotation layer on ${imgObj.title}`);
             renderTopViewportBar();
         };
 
@@ -9908,7 +9908,7 @@ export function initStudioArchitecture(ctx) {
                 }
                 renderTopViewportBar();
                 showToastNotification(uiText("Mask inverted", "Маска инвертирована"));
-                addLog("UI", `1D Mask inverted on ${imgObj.title}`);
+                addLog("UI", `Image mask inverted on ${imgObj.title}`);
             };
         }
 
@@ -9920,14 +9920,14 @@ export function initStudioArchitecture(ctx) {
                 showDeleteConfirmModal({
                     title: uiText("Delete Image", "Удалить изображение"),
                     message: uiText(
-                        `Are you sure you want to delete «${imgObj.title}»? This will remove it from the 1D viewer and memory.`,
-                        `Вы уверены, что хотите удалить «${imgObj.title}»? Это действие удалит объект из 1D-просмотра и очистит память.`
+                        `Are you sure you want to delete «${imgObj.title}»? This will remove it from the Image view and memory.`,
+                        `Вы уверены, что хотите удалить «${imgObj.title}»? Это действие удалит объект из окна Image и очистит память.`
                     ),
                     onConfirm: () => {
                         mediaImages1D = mediaImages1D.filter(i => i.id !== imgObj.id);
                         activeImageId = mediaImages1D[0]?.id || null;
                         saveProject1DImages();
-                        addLog("UI", `Deleted 1D image: ${imgObj.title}`);
+                        addLog("UI", `Deleted image: ${imgObj.title}`);
                         renderTopViewportBar();
                         renderMainViewport();
                         if (typeof renderDetailsInstances === "function") renderDetailsInstances();
@@ -13180,6 +13180,38 @@ export function initStudioArchitecture(ctx) {
             if (kind === "undistort") params = { auto: true, ...params };
             return runVideoJob2D(kind, params);
         };
+        // Depth: engine + optional "background only" (the character's mask is cut out and filled from the set)
+        async function openDepthDialog2D(anchor) {
+            try { await refreshVideoState2D(); } catch (_) {}
+            const masks = vlState2D.layers.filter(l => l.type === "mask" || l.type === "matte");
+            const sel = `background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px; width: 100%;`;
+            const pop = openGenPopover(anchor, `
+                <b style="font-size: 11px;">${uiText("Depth (video)", "Глубина (видео)")}</b>
+                <div>${uiText("Engine", "Модель")}</div>
+                <select id="dp-engine" style="${sel}">
+                    <option value="">${uiText("Depth Anything V2 (default, best relief)", "Depth Anything V2 (по умолчанию, лучший рельеф)")}</option>
+                    <option value="da3">${uiText("Depth Anything 3 (sharper edges)", "Depth Anything 3 (чётче края)")}</option>
+                    <option value="depth_pro">${uiText("Apple Depth Pro (clean silhouettes, steady; ~1 s/frame)", "Apple Depth Pro (чистые контуры, стабильно; ~1 с/кадр)")}</option>
+                </select>
+                <div>${uiText("Background only: remove the character by mask", "Только фон: убрать персонажа по маске")}</div>
+                <select id="dp-mask" style="${sel}">
+                    <option value="">${uiText("No - full depth", "Нет - полная глубина")}</option>
+                    ${masks.map(l => `<option value="${l.id}">${esc(l.name || l.id)}</option>`).join("")}
+                </select>
+                <div style="font-size: 9.5px; color: rgba(255,255,255,0.6); line-height: 1.35;">${uiText(
+                    "Depth control does not hold faces. For a recognisable character use pose for the character and this background-only depth for the set and camera move.",
+                    "Глубина не держит лицо. Для узнаваемого персонажа: поза ведёт персонажа, а эта глубина без персонажа - фон и движение камеры.")}</div>
+                <button class="vfx-btn vfx-btn-primary" id="dp-go" style="padding: 4px;">${uiText("Compute depth", "Посчитать глубину")}</button>`, 280);
+            pop.querySelector("#dp-go").onclick = async () => {
+                const engine = pop.querySelector("#dp-engine").value, mask = pop.querySelector("#dp-mask").value;
+                const names = { "": "Depth", da3: "Depth (DA3)", depth_pro: "Depth (Depth Pro)" };
+                pop.remove();
+                const params = { engine };
+                if (mask) { params.exclude_mask = mask; params.name = `${names[engine]} · background only`; }
+                await runVideoJob2D("depth", params);
+            };
+        }
+
         // CorridorKey = two steps: a rough draft mask (eroded + blurred alpha hint) -> clean matte + foreground
         // Composite: a subject (by its mask) from one source over another background, with colour harmonization
         async function openCompositeDialog2D(anchor) {
@@ -13385,6 +13417,7 @@ export function initStudioArchitecture(ctx) {
                 }
                 if (k === "detect_yolo") { await runVideoJob2D("detect_all", { engine: "yolo", name: "Dynamic objects (YOLO)" }); return; }
                 if (k === "depth_da3") { await runVideoJob2D("depth", { engine: "da3" }); return; }
+                if (k === "depth") { openDepthDialog2D(btn); return; }
                 if (k === "text_mask") {
                     askText(btn, uiText("What to mask (English works best: person, red car, dog)", "Что маскировать (лучше по-английски: person, red car, dog)"), "person",
                         (txt) => { if (txt && txt.trim()) runVideoJob2D("text_mask", { text: txt.trim() }); }, uiText("Mask", "Маска"));
@@ -13608,6 +13641,13 @@ export function initStudioArchitecture(ctx) {
                         </div>
                         <label id="g2-use-ff-row" style="display: none; align-items: center; gap: 6px; font-size: 10.5px;"><input type="checkbox" id="g2-use-ff"> ${uiText("Set the first frame (look of the character)", "Задать первый кадр (облик персонажа)")}</label>
                         <div id="g2-ref" style="display: none; align-items: center; gap: 6px; padding: 4px 6px; border: 1px dashed rgba(251,191,36,0.45); border-radius: 5px;"></div>
+                        <div id="g2-light" style="display: none; flex-direction: column; gap: 3px; padding: 4px 6px; border: 1px solid rgba(250,204,21,0.35); border-radius: 5px; font-size: 10px;">
+                            <div style="color: #fde68a;">💡 ${uiText("Relight the first frame (Qwen Edit, ~20 s): key light direction", "Свет первого кадра (Qwen Edit, ~20 с): направление ключевого света")}</div>
+                            <label style="display: flex; align-items: center; gap: 6px;"><span style="width: 74px;">${uiText("Around", "По кругу")}</span><input type="range" id="g2-lt-az" min="0" max="345" step="15" value="45" style="flex: 1;"><span id="g2-lt-azv" style="width: 70px;"></span></label>
+                            <label style="display: flex; align-items: center; gap: 6px;"><span style="width: 74px;">${uiText("Height", "Высота")}</span><input type="range" id="g2-lt-el" min="-60" max="80" step="10" value="30" style="flex: 1;"><span id="g2-lt-elv" style="width: 70px;"></span></label>
+                            <label style="display: flex; align-items: center; gap: 6px;"><span style="width: 74px;">${uiText("Strength", "Сила")}</span><input type="range" id="g2-lt-in" min="1" max="10" step="1" value="5" style="flex: 1;"><input type="color" id="g2-lt-col" value="#ffe2b8" style="width: 34px; height: 18px; padding: 0; border: none; background: none;"></label>
+                            <button class="vfx-btn" id="g2-lt-go" style="padding: 2px;">${uiText("Relight", "Переосветить")}</button>
+                        </div>
                         <div id="g2-ff-wrap" style="display: none; flex-direction: column; gap: 4px; padding: 5px 6px; border: 1px solid rgba(56,189,248,0.35); border-radius: 5px;">
                             <div style="font-size: 10px; color: #7dd3fc;">✨ ${uiText("Generate the first frame (FLUX.3 Klein): character + start pose", "Сгенерировать первый кадр (FLUX.3 Klein): персонаж + стартовая поза")}</div>
                             <div style="display: flex; align-items: center; gap: 6px;"><button class="vfx-btn" id="g2-ff-char" style="padding: 1px 8px;">+ ${uiText("Character", "Персонаж")}</button><span id="g2-ff-char-lbl" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .7; font-size: 10px;"></span></div>
@@ -13643,6 +13683,7 @@ export function initStudioArchitecture(ctx) {
                         const need = m && (wantsFF() || m.needs === "ref_sheet");
                         box.style.display = need ? "flex" : "none";
                         pop.querySelector("#g2-ff-wrap").style.display = wantsFF() ? "flex" : "none";
+                        pop.querySelector("#g2-light").style.display = (wantsFF() && refImg) ? "flex" : "none";
                         if (!need) return;
                         const label = m.needs === "ref_sheet" ? uiText("Reference sheet", "Референс-лист") : uiText("First frame (look)", "Первый кадр (образец)");
                         box.innerHTML = refImg
@@ -13668,6 +13709,27 @@ export function initStudioArchitecture(ctx) {
                     pop.querySelector("#g2-ff-char").onclick = async () => {
                         const im = await pickProjectImage(uiText("Character", "Персонаж"));
                         if (im) { ffChar = im; pop.querySelector("#g2-ff-char-lbl").textContent = im.title || ""; }
+                    };
+                    // key light for the first frame: Qwen Multiangle Lightning formula (azimuth 0 = in front of the subject)
+                    const ltDir = (az) => [uiText("front", "спереди"), uiText("front-right", "спереди-справа"), uiText("right", "справа"), uiText("back-right", "сзади-справа"),
+                        uiText("behind", "сзади"), uiText("back-left", "сзади-слева"), uiText("left", "слева"), uiText("front-left", "спереди-слева")][Math.floor(((az + 22.5) % 360) / 45)];
+                    const ltEl = (e) => e < -30 ? uiText("from below", "снизу") : e < -10 ? uiText("low", "низко") : e < 20 ? uiText("level", "на уровне") : e < 60 ? uiText("high", "сверху") : uiText("overhead", "над головой");
+                    const ltShow = () => {
+                        pop.querySelector("#g2-lt-azv").textContent = ltDir(+pop.querySelector("#g2-lt-az").value);
+                        pop.querySelector("#g2-lt-elv").textContent = ltEl(+pop.querySelector("#g2-lt-el").value);
+                    };
+                    ["#g2-lt-az", "#g2-lt-el"].forEach(id => pop.querySelector(id).addEventListener("input", ltShow));
+                    ltShow();
+                    pop.querySelector("#g2-lt-go").onclick = async () => {
+                        if (!refImg) return;
+                        const btn = pop.querySelector("#g2-lt-go"); btn.disabled = true; btn.textContent = uiText("Relighting…", "Переосвещаю…");
+                        const st = await runVideoJob2D("relight_frame", {
+                            image: refImg.url || refImg.fallbackUrl, azimuth: +pop.querySelector("#g2-lt-az").value,
+                            elevation: +pop.querySelector("#g2-lt-el").value, intensity: +pop.querySelector("#g2-lt-in").value,
+                            color: pop.querySelector("#g2-lt-col").value, seed: Math.floor(Math.random() * 2 ** 31)
+                        });
+                        btn.disabled = false; btn.textContent = uiText("Relight", "Переосветить");
+                        if (st && st.result && st.result.image) { refImg = st.result.image; renderRef(); showToastNotification(uiText("Relit first frame ready", "Первый кадр переосвещён")); }
                     };
                     pop.querySelector("#g2-ff-go").onclick = async () => {
                         const descEl = pop.querySelector("#g2-ff-desc");

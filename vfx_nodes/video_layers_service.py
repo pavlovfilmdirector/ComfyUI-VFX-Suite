@@ -763,24 +763,67 @@ def _first_frame_klein_refs(job_id, pid, vid, p, scene_bgr, idx):
 LIGHT_MIGRATION_PROMPT = "参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明"
 
 
+def lighting_prompt(azimuth=45, elevation=30, intensity=5.0, color="#FFFFFF", cinematic=True) -> str:
+    """Directional relight prompt for Qwen-Image-Edit-2511, the formula of the Qwen Multiangle Lightning node
+    (ComfyUI-qwenmultianglelight, MIT): azimuth 0 = light in front of the subject, 90 = from the right, 180 = behind;
+    elevation -90..90; intensity 0..10; colour as hex."""
+    az = float(azimuth) % 360
+    sides = ["in front", "from the front-right", "from the right", "from the back-right",
+             "from behind", "from the back-left", "from the left", "from the front-left"]
+    pos = "light source " + sides[int(((az + 22.5) % 360) // 45)]
+    e = float(elevation)
+    if e < -30:
+        elev = "uplighting, light source positioned below the character, light shining upwards"
+    elif e < -10:
+        elev = "low-angle light source from below, upward illumination"
+    elif e < 20:
+        elev = "horizontal level light source"
+    elif e < 60:
+        elev = "high-angle light source"
+    else:
+        elev = "overhead top-down light source"
+    i = float(intensity)
+    strength = "soft" if i < 3 else ("bright" if i < 7 else "intense")
+    out = (f"SCENE LOCK, FIXED VIEWPOINT, maintaining character consistency and pose. RELIGHTING ONLY: "
+           f"{pos}, {elev}, {strength} colored light ({color})")
+    return out + (", cinematic relighting" if cinematic else "")
+
+
 def _job_relight_frame(job_id, kind, pid, vid, p):
-    """Relight one frame of a layer (usually a composite) to match a light reference (usually the new background)
-    with Qwen-Image-Edit + the Light-Migration LoRA. The result is a still for the first-frame guide of an LTX
-    refine pass, which carries the new light through the clip."""
+    """Relight one still for the first-frame guide of an LTX pass, with Qwen-Image-Edit-2511.
+    Two modes:
+      * light reference: `light_layer` (usually the new background) + the Light-Migration LoRA - match its light;
+      * direction: `azimuth` / `elevation` / `intensity` / `color` (Qwen Multiangle Lightning formula) - a key light
+        placed by hand, no extra LoRA (fast).
+    The source is a layer frame (`layer` + `frame`) or a still (`image`: project URL / path), e.g. a first frame."""
     try:
         from .image_generate_service import run_qwen_edit
     except ImportError:  # pragma: no cover
         from image_generate_service import run_qwen_edit
     idx = int(p.get("frame", 0) or 0)
-    src = _layer_frame_bgr(pid, vid, str(p.get("layer") or ""), idx)
-    ref = _layer_frame_bgr(pid, vid, str(p.get("light_layer") or ""), idx)
-    if src is None or ref is None:
-        raise ProcessError("Choose the layer to relight and the light reference layer")
-    lora = str(p.get("lora") or "Qwen\\Qwen-Image-Edit-2509-Light-Migration.safetensors")
-    _job_update(job_id, message="Qwen Edit + Light-Migration: relighting the frame…", progress=15)
-    res = run_qwen_edit([_png_data_url(src), _png_data_url(ref)], str(p.get("prompt") or LIGHT_MIGRATION_PROMPT),
-                        seed=p.get("seed") or None, size_from=0, megapixels=float(p.get("megapixels", 1.0)),
-                        run_tag=job_id, loras=[(lora, float(p.get("lora_strength", 1.0)))])
+    if p.get("image"):
+        src = cv2.imread(resolve_media_path(str(p["image"])), cv2.IMREAD_COLOR)
+    else:
+        src = _layer_frame_bgr(pid, vid, str(p.get("layer") or ""), idx)
+    if src is None:
+        raise ProcessError("Choose the layer (or still) to relight")
+    if p.get("light_layer"):
+        ref = _layer_frame_bgr(pid, vid, str(p.get("light_layer")), idx)
+        if ref is None:
+            raise ProcessError("The light reference layer has no frame " + str(idx))
+        lora = str(p.get("lora") or "Qwen\\Qwen-Image-Edit-2509-Light-Migration.safetensors")
+        _job_update(job_id, message="Qwen Edit + Light-Migration: relighting the frame…", progress=15)
+        res = run_qwen_edit([_png_data_url(src), _png_data_url(ref)], str(p.get("prompt") or LIGHT_MIGRATION_PROMPT),
+                            seed=p.get("seed") or None, size_from=0, megapixels=float(p.get("megapixels", 1.0)),
+                            run_tag=job_id, loras=[(lora, float(p.get("lora_strength", 1.0)))])
+    else:
+        prompt = lighting_prompt(p.get("azimuth", 45), p.get("elevation", 30), p.get("intensity", 5.0),
+                                 str(p.get("color") or "#FFFFFF"), bool(p.get("cinematic", True)))
+        if p.get("prompt"):
+            prompt += ". " + str(p["prompt"]).strip()
+        _job_update(job_id, message="Qwen Edit: directional relight…", progress=15)
+        res = run_qwen_edit([_png_data_url(src)], prompt, seed=p.get("seed") or None, size_from=0,
+                            megapixels=float(p.get("megapixels", 1.0)), run_tag=job_id)
     return {"image": _save_first_frame(pid, vid, res["image"]), "seed": res["seed"], "seconds": res["seconds"]}
 
 
@@ -926,7 +969,7 @@ def _job_preprocess(job_id, kind, pid, vid, p):
         return _depth_pro_video(job_id, pid, vid, p, total, src_dir)
     template = f"{kind}_da3_video" if (kind == "depth" and engine == "da3") else f"{kind}_video"
     title = "Depth (DA3)" if template == "depth_da3_video" else kind.capitalize()
-    layer = _add_layer(pid, vid, kind, title, extra={"transparentBg": kind in ("canny", "pose"), "engine": engine or "v2"})
+    layer = _add_layer(pid, vid, kind, p.get("name") or title, extra={"transparentBg": kind in ("canny", "pose"), "engine": engine or "v2"})
     out_dir = _layer_dir(pid, vid, layer["id"])
     chunk = int(p.get("chunk", 48))
     written = 0
@@ -950,6 +993,8 @@ def _job_preprocess(job_id, kind, pid, vid, p):
                 img = np.dstack([img, a])
             cv2.imwrite(os.path.join(out_dir, f"frame_{start + i:04d}.png"), img)
             written += 1
+    if kind == "depth" and p.get("exclude_mask"):
+        _depth_exclude_subject(job_id, pid, vid, out_dir, _safe(str(p["exclude_mask"])))
     return {"layer": layer, "frames": written}
 
 
@@ -1000,7 +1045,49 @@ def _depth_pro_video(job_id, pid, vid, p, total, src_dir):
             tail = (tail + [line])[-12:]
     if proc.wait() != 0:
         raise ProcessError("Depth Pro failed: " + " | ".join(tail[-4:]))
+    if p.get("exclude_mask"):
+        _depth_exclude_subject(job_id, pid, vid, out_dir, _safe(str(p["exclude_mask"])))
     return {"layer": layer, "frames": _count_frames(out_dir)}
+
+
+def _depth_exclude_subject(job_id, pid, vid, out_dir, mask_id, grow=12):
+    """Depth for the background only: the masked subject (e.g. a person) is removed from every depth frame and the hole is
+    filled from the surrounding background depth. Used when depth should carry the set and the camera move, while the
+    character follows pose only (depth control drags faces)."""
+    man = load_manifest(pid, vid)
+    mlayer = next((l for l in man["layers"] if l["id"] == mask_id), None)
+    if not mlayer:
+        raise ProcessError("Mask layer not found: " + mask_id)
+    files = sorted(f for f in os.listdir(out_dir) if f.startswith("frame_") and f.endswith(".png"))
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1, 2 * grow + 1))
+    for n, f in enumerate(files):
+        i = int(f[6:10])
+        fp = os.path.join(out_dir, f)
+        d = cv2.imread(fp, cv2.IMREAD_GRAYSCALE)
+        if d is None:
+            continue
+        h, w = d.shape
+        a, _ = _layer_alpha(pid, vid, mlayer, i, h, w)
+        if a is None or (a > 0.5).sum() == 0:
+            continue
+        m = cv2.dilate((a > 0.5).astype(np.uint8) * 255, k)
+        # fill row by row between the background on the left and right of the hole: depth of a set mostly changes
+        # with height (ground, walls), so this keeps the floor gradient; objects below/above don't bleed in.
+        sc = 4
+        ds = cv2.resize(d, (w // sc, h // sc), interpolation=cv2.INTER_AREA).astype(np.float32)
+        ms = cv2.resize(m, (w // sc, h // sc), interpolation=cv2.INTER_NEAREST) > 0
+        f, xs = ds.copy(), np.arange(ds.shape[1])
+        for y in np.where(ms.any(1))[0]:
+            v = ~ms[y]
+            if v.sum() >= 2:
+                f[y, ms[y]] = np.interp(xs[ms[y]], xs[v], ds[y, v])
+        f = np.where(ms, cv2.GaussianBlur(f, (0, 0), 3), f)
+        fill = cv2.resize(f, (w, h), interpolation=cv2.INTER_CUBIC)
+        soft = cv2.GaussianBlur(m, (0, 0), grow / 2.0).astype(np.float32) / 255.0
+        out = d.astype(np.float32) * (1 - soft) + fill.astype(np.float32) * soft
+        cv2.imwrite(fp, np.clip(out, 0, 255).astype(np.uint8))
+        if n % 8 == 0:
+            _job_update(job_id, message=f"Removing the subject from depth: {n + 1}/{len(files)}", progress=90 + int(9 * n / max(1, len(files))))
 
 
 def _job_text_mask(job_id, kind, pid, vid, p):
@@ -1675,7 +1762,7 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     # Keep VRAM headroom for activations: when ComfyUI loads the 22B transformer completely (~20.5 GB on a 24 GB card)
     # a 33-frame chunk takes 5-9 min instead of ~2.4 min with a little of it offloaded. Restored when the job ends.
     # Up to `max_one_pass` frames (97) go in ONE pass - no seams, and ~3x faster than overlapping chunks
-    # (tested: 97 frames in 3.3 min on a 3090 Ti with 5 GB reserved). Longer clips: 33-frame chunks + overlap.
+    # (tested: 97 frames in 3.3 min on a 3090 Ti with 5 GB reserved). Longer clips: 97-frame passes overlapping by 16.
     _one_pass = "chunk" not in p
     _reserve = _reserve_vram_for_ltx(float(p.get("reserve_vram_gb", 5.0 if _one_pass else 3.0)))
     total = int(info["total_frames"])
@@ -1690,8 +1777,15 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     chunk = int(p.get("chunk", 33))
     chunk = max(9, ((chunk - 1) // 8) * 8 + 1)
     _span = min(total, int(p.get("end", total - 1)) + 1) - max(0, int(p.get("start", 0) or 0))
-    if _one_pass and 0 < _span <= int(p.get("max_one_pass", 97)):
+    # two stacked IC-LoRAs double the conditioning tokens: on 24 GB 97 frames took 30+ min and stalled the decoder,
+    # 49 frames run in ~1.5 min - so the one-pass limit is 49 with a second control
+    _max_pass = int(p.get("max_one_pass", 49 if p.get("lora2") else 97))
+    if _one_pass and 0 < _span <= _max_pass:
         chunk = ((_span - 1 + 7) // 8) * 8 + 1   # the whole range at once (padded to 8n+1)
+    elif _one_pass and _span > _max_pass:
+        # longer clips: the largest pass that fits, overlapping by 16 frames (cross-faded) - far fewer seams than 33-frame chunks
+        chunk = ((_max_pass - 1) // 8) * 8 + 1
+        p = {**p, "overlap": int(p.get("overlap", 16))}
     src_dir = _source_frames_dir(vid)
     frames = sorted(f for f in os.listdir(src_dir) if f.startswith("frame_"))[:total]
     ref_url = str(p.get("ref_image") or "")

@@ -8,25 +8,25 @@ The studio's AI Director (the agent) knows this guide: ask it "how do I …?" an
 
 1. Run `run_keshiki_studio.bat` (or start ComfyUI and open `http://127.0.0.1:8188/vfx/studio/`).
 2. Pick or create a project at the top left.
-3. Drop videos or images into the Asset Gallery at the top. Videos open in the 2D view, images in 1D.
-4. In 2D, first press **Prepare Plate** — the clip is split into frames. Every video process needs it.
+3. Drop videos or images into the Asset Gallery at the top. Videos open in the Video view, images in Image.
+4. In Video, first press **Prepare Plate** — the clip is split into frames. Every video process needs it.
 5. Then use the tools next to the video (masks, maps, generation) or ask the agent (bottom right).
 
 ## Views and tabs
 
-### 1D — images
+### Image
 Layers, masks, poses, FLUX.3 Klein generation: from text, editing by masks and references, pose transfer.
 
-### 2D — video
+### Video
 The clip and its layers: masks, depth, pose, generated clips, composites. Layers can be hidden, reordered, faded, and masks viewed in black and white.
 
 ### 3D — scene
-Characters with animation (FBX, Mixamo, built-in mannequin skeleton), primitives (box, cylinder, sphere…), cameras and camera moves (orbit, dolly), camera tracking from footage. From 3D you send a pose layer and a render layer (clay characters or the environment) to the 2D clip.
+Characters with animation (FBX, Mixamo, built-in mannequin skeleton), primitives (box, cylinder, sphere…), cameras and camera moves (orbit, dolly), camera tracking from footage. From 3D you send a pose layer and a render layer (clay characters or the environment) to the Video clip.
 
 ### Tabs on the left
 Storyboard · Characters · Locations · **Voice (dubbing)** · Video · **3D meshes (TRELLIS.2)** · Deconstruction · Composite · Music · Settings.
 
-## Video processes (2D view)
+## Video processes (Video view)
 
 ### Masks
 - **SAM 3.1: mask by text** — type what to mask (`person`, `red car`, `dog`); it is found and tracked through the clip. The easiest way.
@@ -36,7 +36,7 @@ Storyboard · Characters · Locations · **Voice (dubbing)** · Video · **3D me
 - **LTX Alpha** — matte without a mask (heavy 22B model).
 
 ### Maps
-- **Depth** — Depth Anything V2 (default, smoother gradients) or **Depth Anything 3** (sharper edges).
+- **Depth** — Depth Anything V2 (default, best relief), **Depth Anything 3** (sharper edges) or **Apple Depth Pro** (clean silhouettes, steady over time, ~1 s/frame). **Background only**: the character is cut out of the depth by its mask and filled from the set, so depth drives the set and the camera while pose drives the character.
 - **Pose** — DWPose skeleton per frame.
 - **Canny** edges.
 
@@ -47,9 +47,10 @@ Storyboard · Characters · Locations · **Voice (dubbing)** · Video · **3D me
 ### Generation (the Generate button of the clip)
 LTX-2.5 + IC-LoRA: pick a mode (layout-to-render, union-control, clean-plate, refine-details, restore, upscaler…), a control layer and a prompt. You can also:
 - **set the first frame** — the character's look (see below);
+- **relight the first frame**: once the frame exists, a "Relight" block sets the key light direction, height, strength and colour (Qwen Edit, ~20 s);
 - **add a second control** — a second IC-LoRA with its own layer (e.g. layout-to-render on a render + pose).
 
-Clips up to 97 frames (~4 s) are generated in one pass — no seams, ~3–4 minutes on 24 GB. Longer clips go in 33-frame chunks that overlap by 8 frames and are cross-faded; if a seam shows, raise the overlap to 16. Split long shots into parts of up to 97 frames.
+Clips up to 97 frames (~4 s) are generated in one pass — no seams, ~3–4 minutes on 24 GB. Longer clips go in 97-frame passes that overlap by 16 frames and are cross-faded. With a second control (two IC-LoRAs) a pass is 49 frames on 24 GB.
 
 ### Composite (in the matte tool group)
 A subject cut by its mask from one source over another background:
@@ -65,7 +66,7 @@ A subject cut by its mask from one source over another background:
 1. **Prepare Plate**.
 2. **SAM 3.1** → `person`: the person's mask.
 3. **Depth** — it carries the camera motion.
-4. First frame of the new background: open frame 0 in 1D and ask Klein to "replace the background with …, keep the person unchanged" (or use your own picture).
+4. First frame of the new background: open frame 0 in Image and ask Klein to "replace the background with …, keep the person unchanged" (or use your own picture).
 5. **Generate** → union-control, control layer = depth, first frame = step 4, prompt = the new scene. You get the new background with the same camera move.
 6. **Composite**: subject = original footage, mask = step 2, background = step 5, harmonize 0.4.
 7. Optionally tick "Then refine".
@@ -82,12 +83,12 @@ A subject cut by its mask from one source over another background:
 ### A character driven by 3D animation
 1. In 3D add a character or a skeleton (orange "person +" button) and load an animation (FBX / Mixamo — retargeted automatically).
 2. Block out the set with primitives (a bench from boxes, a tree from a cylinder and a sphere…) and pick a camera (e.g. orbit).
-3. Send to 2D with the 3D panel buttons: **Pose from 3D** (cyan "image" icon) and **Environment render** (green "trees" icon). **Render from 3D** ("box" icon) renders the characters themselves in grey clay — the input for layout-to-render when the character must follow the 3D model's shape.
+3. Send to Video with the 3D panel buttons: **Pose from 3D** (cyan "image" icon) and **Environment render** (green "trees" icon). **Render from 3D** ("box" icon) renders the characters themselves in grey clay — the input for layout-to-render when the character must follow the 3D model's shape.
 4. In Generate: "Set the first frame" → character + environment layer + pose layer + "what the shapes become".
 5. **Generate** → layout-to-render on the environment + second control union-control on the pose (influence 0.8).
 
 ### Dub a video
-**Voice** tab → "Dub a video": the video file (the 2D button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS / VibeVoice / Qwen3-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.
+**Voice** tab → "Dub a video": the video file (the Video button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS / VibeVoice / Qwen3-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.
 
 ### Clone a voice / narrate a text
 **Voice** tab → "Clone a voice" (sample + text) or "Narrate text" (long text, Russian stress marks).
