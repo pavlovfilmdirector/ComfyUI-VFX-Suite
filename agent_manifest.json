@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "ComfyUI-VFX-Suite",
+  "version": "1.0.0",
+  "description": "Autonomous VFX Matchmoving, 3D Layout & Generative Set Extension Toolkit for ComfyUI and MCP Agents.",
+  "tools": [
+    {
+      "name": "vfx_track_camera",
+      "description": "Performs GLOMAP global SfM tracking with YOLOv8 dynamic masking and Z=0 ground alignment on video footage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_path": { "type": "string", "description": "Absolute path to input footage or image sequence." },
+          "mask_actors": { "type": "boolean", "default": true, "description": "Automatically detect and mask actors and props." },
+          "align_ground": { "type": "boolean", "default": true, "description": "RANSAC plane fit floor to Z=0." }
+        },
+        "required": ["video_path"]
+      }
+    },
+    {
+      "name": "vfx_update_layout_scene",
+      "description": "Updates 3D proxy primitives, meshes, or keyframe animations in the 3D Layout Editor node.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "layout_json": { "type": "string", "description": "JSON serialized list of objects with position, rotation, scale, and keyframes." }
+        },
+        "required": ["layout_json"]
+      }
+    },
+    {
+      "name": "vfx_render_clay_pass",
+      "description": "Bakes 3D layout into a Clay playblast image sequence for LTX Layout-To-Render diffusion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "render_mode": { "type": "string", "enum": ["Clay (Lambertian Studio)", "Depth Map", "Surface Normals", "Layout Mask"], "default": "Clay (Lambertian Studio)" },
+          "camera_smoothing": { "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0 }
+        }
+      }
+    },
+    {
+      "name": "vfx_composite_shot",
+      "description": "Composites generative background with foreground actors using edge feathering, Reinhard harmonization, and light wrapping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "light_wrap_intensity": { "type": "number", "default": 0.25 },
+          "harmonize_reinhard": { "type": "boolean", "default": true }
+        }
+      }
+    }
+  ]
+}

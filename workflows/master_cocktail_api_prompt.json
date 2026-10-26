@@ -1,0 +1,208 @@
+{
+  "12": {
+    "class_type": "VFXPlatePrep",
+    "inputs": {}
+  },
+  "14": {
+    "class_type": "CorridorKey",
+    "inputs": {
+      "image": [
+        "12",
+        0
+      ],
+      "mask": [
+        "12",
+        2
+      ],
+      "gamma_space": "sRGB",
+      "despill_strength": 1.0,
+      "refiner_strength": 1.0,
+      "auto_despeckle": "On",
+      "despeckle_size": 400
+    }
+  },
+  "16": {
+    "class_type": "CameraTrackerSfM",
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ],
+      "tracking_mask": [
+        "12",
+        1
+      ],
+      "point_cloud_density": "Draft (2048 pts)",
+      "focal_length_mode": "Auto Estimate (Refined)",
+      "focal_length_mm": 28.0,
+      "mask_mode": "Exclude Masked (Dynamic Objects)"
+    }
+  },
+  "21": {
+    "class_type": "LayoutEditor3D",
+    "inputs": {
+      "camera_data": [
+        "16",
+        1
+      ],
+      "track_points": [
+        "16",
+        2
+      ],
+      "undistorted_images": [
+        "12",
+        0
+      ],
+      "rough_actor_matte": [
+        "14",
+        1
+      ],
+      "render_mode": "Depth Map",
+      "camera_smoothing": 0.0,
+      "layout_json": "[]",
+      "external_camera_file": ""
+    }
+  },
+  "50": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-dev-fp8.safetensors"
+    }
+  },
+  "51": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "50",
+        0
+      ],
+      "clip": [
+        "50",
+        1
+      ],
+      "lora_name": "LTX-2.3\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0
+    }
+  },
+  "52": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "51",
+        0
+      ],
+      "clip": [
+        "51",
+        1
+      ],
+      "lora_name": "LTX-2.3\\ltx-2.3-22b-distilled-1.1_lora-dynamic_fro09_avg_rank_111_bf16.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0
+    }
+  },
+  "31": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "52",
+        1
+      ],
+      "text": "Cinematic photorealistic sci-fi citadel with massive weathered stone towers and glowing architectural panels replacing the proxy layout, volumetric golden hour sunlight, dust motes, 35mm film grain, 8k resolution"
+    }
+  },
+  "32": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "52",
+        1
+      ],
+      "text": "blurry, low quality, artifacts, cartoon, 3d render plastic look, clay mockup, flat lighting, jitter"
+    }
+  },
+  "33": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "21",
+        1
+      ],
+      "vae": [
+        "50",
+        2
+      ]
+    }
+  },
+  "34": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "52",
+        0
+      ],
+      "positive": [
+        "31",
+        0
+      ],
+      "negative": [
+        "32",
+        0
+      ],
+      "latent_image": [
+        "33",
+        0
+      ],
+      "seed": 42,
+      "control_after_generate": "fixed",
+      "steps": 8,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.85
+    }
+  },
+  "35": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "34",
+        0
+      ],
+      "vae": [
+        "50",
+        2
+      ]
+    }
+  },
+  "41": {
+    "class_type": "VFXCompositor",
+    "inputs": {
+      "background_video": [
+        "35",
+        0
+      ],
+      "foreground_video": [
+        "14",
+        2
+      ],
+      "alpha_matte": [
+        "14",
+        1
+      ],
+      "edge_feather_px": 2.0,
+      "light_wrap_strength": 0.2,
+      "color_harmonize": true
+    }
+  },
+  "60": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "VFX_Cocktail_Master",
+      "images": [
+        "41",
+        0
+      ]
+    }
+  }
+}

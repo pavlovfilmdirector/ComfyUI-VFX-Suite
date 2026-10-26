@@ -1,0 +1,46 @@
+{
+  "1": {
+    "class_type": "VHS_LoadImagesPath",
+    "inputs": {
+      "directory": "",
+      "image_load_cap": 48,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Frames"
+    }
+  },
+  "2": {
+    "class_type": "DWPreprocessor",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": 1024,
+      "bbox_detector": "yolox_l.torchscript.pt",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+      "scale_stick_for_xinsr_cn": "disable"
+    },
+    "_meta": {
+      "title": "Pose"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "2",
+        0
+      ],
+      "filename_prefix": "keshiki/video/pose"
+    },
+    "_meta": {
+      "title": "Save"
+    }
+  }
+}

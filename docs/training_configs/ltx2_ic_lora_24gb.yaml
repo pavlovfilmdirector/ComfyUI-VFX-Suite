@@ -1,0 +1,73 @@
+# LTX-2.3 IC-LoRA (video-to-video), 24 GB
+# Run by the KESHIKI author on an RTX 3090 Ti (24 GB) in WSL2: 9 ref/target pairs, reached 50-300 steps over several
+# resumed sessions (no full run on 24 GB). For the full run see ltx2_ic_lora_h200.yaml. Replace /path/to/... placeholders.
+# =============================================================================
+# LTX-2.3 22B DISTILLED FP8 ADAPTATION (RTX 3090 Ti 24GB)
+# =============================================================================
+
+model:
+  model_path: "/path/to/ComfyUI/models/checkpoints/ltx-2.3-22b-dev.safetensors"
+  text_encoder_path: "/path/to/ComfyUI/models/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
+  training_mode: "lora"
+  load_checkpoint: null
+
+lora:
+  rank: 64
+  alpha: 64
+  dropout: 0.05
+  target_modules:
+    - "to_k"
+    - "to_q"
+    - "to_v"
+    - "to_out.0"
+
+training_strategy:
+  name: "video_to_video"
+  first_frame_conditioning_p: 0.5
+  reference_latents_dir: "reference_latents"
+
+optimization:
+  learning_rate: 1e-5
+  steps: 1000
+  batch_size: 1
+  gradient_accumulation_steps: 1 
+  max_grad_norm: 1.0
+  optimizer_type: "adamw8bit"
+  scheduler_type: "linear"
+  scheduler_params: { }
+  enable_gradient_checkpointing: true
+
+acceleration:
+  mixed_precision_mode: "bf16"
+  quantization: null
+  load_text_encoder_in_8bit: true
+  
+data:
+  preprocessed_data_root: "/path/to/LTX-2/dataset_ic-lora/.precomputed"
+  num_dataloader_workers: 4
+
+validation:
+  prompts:
+    - "The video appears to be shot from the perspective of someone walking through an underground or indoor tunnel-like environment, possibly a subway station or a similar setting. The camera is moving forward, capturing the backs of several individuals who seem to be walking or riding bicycles. The camera maintains a steady forward motion throughout the sequence, suggesting that the person holding it is walking at a consistent pace. There are minor shakes and movements, indicating that the camera might not be perfectly stabilized, which adds a natural, handheld feel to the footage. Focus on Individuals"
+  negative_prompt: "worst quality, inconsistent motion, blurry, jittery, distorted"
+  video_dims: [576, 320, 49]
+  frame_rate: 25.0
+  seed: 42
+  inference_steps: 20
+  interval: 1001
+  videos_per_prompt: 1
+  guidance_scale: 3.0
+  stg_scale: 1.0
+  stg_blocks: [29]
+  stg_mode: "stg_av"
+  reference_videos:
+    - "/path/to/LTX-2/dataset_ic-lora/055_ref.mp4"
+  skip_initial_validation: true
+
+checkpoints:
+  interval: 50
+  keep_last_n: 1
+  precision: "bfloat16"
+
+output_dir: "/path/to/LTX-2/models/camcontrol_iclora"
+seed: 42

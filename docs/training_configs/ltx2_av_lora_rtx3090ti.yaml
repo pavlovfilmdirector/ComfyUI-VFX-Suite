@@ -1,0 +1,83 @@
+# LTX-2 LoRA (text-to-video + audio) - COMPLETE RUN on an RTX 3090 Ti (24 GB), WSL2.
+# Base: ltx-2-19b-dev-fp8, 15 clips, 1500 steps, ~6.5 s/step (~2 h 45 min), checkpoint every 250 steps.
+# This is the trainer's saved training_config.yaml of that run; only paths and the prompt were generalised.
+# The same settings on the 22B LTX-2.3 dev model were not completed on 24 GB.
+
+acceleration:
+  load_text_encoder_in_8bit: true
+  mixed_precision_mode: bf16
+  quantization: int8-quanto
+checkpoints:
+  interval: 250
+  keep_last_n: -1
+  precision: bfloat16
+data:
+  num_dataloader_workers: 2
+  preprocessed_data_root: /path/to/LTX-2/dataset_optimized
+flow_matching:
+  timestep_sampling_mode: shifted_logit_normal
+  timestep_sampling_params: {}
+hub:
+  hub_model_id: null
+  push_to_hub: false
+lora:
+  alpha: 16
+  dropout: 0.0
+  rank: 16
+  target_modules:
+  - to_k
+  - to_q
+  - to_v
+  - to_out.0
+model:
+  load_checkpoint: null
+  model_path: /path/to/ComfyUI/models/checkpoints/ltx-2-19b-dev-fp8.safetensors
+  text_encoder_path: /path/to/ComfyUI/models/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized
+  training_mode: lora
+optimization:
+  batch_size: 1
+  enable_gradient_checkpointing: true
+  gradient_accumulation_steps: 1
+  learning_rate: 0.0001
+  max_grad_norm: 1.0
+  optimizer_type: adamw8bit
+  scheduler_params: {}
+  scheduler_type: linear
+  steps: 1500
+output_dir: /path/to/LTX-2/outputs/monster_truck_lora
+seed: 42
+training_strategy:
+  audio_latents_dir: audio_latents
+  first_frame_conditioning_p: 0.5
+  name: text_to_video
+  with_audio: true
+validation:
+  frame_rate: 25.0
+  generate_audio: true
+  guidance_scale: 3.0
+  images: null
+  include_reference_in_output: false
+  inference_steps: 20
+  interval: 250
+  negative_prompt: worst quality, inconsistent motion, blurry
+  prompts:
+  - 'A cinematic slow-motion shot of a monster truck jumping over a dirt ramp, dust cloud, clear blue sky.'
+  reference_downscale_factor: 1
+  reference_videos: null
+  seed: 42
+  skip_initial_validation: true
+  stg_blocks:
+  - 29
+  stg_mode: stg_av
+  stg_scale: 1.0
+  video_dims: !!python/tuple
+  - 512
+  - 320
+  - 49
+  videos_per_prompt: 1
+wandb:
+  enabled: false
+  entity: null
+  log_validation_videos: true
+  project: ltxv-trainer
+  tags: []

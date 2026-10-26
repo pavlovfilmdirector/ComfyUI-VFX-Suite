@@ -1,0 +1,17 @@
+{
+  "char_id": "char_cyber_stalker",
+  "trigger_word": "kael_stalker_vfx",
+  "base_model": "flux",
+  "steps": 1000,
+  "approved_count": 1,
+  "timestamp": 1792405903.922457,
+  "status": "training",
+  "output_lora": "flux_kael_stalker_vfx_v1.safetensors",
+  "items": [
+    {
+      "id": "cnode_ds_test_1",
+      "filename": "ds_test_001.jpg",
+      "caption": "kael_stalker_vfx, cyberpunk operative, neon rain, anamorphic 85mm"
+    }
+  ]
+}

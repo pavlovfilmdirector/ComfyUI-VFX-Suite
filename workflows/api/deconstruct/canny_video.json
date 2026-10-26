@@ -1,0 +1,41 @@
+{
+  "1": {
+    "class_type": "VHS_LoadImagesPath",
+    "inputs": {
+      "directory": "",
+      "image_load_cap": 48,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Frames"
+    }
+  },
+  "2": {
+    "class_type": "Canny",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "low_threshold": 0.4,
+      "high_threshold": 0.8
+    },
+    "_meta": {
+      "title": "Canny"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "2",
+        0
+      ],
+      "filename_prefix": "keshiki/video/canny"
+    },
+    "_meta": {
+      "title": "Save"
+    }
+  }
+}

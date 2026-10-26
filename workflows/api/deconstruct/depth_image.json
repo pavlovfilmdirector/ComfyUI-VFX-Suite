@@ -1,0 +1,49 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    },
+    "_meta": {
+      "title": "Input Image"
+    }
+  },
+  "2": {
+    "class_type": "DownloadAndLoadDepthAnythingV2Model",
+    "inputs": {
+      "model": "depth_anything_v2_vitl_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Depth Model"
+    }
+  },
+  "3": {
+    "class_type": "DepthAnything_V2",
+    "inputs": {
+      "da_model": [
+        "2",
+        0
+      ],
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Depth"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "3",
+        0
+      ],
+      "filename_prefix": "keshiki/preprocess/depth"
+    },
+    "_meta": {
+      "title": "Save"
+    }
+  }
+}
