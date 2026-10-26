@@ -548,7 +548,7 @@ PROCESS_CATALOG: List[Dict[str, Any]] = [
     {
         "id": "music",
         "icon": "music",
-        "title_ru": "10. Генерация Музыки и Саундтрека (ACE-Step / MiniMax)",
+        "title_ru": "10. Генерация музыки (ACE-Step 1.5)",
         "title_en": "10. Music Score & Stem Generation",
         "desc_ru": "Синтез оригинального саундтрека и звуковых фактур под хронометраж монтажа.",
         "desc_en": "Original soundtrack and ambient stem generation synced to timeline duration.",
@@ -561,15 +561,48 @@ PROCESS_CATALOG: List[Dict[str, Any]] = [
         ],
         "models": [
             {
-                "id": "ace_step_35b",
-                "name": "ACE-Step v1 3.5B (Локальный генератор музыки и саундтреков)",
-                "filename": "ace_step_v1_3.5b.safetensors",
-                "alt_Matches": ["ace_step", "ace-step", "stable_audio"],
-                "size_gb": 6.8,
+                "id": "acestep15_turbo",
+                "name": "ACE-Step 1.5 turbo (2B DiT, 8 steps)",
+                "filename": "acestep_v1.5_turbo.safetensors",
+                "alt_Matches": ["acestep_v1.5", "ace_step_1.5", "acestep15"],
+                "size_gb": 4.8,
                 "required": True,
-                "url": "https://huggingface.co/ACE-Step/ACE-Step-v1-3.5B/tree/main",
-                "page_url": "https://huggingface.co/ACE-Step/ACE-Step-v1-3.5B",
-                "desc_ru": "Генерация кинематографичной музыки по текстовому описанию и темпу (BPM)."
+                "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors",
+                "page_url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files",
+                "desc_ru": "Генерация песен и саундтреков по стилю, тексту, BPM и тональности (MIT)."
+            },
+            {
+                "id": "acestep15_lm06",
+                "name": "ACE-Step 1.5 Qwen 0.6B text encoder",
+                "filename": "qwen_0.6b_ace15.safetensors",
+                "alt_Matches": ["qwen_0.6b_ace15"],
+                "size_gb": 1.2,
+                "required": True,
+                "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors",
+                "page_url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files",
+                "desc_ru": "Текстовый энкодер ACE-Step 1.5."
+            },
+            {
+                "id": "acestep15_lm4b",
+                "name": "ACE-Step 1.5 Qwen 4B LM (song structure, audio codes)",
+                "filename": "qwen_4b_ace15.safetensors",
+                "alt_Matches": ["qwen_4b_ace15"],
+                "size_gb": 8.4,
+                "required": True,
+                "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors",
+                "page_url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files",
+                "desc_ru": "LM ACE-Step 1.5: строит композицию и аудио-коды."
+            },
+            {
+                "id": "acestep15_vae",
+                "name": "ACE-Step 1.5 VAE",
+                "filename": "ace_1.5_vae.safetensors",
+                "alt_Matches": ["ace_1.5_vae"],
+                "size_gb": 0.34,
+                "required": True,
+                "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/vae/ace_1.5_vae.safetensors",
+                "page_url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files",
+                "desc_ru": "Аудио-VAE ACE-Step 1.5."
             }
         ]
     }

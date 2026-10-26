@@ -17,6 +17,12 @@ The studio's AI Director (the agent) knows this guide: ask it "how do I …?" an
 ### Image
 Layers, masks, poses, FLUX.3 Klein generation: from text, editing by masks and references, pose transfer.
 
+**Drawings → generation.** Draw on the frame with the brush, then in Generate choose what each paint layer is:
+- **notes = instructions**: arrows, circles, words ("a lamp here", "make it red") tell Klein what to change and never show in the result;
+- **sketch → real objects**: rough strokes become real things in the scene's style;
+- **collage → blend in**: the Collage button (yellow "image +" icon) pastes a project image as its own layer; move it with V, trim it with the eraser; Generate blends it in (light, shadows, perspective).
+Each layer can carry a short note.
+
 ### Video
 The clip and its layers: masks, depth, pose, generated clips, composites. Layers can be hidden, reordered, faded, and masks viewed in black and white.
 
@@ -89,6 +95,12 @@ A subject cut by its mask from one source over another background:
 
 ### Dub a video
 **Voice** tab → "Dub a video": the video file (the Video button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS / VibeVoice / Qwen3-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.
+
+### Join clips (editing without generation)
+In the Video view file strip press **Join**: click the clips in play order, set the dissolve (overlap frames) and press Join. Each clip's end fades into the next one's start. The result is a new project video. Picture only for now, no sound.
+
+### Music (ACE-Step 1.5)
+**Music** tab: style (genre, mood, instruments, voice - click the ready tags), lyrics with structure ([verse], [chorus]… - the buttons insert a tag; empty = instrumental), length, BPM, key, meter, lyrics language, number of variants → Generate. Tracks collect in the project library (`music` folder): play them, add them to the project audio or re-run with the same settings. Models (~15 GB): `install.bat --download-models music`.
 
 ### Clone a voice / narrate a text
 **Voice** tab → "Clone a voice" (sample + text) or "Narrate text" (long text, Russian stress marks).

@@ -36,6 +36,19 @@ ROLE_HINTS = {
     "pose": "is a pose skeleton: the person takes exactly this pose",
     "reference": "is a reference: take from it what the instruction asks for",
     "mask": "is a mask: white marks the area the instruction refers to",
+    "annotation": ("is image 1 with hand-drawn notes (arrows, circles, scribbles, written words) from the director: "
+                   "apply what the marks ask for to image 1; the result must not contain any of these marks"),
+}
+
+# Drawings on the image (paint layers) in edit mode:
+#   sketch     - rough strokes are baked into the source; Klein turns them into real objects in the scene's style
+#   annotation - an annotated copy goes in as a reference: arrows / circles / words are instructions, not content
+#   collage    - pasted cut-outs are baked into the source; Klein blends them in (light, shadows, perspective)
+DRAWING_PROMPTS = {
+    "sketch": ("The rough hand-drawn strokes in image 1 ({name}) are a sketch: render them as real, photographic objects "
+               "that belong to the scene, matching its light, perspective and style; remove every visible stroke."),
+    "collage": ("Image 1 is a collage: the pasted cut-outs ({name}) must be blended naturally into the scene - match light, "
+                "colour, shadows, perspective and grain so nothing looks pasted."),
 }
 ASPECTS = {"16:9": (1344, 768), "1:1": (1024, 1024), "9:16": (768, 1344), "4:3": (1184, 880), "2.39:1": (1536, 640)}
 
@@ -56,6 +69,28 @@ def _to_input(data_url: str, tag: str) -> str:
         with open(path, "wb") as f:
             f.write(raw)
     return name
+
+
+def _overlay(base_png: bytes, layer_data_url: str) -> bytes:
+    """Draws an RGBA layer (same aspect, any size) over the base image; returns PNG bytes."""
+    base = cv2.imdecode(np.frombuffer(base_png, np.uint8), cv2.IMREAD_COLOR)
+    lay = cv2.imdecode(np.frombuffer(_decode(layer_data_url), np.uint8), cv2.IMREAD_UNCHANGED)
+    if base is None or lay is None:
+        raise ProcessError("Could not decode a drawing layer")
+    h, w = base.shape[:2]
+    lay = cv2.resize(lay, (w, h), interpolation=cv2.INTER_AREA)
+    if lay.ndim == 2:
+        lay = cv2.cvtColor(lay, cv2.COLOR_GRAY2BGRA)
+    elif lay.shape[2] == 3:
+        lay = np.dstack([lay, np.full((h, w), 255, np.uint8)])
+    a = lay[..., 3:4].astype(np.float32) / 255.0
+    out = (lay[..., :3].astype(np.float32) * a + base.astype(np.float32) * (1 - a)).astype(np.uint8)
+    ok, buf = cv2.imencode(".png", out)
+    return buf.tobytes()
+
+
+def _png_data_url(png: bytes) -> str:
+    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
 def _mask_alpha(data_url: str) -> np.ndarray:
@@ -142,7 +177,30 @@ def run_image_generate(params: Dict[str, Any], timeout_s: float = 900.0) -> Dict
             desc += f": {m['desc']}"
         boxes.append({**box, "metadata": {"type": "obj", "desc": desc, "palette": []}})
 
+    orig_source = params.get("source")
+    drawings = [d for d in (params.get("drawings") or []) if d.get("data")] if mode == "edit" else []
+    drawing_lines = []
+    if drawings:
+        if not params.get("source"):
+            raise ProcessError("Edit mode needs a source image")
+        src_png = _decode(params["source"])
+        baked = False
+        for d in drawings:
+            how, name = str(d.get("mode") or "sketch"), str(d.get("name") or "drawing")
+            if how == "annotation":
+                refs = [{"role": "annotation", "name": name, "data": _png_data_url(_overlay(src_png, d["data"]))}] + refs
+            else:
+                src_png = _overlay(src_png, d["data"])
+                baked = True
+                drawing_lines.append(DRAWING_PROMPTS.get(how, DRAWING_PROMPTS["sketch"]).format(name=name))
+            if d.get("note"):
+                drawing_lines.append(f"Note on {name}: {d['note']}")
+        if baked:
+            params = {**params, "source": _png_data_url(src_png)}
+        refs = refs[:4]
+
     lines = [instruction] if instruction else []
+    lines += drawing_lines
     if mode == "edit" and refs:
         for i, r in enumerate(refs, start=2):
             hint = ROLE_HINTS.get(r.get("role", "reference"), ROLE_HINTS["reference"])
@@ -183,7 +241,7 @@ def run_image_generate(params: Dict[str, Any], timeout_s: float = 900.0) -> Dict
 
     only_inside = bool(params.get("only_inside_masks")) and mode == "edit" and mask_arrays
     if only_inside:
-        result = _composite_inside_masks(source_bytes, result, mask_arrays)
+        result = _composite_inside_masks(_decode(orig_source) if orig_source else source_bytes, result, mask_arrays)
 
     return {
         "image": "data:image/png;base64," + base64.b64encode(result).decode("ascii"),

@@ -460,6 +460,60 @@ export function initStudioArchitecture(ctx) {
         });
     }
 
+
+    // Montage: join project videos with a dissolve (no generation) -> a new project video
+    function openMontageDialog(anchor) {
+        const vids = mediaVideos2D.filter(v => v && v.videoUrl);
+        if (vids.length < 2) { showToastNotification(uiText("Add at least two videos to the project", "Добавьте в проект хотя бы два видео"), true); return; }
+        const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const order = [];
+        const pop = openGenPopover(anchor, `
+            <b style="font-size: 11px;">${uiText("Join clips with a dissolve", "Склейка через растворение")}</b>
+            <div style="font-size: 9.5px; color: rgba(255,255,255,0.55); line-height: 1.35;">${uiText("Click the clips in the order they should play.", "Кликайте клипы в том порядке, в каком они пойдут.")}</div>
+            <div style="display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto;">
+                ${vids.map(v => `<button class="vfx-btn mt-it" data-id="${v.id}" style="display: flex; align-items: center; gap: 6px; text-align: left; padding: 3px 6px;">
+                    <span class="mt-n" style="width: 16px; font-family: 'JetBrains Mono', monospace; color: #fbbf24;"></span>
+                    <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(v.title)}</span></button>`).join("")}
+            </div>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;">${uiText("Dissolve, frames", "Растворение, кадров")}
+                <input type="range" id="mt-ov" min="0" max="48" step="2" value="12" style="flex: 1;"><span id="mt-ovv">12</span></label>
+            <button class="vfx-btn vfx-btn-primary" id="mt-go" style="padding: 4px;" disabled>${uiText("Join", "Склеить")}</button>
+            <div id="mt-st" style="font-size: 10px; color: rgba(255,255,255,0.55);"></div>`, 300);
+        const paint = () => {
+            pop.querySelectorAll(".mt-it").forEach(b => { const i = order.indexOf(b.dataset.id); b.querySelector(".mt-n").textContent = i >= 0 ? String(i + 1) : ""; b.classList.toggle("vfx-btn-primary", i >= 0); });
+            pop.querySelector("#mt-go").disabled = order.length < 2;
+        };
+        pop.querySelectorAll(".mt-it").forEach(b => b.onclick = () => { const i = order.indexOf(b.dataset.id); if (i >= 0) order.splice(i, 1); else order.push(b.dataset.id); paint(); });
+        pop.querySelector("#mt-ov").oninput = (e) => { pop.querySelector("#mt-ovv").textContent = e.target.value; };
+        pop.querySelector("#mt-go").onclick = async () => {
+            const pid = currentProject?.id, chosen = order.map(id => vids.find(v => v.id === id)).filter(Boolean);
+            const st = pop.querySelector("#mt-st"), btn = pop.querySelector("#mt-go");
+            btn.disabled = true; st.textContent = uiText("Joining…", "Склеиваю…");
+            try {
+                const name = chosen.map(v => v.title).join(" + ").slice(0, 60);
+                const job = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(chosen[0].id)}/job`, { method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ kind: "montage", params: { videos: chosen.map(v => ({ url: v.videoUrl })), overlap: +pop.querySelector("#mt-ov").value, name: "montage" } }) }).then(r => r.json());
+                if (!job.id) throw new Error(job.error || "job not started");
+                let j = job;
+                while (j.status === "running" || j.status === "queued") {
+                    await new Promise(r => setTimeout(r, 1500));
+                    j = await fetch(`/vfx/video/job/${job.id}`).then(r => r.json());
+                    st.textContent = j.message || "";
+                }
+                if (j.status !== "done") throw new Error(j.error || j.message || j.status);
+                const v = j.result.video;
+                mediaVideos2D.unshift({ id: `vid_user_${Date.now()}`, title: (uiText("Join: ", "Склейка: ") + name).slice(0, 40), badge: "JOIN", type: "html5",
+                    videoUrl: v.url, fps: v.fps || 24, derived: { kind: "montage", clips: chosen.map(c => c.title) } });
+                saveProject2DVideos();
+                renderTopViewportBar();
+                pop.remove();
+                showToastNotification(uiText("Joined video added to the files", "Склейка добавлена в файлы"));
+            } catch (e) {
+                st.textContent = String(e.message || e); btn.disabled = false;
+            }
+        };
+    }
+
     // 1D "Generate": photo, or a video from this image (first frame / first + last frame)
     function open1DGenerateChooser(anchor, imgObj) {
         const others = mediaImages1D.filter(i => i.id !== imgObj.id && (i.url || i.fallbackUrl));
@@ -1151,6 +1205,7 @@ export function initStudioArchitecture(ctx) {
         const layers = sourceImg ? sourceImg.layers.filter(l => l.src) : [];
         const masks = layers.filter(l => l.type === "mask");
         const controls = layers.filter(l => ["depth", "canny", "pose"].includes(l.type));
+        const drawingsL = layers.filter(l => l.type === "paint");
         const otherImages = mediaImages1D.filter(i => !sourceImg || i.id !== sourceImg.id);
         const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
         const row = (cls, l, checked, hint) => `
@@ -1194,6 +1249,28 @@ export function initStudioArchitecture(ctx) {
                             <input type="checkbox" id="chk-gen1d-inside" checked>
                             <span>${uiText("Change only inside selected masks", "Менять только внутри выбранных масок")}</span>
                         </label>
+                    </div>` : ""}
+                ${drawingsL.length ? `
+                    <div>
+                        <div style="font-weight: 600; margin-bottom: 3px;">${uiText("Drawings on the image", "Рисунки на изображении")}</div>
+                        ${drawingsL.map(l => {
+                            const def = l.drawMode || (/collage|коллаж/i.test(l.name || "") ? "collage" : "annotation");
+                            return `<div style="display: flex; flex-direction: column; gap: 2px; padding: 2px 0;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" class="chk-gen1d-draw" data-lid="${l.id}" ${l.visible !== false ? "checked" : ""}>
+                                    <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(l.name)}</span>
+                                    <select class="sel-gen1d-draw" data-lid="${l.id}" style="background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10px;">
+                                        <option value="annotation" ${def === "annotation" ? "selected" : ""}>${uiText("notes = instructions", "пометки = указания")}</option>
+                                        <option value="sketch" ${def === "sketch" ? "selected" : ""}>${uiText("sketch → real objects", "эскиз → объекты")}</option>
+                                        <option value="collage" ${def === "collage" ? "selected" : ""}>${uiText("collage → blend in", "коллаж → вписать")}</option>
+                                    </select>
+                                </label>
+                                <input class="inp-gen1d-draw-note ue-input" data-lid="${l.id}" placeholder="${uiText("What the marks mean (optional): e.g. 'add a lamp here', 'make this red'", "Что значат пометки (необязательно): «поставь здесь фонарь», «сделай красным»")}" style="font-size: 10px;">
+                            </div>`;
+                        }).join("")}
+                        <div style="font-size: 9.5px; color: rgba(255,255,255,0.45); line-height: 1.35;">${uiText(
+                            "Notes: arrows, circles and words tell Klein what to change and never appear in the result. Sketch: rough strokes become real objects. Collage: pasted pictures are blended in.",
+                            "Пометки: стрелки, круги и слова говорят Klein, что менять, и не попадают в результат. Эскиз: грубые штрихи становятся настоящими объектами. Коллаж: вставленные картинки вписываются в сцену.")}</div>
                     </div>` : ""}
                 ${controls.length ? `
                     <div>
@@ -1277,6 +1354,15 @@ export function initStudioArchitecture(ctx) {
                     for (const lid of checked("chk-gen1d-mask")) {
                         const l = sourceImg.layers.find(x => x.id === lid);
                         if (l) body.masks.push({ name: l.name, data: await urlToDataUrl1D(l.src) });
+                    }
+                    body.drawings = [];
+                    for (const lid of checked("chk-gen1d-draw")) {
+                        const l = sourceImg.layers.find(x => x.id === lid);
+                        if (!l || !l.src) continue;
+                        const how = panel.querySelector(`.sel-gen1d-draw[data-lid="${lid}"]`)?.value || "annotation";
+                        const note = (panel.querySelector(`.inp-gen1d-draw-note[data-lid="${lid}"]`)?.value || "").trim();
+                        l.drawMode = how;
+                        body.drawings.push({ name: l.name, mode: how, note, data: await urlToDataUrl1D(l.src) });
                     }
                     for (const lid of checked("chk-gen1d-control")) {
                         const l = sourceImg.layers.find(x => x.id === lid);
@@ -6798,6 +6884,17 @@ export function initStudioArchitecture(ctx) {
             addVidBtn.setAttribute("data-tip-d-ru", "Загрузить видеофайл с диска в коллекцию проекта.");
             addVidBtn.onclick = () => hiddenVidUpload.click();
             actionEl.appendChild(addVidBtn);
+            const montageBtn = document.createElement("button");
+            montageBtn.id = "btn-top-montage";
+            montageBtn.className = "vfx-btn";
+            montageBtn.style.cssText = addVidBtn.style.cssText;
+            montageBtn.innerHTML = `<i data-lucide="combine" style="width:11px; height:11px;"></i><span>${uiText("Join", "Склейка")}</span>`;
+            montageBtn.setAttribute("data-tip-t-en", "Join clips with a dissolve");
+            montageBtn.setAttribute("data-tip-t-ru", "Склеить клипы через растворение");
+            montageBtn.setAttribute("data-tip-d-en", "Editing without generation: clips go one after another, each joint is a cross-fade (overlap). Video only.");
+            montageBtn.setAttribute("data-tip-d-ru", "Монтаж без генерации: клипы идут друг за другом, на стыке — нахлёст с растворением. Только видео, без звука.");
+            montageBtn.onclick = () => openMontageDialog(montageBtn);
+            actionEl.appendChild(montageBtn);
         }
 
         if (canAddAudio) {
@@ -7785,6 +7882,12 @@ export function initStudioArchitecture(ctx) {
                 ${tipAttr("Invert Mask", "Инвертировать маску", "Invert the entire mask across the frame.", "Инвертировать нарисованную маску на всем кадре (прозрачное станет маской).")}
                 style="width: 26px; height: 26px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: #f59e0b; border-radius: 4px;">
                 <i data-lucide="flip-horizontal" style="width: 13px; height: 13px;"></i>
+            </button>
+
+            <button class="vfx-btn" id="btn-1d-collage"
+                ${tipAttr("Collage: paste an image", "Коллаж: вставить картинку", "Paste a project image as its own layer (move it with V, trim it with the eraser). In Generate it is blended into the scene.", "Вставить картинку из проекта отдельным слоем (двигать — V, подрезать — ластиком). При генерации она вписывается в сцену.")}
+                style="width: 26px; height: 26px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: #fbbf24; cursor: pointer;">
+                <i data-lucide="image-plus" style="width: 13px; height: 13px;"></i>
             </button>
 
             <button class="vfx-btn" id="btn-1d-generate"
@@ -9794,6 +9897,32 @@ export function initStudioArchitecture(ctx) {
         }, true);
         toolsBar.querySelector("#inp-1d-color").oninput = (e) => { img1DColor = e.target.value; };
         toolsBar.querySelector("#inp-1d-size").oninput = (e) => { img1DBrushSize = parseInt(e.target.value, 10) || 8; };
+
+        const collageBtn = toolsBar.querySelector("#btn-1d-collage");
+        if (collageBtn) collageBtn.onclick = async () => {
+            const pic = await pickProjectImage(uiText("Image to paste (collage)", "Картинка для коллажа"));
+            if (!pic) return;
+            askText(collageBtn, uiText("Size, % of the frame width", "Размер, % ширины кадра"), "40", (v) => {
+                const pct = Math.max(5, Math.min(100, parseFloat(v) || 40)) / 100;
+                const im = new Image();
+                im.crossOrigin = "anonymous";
+                im.onload = () => {
+                    const W = annotCanvas.width, H = annotCanvas.height;
+                    const c = document.createElement("canvas"); c.width = W; c.height = H;
+                    const w = Math.round(W * pct), hh = Math.round(w * im.naturalHeight / Math.max(1, im.naturalWidth));
+                    c.getContext("2d").drawImage(im, Math.round((W - w) / 2), Math.round((H - hh) / 2), w, hh);
+                    const layer = addLayer1D("paint", `${uiText("Collage", "Коллаж")}: ${(pic.title || "image").slice(0, 24)}`, c.toDataURL("image/png"));
+                    layer.drawMode = "collage";
+                    imgObj._layersDirty = true;
+                    if (typeof renderLayerStack1D === "function") renderLayerStack1D();
+                    if (typeof renderLayersPanel1D === "function") renderLayersPanel1D();
+                    if (typeof scheduleLayerSync1D === "function") scheduleLayerSync1D();
+                    showToastNotification(uiText("Pasted. Move it with V, trim with the eraser, then Generate", "Вставлено. Двигайте инструментом V, подрежьте ластиком, затем «Сгенерировать»"));
+                };
+                im.onerror = () => showToastNotification(uiText("Could not load the image", "Не удалось загрузить картинку"), true);
+                im.src = pic.url || pic.fallbackUrl;
+            }, uiText("Paste", "Вставить"));
+        };
 
         toolsBar.querySelector("#btn-1d-undo").onclick = () => perform1DUndo();
 
@@ -23066,40 +23195,117 @@ export function initStudioArchitecture(ctx) {
         }
 
         else if (activeTab === "music") {
+            const fld = "background: #0f0f11; color: #e4e4e7; border: 1px solid #333; border-radius: 4px; font-size: 10.5px; padding: 3px 5px;";
+            const tagChips = ["cinematic orchestral", "dark ambient", "synthwave", "lo-fi hip hop", "epic trailer", "acoustic folk", "piano ballad", "pop", "rock", "electronic", "female vocal", "male vocal", "choir", "strings", "slow", "uplifting", "tense", "melancholic"];
             customTabPane.innerHTML = `
-                <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 5px 8px; border-radius: 4px; font-weight: 600; color: #fff; display:flex; align-items:center; gap:5px;">
+                <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 5px 8px; border-radius: 4px; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 6px;">
                     <i data-lucide="music" style="width:12px; height:12px;"></i>
-                    <span>${uiText("Music Generator", "Генерация Музыки")}</span>
+                    <span style="flex: 1;">${uiText("Music (ACE-Step 1.5)", "Музыка (ACE-Step 1.5)")}</span>
+                    <span id="mu-ready" style="font-size: 9px; font-family: 'JetBrains Mono', monospace;"></span>
                 </div>
-
-                <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 5px;">
-                    <select id="music-engine-select" class="vfx-interp-select" style="width:100%; padding:4px;">
-                        <option value="ace_step">ACE-Step (Local)</option>
-                        <option value="minimax">MiniMax Music API</option>
-                    </select>
-                    <textarea id="music-prompt-input" rows="3" class="ue-textarea">Dark cyberpunk synthwave, Hans Zimmer brass, 120 BPM</textarea>
-                    <button class="vfx-btn vfx-btn-primary" id="btn-gen-music" style="padding: 6px;">${uiText("Generate Music", "Сгенерировать музыку")}</button>
-                    <div id="music-status-box" style="font-size: 10px; color: rgba(255,255,255,0.65); font-family:'JetBrains Mono',monospace;"></div>
+                <div id="mu-missing" style="display: none; font-size: 10px; color: #fbbf24; line-height: 1.4; padding: 5px 7px; border: 1px solid rgba(251,191,36,0.35); border-radius: 5px;"></div>
+                <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 5px; font-size: 10.5px;">
+                    <input id="mu-title" placeholder="${uiText("Title (optional)", "Название (необязательно)")}" style="${fld}">
+                    <div>${uiText("Style", "Стиль")}</div>
+                    <textarea id="mu-tags" rows="2" style="${fld} resize: vertical;" placeholder="${uiText("Genre, mood, instruments, voice: e.g. cinematic orchestral, tense, low strings, taiko drums", "Жанр, настроение, инструменты, голос: напр. cinematic orchestral, tense, low strings, taiko drums")}"></textarea>
+                    <div style="display: flex; flex-wrap: wrap; gap: 3px;">${tagChips.map(t => `<button class="vfx-btn mu-chip" style="padding: 0 5px; font-size: 9.5px;">${t}</button>`).join("")}</div>
+                    <div style="display: flex; align-items: center; gap: 4px;">${uiText("Lyrics", "Текст")}
+                        <span style="flex: 1;"></span>
+                        ${["[intro]", "[verse]", "[chorus]", "[bridge]", "[outro]", "[instrumental]"].map(t => `<button class="vfx-btn mu-sec" style="padding: 0 4px; font-size: 9px;">${t}</button>`).join("")}
+                    </div>
+                    <textarea id="mu-lyrics" rows="7" style="${fld} resize: vertical; font-family: 'JetBrains Mono', monospace;" placeholder="${uiText("Empty = instrumental. Mark parts with [verse], [chorus]…", "Пусто = без слов. Части отмечайте [verse], [chorus]…")}"></textarea>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                        <label style="display: flex; flex-direction: column; gap: 2px;">${uiText("Length", "Длина")} <span><input type="range" id="mu-dur" min="10" max="240" step="5" value="60" style="width: 70%;"> <span id="mu-durv">60</span> ${uiText("s", "с")}</span></label>
+                        <label style="display: flex; flex-direction: column; gap: 2px;">BPM <input type="number" id="mu-bpm" min="40" max="220" value="100" style="${fld}"></label>
+                        <label style="display: flex; flex-direction: column; gap: 2px;">${uiText("Key", "Тональность")} <select id="mu-key" style="${fld}"></select></label>
+                        <label style="display: flex; flex-direction: column; gap: 2px;">${uiText("Meter", "Размер")} <select id="mu-ts" style="${fld}">${["4", "3", "6", "2"].map(t => `<option value="${t}">${t}/4</option>`).join("")}</select></label>
+                        <label style="display: flex; flex-direction: column; gap: 2px;">${uiText("Lyrics language", "Язык текста")} <select id="mu-lang" style="${fld}">${["en", "ru", "uk", "de", "fr", "es", "it", "pt", "ja", "ko", "zh", "unknown"].map(l => `<option value="${l}" ${l === (prefs.language === "ru" ? "ru" : "en") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+                        <label style="display: flex; flex-direction: column; gap: 2px;">${uiText("Variants", "Вариантов")} <select id="mu-var" style="${fld}">${[1, 2, 3, 4].map(n => `<option>${n}</option>`).join("")}</select></label>
+                    </div>
+                    <div style="display: flex; gap: 5px; align-items: center;">
+                        <input id="mu-seed" placeholder="seed" style="${fld} width: 90px;">
+                        <button class="vfx-btn vfx-btn-primary" id="mu-go" style="flex: 1; padding: 5px;">${uiText("Generate", "Сгенерировать")}</button>
+                    </div>
+                    <div id="mu-st" style="font-size: 10px; color: rgba(255,255,255,0.6); min-height: 12px;"></div>
                 </div>
+                <div style="font-weight: 600; font-size: 10.5px; margin-top: 4px;">${uiText("Library", "Библиотека")}</div>
+                <div id="mu-lib" style="display: flex; flex-direction: column; gap: 5px;"></div>
             `;
-
-            customTabPane.querySelector("#btn-gen-music").onclick = async () => {
-                const engine = customTabPane.querySelector("#music-engine-select").value;
-                const prompt = customTabPane.querySelector("#music-prompt-input").value.trim();
-                const st = customTabPane.querySelector("#music-status-box");
-                st.innerText = "Generating...";
-                try {
-                    const res = await fetch("/vfx/music/generate", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ engine, prompt, duration: 15.0 })
-                    });
-                    const data = await res.json();
-                    st.innerText = `[OK] ${data.track.engine}: ${data.track.status}`;
-                } catch (e) {
-                    st.innerText = `[ERROR] ${e}`;
-                }
+            const q = (id) => customTabPane.querySelector(id);
+            const pid = currentProject?.id || "";
+            const escM = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+            q("#mu-dur").oninput = (e) => { q("#mu-durv").textContent = e.target.value; };
+            customTabPane.querySelectorAll(".mu-chip").forEach(b => b.onclick = () => { const t = q("#mu-tags"); t.value = (t.value.trim() ? t.value.trim() + ", " : "") + b.textContent; });
+            customTabPane.querySelectorAll(".mu-sec").forEach(b => b.onclick = () => {
+                const t = q("#mu-lyrics"), pos = t.selectionStart ?? t.value.length;
+                const ins = (pos > 0 && t.value[pos - 1] !== "\n" ? "\n\n" : "") + b.textContent + "\n";
+                t.value = t.value.slice(0, pos) + ins + t.value.slice(pos); t.focus(); t.selectionStart = t.selectionEnd = pos + ins.length;
+            });
+            const renderLib = (tracks) => {
+                const box = q("#mu-lib");
+                box.innerHTML = tracks.length ? tracks.map(t => `
+                    <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 5px 6px; display: flex; flex-direction: column; gap: 3px; background: #0f0f11;">
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <b style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px;">${escM(t.title || t.file)}</b>
+                            <span style="font-size: 9px; color: rgba(255,255,255,0.45); font-family: 'JetBrains Mono', monospace;">${t.bpm || ""} BPM · ${escM(t.keyscale || "")} · ${Math.round(t.duration || 0)}s</span>
+                        </div>
+                        <audio controls preload="none" src="${escM(t.url)}" style="width: 100%; height: 26px;"></audio>
+                        <div style="display: flex; gap: 4px;">
+                            <button class="vfx-btn mu-add" data-url="${escM(t.url)}" data-title="${escM(t.title || t.file)}" style="padding: 1px 6px; font-size: 9.5px;">+ ${uiText("to project audio", "в аудио проекта")}</button>
+                            <button class="vfx-btn mu-again" data-file="${escM(t.file)}" style="padding: 1px 6px; font-size: 9.5px;">↺ ${uiText("same settings", "те же настройки")}</button>
+                        </div>
+                    </div>`).join("") : `<div style="font-size: 10px; opacity: .55;">${uiText("No tracks yet", "Треков пока нет")}</div>`;
+                box.querySelectorAll(".mu-add").forEach(b => b.onclick = () => {
+                    mediaAudio.unshift({ id: `aud_music_${Date.now()}`, title: b.dataset.title.slice(0, 26), badge: "MUSIC", type: "audio", audioUrl: b.dataset.url, duration: "" });
+                    saveProjectAudio(); renderTopViewportBar();
+                    showToastNotification(uiText("Added to the project audio", "Добавлено в аудио проекта"));
+                });
+                box.querySelectorAll(".mu-again").forEach(b => b.onclick = () => {
+                    const t = tracks.find(x => x.file === b.dataset.file); if (!t) return;
+                    q("#mu-title").value = t.title || ""; q("#mu-tags").value = t.tags || ""; q("#mu-lyrics").value = t.lyrics === "[instrumental]" ? "" : (t.lyrics || "");
+                    q("#mu-dur").value = Math.round(t.duration || 60); q("#mu-durv").textContent = q("#mu-dur").value;
+                    q("#mu-bpm").value = t.bpm || 100; q("#mu-key").value = t.keyscale || "E minor"; q("#mu-ts").value = t.timesignature || "4"; q("#mu-lang").value = t.language || "en";
+                    q("#mu-seed").value = "";
+                });
             };
+            const refresh = async () => {
+                try {
+                    const st = await fetch(`/vfx/music/status?project_id=${encodeURIComponent(pid)}`).then(r => r.json());
+                    if (st.error) throw new Error(st.error);
+                    if (!q("#mu-key").options.length) q("#mu-key").innerHTML = (st.keys || []).map(k => `<option ${k === "E minor" ? "selected" : ""}>${k}</option>`).join("");
+                    q("#mu-ready").textContent = st.ready ? uiText("ready", "готово") : uiText("models missing", "нет моделей");
+                    q("#mu-ready").style.color = st.ready ? "#4ade80" : "#fbbf24";
+                    const miss = q("#mu-missing");
+                    miss.style.display = st.ready ? "none" : "block";
+                    if (!st.ready) miss.innerHTML = `${uiText("Download the ACE-Step 1.5 models (~15 GB): Settings → Music, or run", "Скачайте модели ACE-Step 1.5 (~15 ГБ): Настройки → Музыка, или запустите")} <code>install.bat --download-models music</code><br>${(st.missing || []).map(escM).join("<br>")}`;
+                    q("#mu-go").disabled = !st.ready;
+                    renderLib(st.tracks || []);
+                } catch (e) { q("#mu-st").textContent = String(e.message || e); }
+            };
+            let curJob = null;
+            q("#mu-go").onclick = async () => {
+                const st = q("#mu-st"), btn = q("#mu-go");
+                if (curJob) { await fetch(`/vfx/music/job/${curJob}/cancel`, { method: "POST" }).catch(() => {}); st.textContent = uiText("Stopping…", "Останавливаю…"); return; }
+                const body = { project_id: pid, title: q("#mu-title").value.trim(), tags: q("#mu-tags").value.trim(), lyrics: q("#mu-lyrics").value.trim(),
+                    duration: +q("#mu-dur").value, bpm: +q("#mu-bpm").value, keyscale: q("#mu-key").value, timesignature: q("#mu-ts").value,
+                    language: q("#mu-lang").value, variants: +q("#mu-var").value, seed: parseInt(q("#mu-seed").value, 10) || null };
+                try {
+                    const j0 = await fetch("/vfx/music/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
+                    if (j0.error) throw new Error(j0.error);
+                    curJob = j0.id; btn.textContent = uiText("■ Stop", "■ Стоп");
+                    let j = j0, t0 = Date.now();
+                    while (j.status === "running") {
+                        await new Promise(r => setTimeout(r, 2000));
+                        j = await fetch(`/vfx/music/job/${curJob}`).then(r => r.json());
+                        st.textContent = `${j.message || ""} · ${Math.round((Date.now() - t0) / 1000)} s`;
+                        if ((j.tracks || []).length) refresh();
+                    }
+                    st.textContent = j.status === "done" ? uiText("Done", "Готово") : (j.message || j.status);
+                } catch (e) { st.textContent = String(e.message || e); }
+                curJob = null; btn.textContent = uiText("Generate", "Сгенерировать");
+                refresh();
+            };
+            refresh();
         }
 
         else if (activeTab === "settings") {

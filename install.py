@@ -263,7 +263,7 @@ def main():
     ap.add_argument("--no-nodes", action="store_true", help="skip node packs")
     ap.add_argument("--no-pip", action="store_true", help="skip pip packages")
     ap.add_argument("--no-tools", action="store_true", help="do not download COLMAP")
-    ap.add_argument("--download-models", default="", help="comma list of groups to download: core,iclora,image,all")
+    ap.add_argument("--download-models", default="", help="comma list of groups to download: core,iclora,image,music,all")
     ap.add_argument("--check", action="store_true", help="only report what is installed, change nothing")
     a = ap.parse_args()
 
