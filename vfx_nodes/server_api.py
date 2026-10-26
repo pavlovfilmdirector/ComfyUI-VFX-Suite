@@ -571,26 +571,38 @@ def register_server_routes():
                 extracted.append({"id": "pass_pose", "name": "🕺 Скелет и Позы (DWPose / OpenPose)", "type": "pose", "status": "Готово"})
             return add_cors_headers(web.json_response({"status": "ok", "extracted_passes": extracted}))
 
-        # --- Music Generation Endpoint (ACE-Step & MiniMax) ---
+        # --- Music: ACE-Step 1.5 through ComfyUI's native nodes (vfx_nodes/music_service.py) ---
+        @routes.get("/vfx/music/status")
+        async def vfx_music_status(request):
+            from .music_service import status as _mst, list_tracks as _mlist
+            pid = _sanitize_id(request.query.get("project_id", ""))
+            try:
+                res = _mst()
+                res["tracks"] = _mlist(pid) if pid else []
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
         @routes.post("/vfx/music/generate")
         async def vfx_music_generate(request):
-            import time
+            from .music_service import start as _mstart
             try:
                 data = await request.json()
-            except Exception:
-                data = {}
-            engine = str(data.get("engine", "ace_step"))
-            prompt = str(data.get("prompt", "Cinematic cyberpunk soundtrack"))
-            duration = float(data.get("duration", 15.0))
-            track = {
-                "id": f"music_{int(time.time())}",
-                "engine": "ACE-Step (Local)" if engine == "ace_step" else "MiniMax Music API",
-                "prompt": prompt,
-                "duration_sec": duration,
-                "status": "Синтезировано и сведено с таймлайном",
-                "audio_url": "/vfx/audio/current"
-            }
-            return add_cors_headers(web.json_response({"status": "ok", "track": track}))
+                pid = _sanitize_id(str(data.get("project_id", "")))
+                res = await asyncio.to_thread(_mstart, pid, data)
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.get("/vfx/music/job/{job_id}")
+        async def vfx_music_job(request):
+            from .music_service import get_job as _mjob
+            return add_cors_headers(web.json_response(_mjob(request.match_info["job_id"])))
+
+        @routes.post("/vfx/music/job/{job_id}/cancel")
+        async def vfx_music_cancel(request):
+            from .music_service import cancel as _mcancel
+            return add_cors_headers(web.json_response(_mcancel(request.match_info["job_id"])))
 
         # --- VFX Director Agent Endpoint (Non-blocking via asyncio.to_thread) ---
         def _studio_agent_turn(data, msg, history, references, agent_config, timeline_context):

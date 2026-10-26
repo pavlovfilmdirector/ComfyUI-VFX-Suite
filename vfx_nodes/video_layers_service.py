@@ -519,7 +519,7 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
         "corridor_key": _job_corridor_key, "undistort": _job_undistort, "track_camera": _job_track_camera,
         "ltx_alpha": _job_ltx_ic_lora, "ltx_ic_lora": _job_ltx_ic_lora,
         "fill": _job_fill, "render": _job_render, "layer_to_video": _job_layer_to_video,
-        "mask_grow": _job_mask_grow, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame,
+        "mask_grow": _job_mask_grow, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame, "montage": _job_montage,
     }.get(kind)
     if not fn:
         raise ProcessError(f"Unknown 2D job '{kind}'")
@@ -529,7 +529,8 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
 
     def runner():
         try:
-            ensure_plate_registered(pid, vid)
+            if kind != "montage":
+                ensure_plate_registered(pid, vid)
             res = fn(job_id, kind, pid, vid, params or {})
             _job_update(job_id, status="done", progress=100, message="Done", result=res)
         except Exception as e:
@@ -1487,6 +1488,65 @@ def _job_render(job_id, kind, pid, vid, p):
     n = _encode_mp4(frames(), out_path, fps, w, h)
     return {"video": {"url": url, "frames": n, "fps": fps, "width": w, "height": h,
                       "layers": [l["name"] for l in layers], "include_plate": include_plate}}
+
+
+def _job_montage(job_id, kind, pid, vid, p):
+    """Editing without generation: clips one after another, each pair joined by a dissolve - the last `overlap`
+    frames of a clip are cross-faded with the first frames of the next (smoothstep). Size and fps follow the first
+    clip. Video only (sound is not mixed yet). Result: a new project video."""
+    clips = [c for c in (p.get("videos") or []) if c]
+    if len(clips) < 2:
+        raise ProcessError("Pick at least two videos to join")
+    overlap = max(0, int(p.get("overlap", 12)))
+    paths = []
+    for c in clips:
+        fp = resolve_media_path(str(c.get("url") if isinstance(c, dict) else c))
+        if not fp or not os.path.isfile(fp):
+            raise ProcessError(f"Video not found: {c}")
+        paths.append(fp)
+    cap0 = cv2.VideoCapture(paths[0])
+    fps = float(p.get("fps") or cap0.get(cv2.CAP_PROP_FPS) or 24) or 24
+    w, h = int(cap0.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap0.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap0.release()
+    w, h = w - w % 2, h - h % 2
+
+    def read_all(fp):
+        cap, out = cv2.VideoCapture(fp), []
+        while True:
+            ok, fr = cap.read()
+            if not ok:
+                break
+            out.append(cv2.resize(fr, (w, h), interpolation=cv2.INTER_AREA) if fr.shape[:2] != (h, w) else fr)
+        cap.release()
+        return out
+
+    def frames():
+        tail = []
+        for ci, fp in enumerate(paths):
+            if _cancelled(job_id):
+                raise ProcessError("Stopped")
+            _job_update(job_id, message=f"Joining clip {ci + 1}/{len(paths)}", progress=int(100 * ci / len(paths)))
+            cur = read_all(fp)
+            if not cur:
+                continue
+            n = min(overlap, len(tail), len(cur) // 2)
+            for t in tail[:len(tail) - n]:
+                yield t
+            for k in range(n):   # dissolve
+                x = (k + 1) / (n + 1)
+                a = x * x * (3 - 2 * x)
+                yield cv2.addWeighted(tail[len(tail) - n + k], 1 - a, cur[k], a, 0)
+            keep = min(overlap, len(cur) // 2) if ci < len(paths) - 1 else 0
+            body = cur[n:len(cur) - keep] if keep else cur[n:]
+            for fr in body:
+                yield fr
+            tail = cur[len(cur) - keep:] if keep else []
+        for t in tail:
+            yield t
+
+    out_path, url = _new_video_path(pid, str(p.get("name") or "montage"))
+    nframes = _encode_mp4(frames(), out_path, fps, w, h)
+    return {"video": {"url": url, "frames": nframes, "fps": fps, "width": w, "height": h}}
 
 
 def _job_layer_to_video(job_id, kind, pid, vid, p):

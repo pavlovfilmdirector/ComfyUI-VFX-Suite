@@ -39,6 +39,7 @@ Check each upstream page for the current terms before commercial use.
 | SAM 3.1, SAM 3D Body (Meta) | SAM License - see the model cards |
 | RT-DETR v4 person detector (used by SAM 3D Body) | see the model card |
 | Depth Anything 3 Mono-Large | Apache-2.0 (Comfy-Org repack) |
+| ACE-Step 1.5 (StepFun / ACE Studio; ComfyUI repack) | MIT |
 | Apple Depth Pro (optional, own repo + checkpoint) | Apple Sample Code License (code and weights; redistribution keeps the notice) |
 | Depth Anything V2 | license depends on the model size - see the model card |
 | Optional 3D generators: TRELLIS.2 (Microsoft, code MIT), Hunyuan3D-Omni (Tencent Hunyuan 3D community license, not licensed in the EU, UK and South Korea) | see the model cards |

@@ -6,7 +6,7 @@
 
 Окна называются Image, Video и 3D (раньше Image было «1D», Video — «2D»; пользователь может называть их по-старому).
 
-- Image — изображения: слои, маски, позы, генерация FLUX.3 Klein (текст, правка по маскам, референсы, поза).
+- Image — изображения: слои, маски, позы, генерация FLUX.3 Klein (текст, правка по маскам, референсы, поза). Рисунки кистью идут в генерацию: «пометки = указания» (стрелки/слова — что менять, в результат не попадают), «эскиз → объекты», «коллаж → вписать» (кнопка «Коллаж» вставляет картинку проекта слоем). Это выбирается в окне генерации у каждого слоя-рисунка.
 - Video — видео: слои видео и процессы над ними (таблица ниже). Почти всё в VFX делается здесь.
 - 3D — сцена: персонажи с анимацией (FBX / Mixamo / встроенный манекен), примитивы, камеры (облёт и др.), рендер слоёв (поза, clay, окружение) в Video-видео.
 - Вкладки слева: Раскадровка, Персонажи, Локации, Голос (дубляж), Видео, 3D-меши (TRELLIS.2), Деконструкция, Сведение, Музыка.
@@ -21,6 +21,7 @@
 - Трекинг камеры: COLMAP + GLOMAP.
 - Голос: Whisper, F5-TTS / VibeVoice / Qwen3-TTS (клон голоса), перевод локальной LLM через Ollama.
 - 3D: TRELLIS.2 (картинка → .glb, текстурирование меша).
+- Музыка: ACE-Step 1.5 turbo — вкладка «Музыка»: стиль (теги), текст со структурой [verse]/[chorus], длина, BPM, тональность, размер, язык, варианты. Модели ставятся `install.bat --download-models music`.
 
 ## Процессы Video (action video_process: kind + params)
 
@@ -36,6 +37,7 @@
 | ltx_ic_lora | видео через LTX + IC-LoRA (тяжёлое) | lora, source_layer (управляющий слой), needs: "first_frame" + ref_image, lora2 + source_layer2 + lora2_attention (вторая LoRA), start, end, chunk (33), overlap (8), prompt (англ.), name |
 | composite | объект по маске поверх другого фона | fg ("plate" или id слоя), mask (id маски), bg ("plate" или id слоя), harmonize 0..1 (0.4), light_wrap 0..1 (0.3), feather, start, end |
 | relight_frame | переосветить кадр (Qwen Edit 2511) | а) под фон: layer, light_layer, frame (Light-Migration, медленно); б) направленный свет: image (первый кадр) или layer, azimuth (0 спереди, 90 справа, 180 сзади), elevation (-90..90), intensity (0..10), color (#hex) — ~20 с |
+| montage | склейка видео проекта через растворение (без генерации) | videos: [{url}] по порядку, overlap (кадров, 12), name |
 | render / layer_to_video | свести слои в видео / слой в видео | — |
 
 Файлы LoRA: "LTX-2.5\\ltx-2.5-22b-ic-lora-<имя>-1.0.safetensors" (layout-to-render, clean-plate, refine-details…), union-control: "LTX-2.3\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors".

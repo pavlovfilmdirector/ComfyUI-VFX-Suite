@@ -165,6 +165,34 @@
       "file": "yolov8n-seg.pt",
       "dir": "(ultralytics)",
       "note": "downloaded automatically on first use"
+    },
+    {
+      "group": "music",
+      "file": "acestep_v1.5_turbo.safetensors",
+      "dir": "diffusion_models",
+      "size_gb": 4.8,
+      "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors"
+    },
+    {
+      "group": "music",
+      "file": "qwen_0.6b_ace15.safetensors",
+      "dir": "text_encoders",
+      "size_gb": 1.2,
+      "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors"
+    },
+    {
+      "group": "music",
+      "file": "qwen_4b_ace15.safetensors",
+      "dir": "text_encoders",
+      "size_gb": 8.4,
+      "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors"
+    },
+    {
+      "group": "music",
+      "file": "ace_1.5_vae.safetensors",
+      "dir": "vae",
+      "size_gb": 0.34,
+      "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/vae/ace_1.5_vae.safetensors"
     }
   ]
 }
