@@ -1,0 +1,91 @@
+{
+  "analysis": {
+    "process_now": true,
+    "source_language": "en",
+    "whisper_model": "large-v3-turbo",
+    "use_gpu": true,
+    "detect_silence": true,
+    "silence_threshold_db": -40.0,
+    "min_silence_duration_s": 0.2,
+    "fallback_initial_pause_ms": 0,
+    "long_pause_min_duration_s": 0.5,
+    "merge_segments_factor": 3.0,
+    "max_pause_duration_for_merge_s": 0.5,
+    "clean_temp": true,
+    "clear_cache": true,
+    "remove_punctuation": false,
+    "separation_method": "demucs",
+    "skip_noise_reduction": false,
+    "min_segment_duration_s": 0.3,
+    "enable_speaker_diarization": false,
+    "speaker_label_style": "none"
+  },
+  "translation": {
+    "process_now": true,
+    "source_language": "en",
+    "target_language": "ru",
+    "translator": "google",
+    "remove_punctuation_before_translation": true,
+    "remove_punctuation_after_translation": false,
+    "retain_translation_punctuation": true,
+    "fix_cyrillic_orthography": true,
+    "add_stress": true,
+    "stress_engine": "RUAccent",
+    "original_video_audio_path": ""
+  },
+  "prepare_text": {
+    "process_now": true,
+    "stop_for_editing": false,
+    "boundary_pause_marker": ".",
+    "initial_pause_duration_ms": 0,
+    "inter_segment_pause_duration_ms": 0,
+    "final_pause_duration_ms": 0,
+    "remove_punctuation": false
+  },
+  "tts": {
+    "process_now": true,
+    "engine": "F5-TTS",
+    "speaker_ref": "",
+    "ref_start_time": 0.0,
+    "ref_end_time": 999999.0,
+    "sample_text": ""
+  },
+  "f5_tts": {
+    "vocoder": "auto",
+    "seed": 985,
+    "speed": 1.0,
+    "model_type": "F5TTS_v1_Base"
+  },
+  "vibevoice": {
+    "model": "VibeVoice-1.5B",
+    "seed": 42
+  },
+  "qwen": {
+    "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+  },
+  "finalize": {
+    "process_now": true,
+    "stretch_method": "ffmpeg_atempo",
+    "max_stretch_factor": 2.0,
+    "allow_stretching": false,
+    "use_original_pauses": true,
+    "filename_prefix": "",
+    "save_final_audio": true,
+    "save_final_json": true,
+    "trim_start_silence": true,
+    "trim_end_silence": false,
+    "silence_thresh": -50.0,
+    "min_silence_len": 200,
+    "add_original_background": true,
+    "add_original_noise": true,
+    "original_audio_volume_percent": 20.0
+  },
+  "player": {
+    "video_path": "",
+    "target_lang": "ru",
+    "tts_engine": "f5tts",
+    "projects_dir": "",
+    "trim_video_start_ms": 0,
+    "trim_video_end_ms": 0
+  }
+}

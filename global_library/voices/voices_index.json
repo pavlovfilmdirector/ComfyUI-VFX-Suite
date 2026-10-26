@@ -1,0 +1,62 @@
+[
+  {
+    "id": "dmitry_ru",
+    "name": "Дмитрий (Кино-баритон RU)",
+    "engine": "edge_tts",
+    "voice_code": "dmitry",
+    "lang": "ru",
+    "tags": [
+      "мужской",
+      "драма",
+      "диктор"
+    ]
+  },
+  {
+    "id": "svetlana_ru",
+    "name": "Светлана (Мягкий женский RU)",
+    "engine": "edge_tts",
+    "voice_code": "svetlana",
+    "lang": "ru",
+    "tags": [
+      "женский",
+      "лирика",
+      "диалог"
+    ]
+  },
+  {
+    "id": "christopher_en",
+    "name": "Christopher (Hollywood Trailer EN)",
+    "engine": "edge_tts",
+    "voice_code": "christopher",
+    "lang": "en",
+    "tags": [
+      "male",
+      "cinematic",
+      "deep"
+    ]
+  },
+  {
+    "id": "jenny_en",
+    "name": "Jenny (Natural Dialogue EN)",
+    "engine": "edge_tts",
+    "voice_code": "jenny",
+    "lang": "en",
+    "tags": [
+      "female",
+      "clear",
+      "protagonist"
+    ]
+  },
+  {
+    "id": "guy_en",
+    "name": "Guy (Action Hero EN)",
+    "engine": "edge_tts",
+    "voice_code": "guy",
+    "lang": "en",
+    "tags": [
+      "male",
+      "action",
+      "dynamic"
+    ]
+  }
+]

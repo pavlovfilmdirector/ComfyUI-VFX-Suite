@@ -1,0 +1,302 @@
+{
+  "config": {},
+  "extra": {
+    "VHS_KeepIntermediate": true,
+    "VHS_MetadataImage": true,
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "ds": {
+      "offset": [
+        -89.99999999999989,
+        -415.85058593749994
+      ],
+      "scale": 1.0909090909090908
+    },
+    "frontendVersion": "1.48.7"
+  },
+  "groups": [],
+  "id": "b5b3b1f9-22b3-4a9e-b0a8-5cd8057821cc",
+  "last_link_id": 5,
+  "last_node_id": 5,
+  "links": [
+    [
+      4,
+      5,
+      0,
+      2,
+      0,
+      "VIDEO"
+    ],
+    [
+      5,
+      4,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "nodes": [
+    {
+      "flags": {},
+      "id": 2,
+      "inputs": [
+        {
+          "link": 4,
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO"
+        },
+        {
+          "link": null,
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMBO",
+          "widget": {
+            "name": "format"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "codec",
+          "name": "codec",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "codec"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 2,
+      "outputs": [
+        {
+          "links": null,
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO"
+        }
+      ],
+      "pos": [
+        1130,
+        680
+      ],
+      "properties": {},
+      "size": [
+        490,
+        126
+      ],
+      "type": "SaveVideo",
+      "widgets_values": [
+        "video/LTX-2.5_i2v",
+        "auto",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "codec": "auto",
+        "filename_prefix": "video/LTX-2.5_i2v",
+        "format": "auto"
+      }
+    },
+    {
+      "flags": {},
+      "id": 4,
+      "inputs": [
+        {
+          "link": null,
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "choose file to upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 0,
+      "outputs": [
+        {
+          "links": [
+            5
+          ],
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE"
+        },
+        {
+          "links": null,
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK"
+        }
+      ],
+      "pos": [
+        320,
+        690
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "size": [
+        320,
+        374
+      ],
+      "type": "LoadImage",
+      "widgets_values": [
+        "space_battle.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "space_battle.png",
+        "upload": "image"
+      }
+    },
+    {
+      "bgcolor": "#653",
+      "color": "#432",
+      "flags": {},
+      "id": 5,
+      "inputs": [
+        {
+          "link": 5,
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE"
+        },
+        {
+          "link": null,
+          "localized_name": "last_frame",
+          "name": "last_frame",
+          "shape": 7,
+          "type": "IMAGE"
+        },
+        {
+          "link": null,
+          "localized_name": "model",
+          "name": "model",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "model"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "model.duration",
+          "name": "model.duration",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.duration"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "model.resolution",
+          "name": "model.resolution",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.resolution"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "model.fps",
+          "name": "model.fps",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.fps"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "model.generate_audio",
+          "name": "model.generate_audio",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "model.generate_audio"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 1,
+      "outputs": [
+        {
+          "links": [
+            4
+          ],
+          "localized_name": "VIDEO",
+          "name": "VIDEO",
+          "type": "VIDEO"
+        }
+      ],
+      "pos": [
+        690,
+        690
+      ],
+      "properties": {
+        "Node name for S&R": "LtxApi25ImageToVideo"
+      },
+      "size": [
+        400,
+        286
+      ],
+      "type": "LtxApi25ImageToVideo",
+      "widgets_values": [
+        "LTX-2.5 (Fast)",
+        "8",
+        "1920x1080",
+        "25",
+        true,
+        "Use the provided start image as the first frame. EPIC WIDE SHOT: a line of warships exchanges heavy fire with an enemy fleet in high orbit, massive beams of light crossing between the formations, each hit blooming into a burst of fire on the hulls, debris drifting between the ships. The ships fire in sequence, one beam after another, hull lights flashing along the battle line. The camera drifts slowly along the formation, passing the firing ships, their cannons glowing white-hot between shots. Deep resonant beam hums, rolling detonations through the void, the low rumble of the ships, a sustained combat tone. The camera pulls back to show the full line of ships locked in battle against the enemy fleet. No text, no black frames.",
+        42,
+        "randomize"
+      ],
+      "widgets_values_named": {
+        "control_after_generate": "randomize",
+        "model": "LTX-2.5 (Fast)",
+        "model.duration": "8",
+        "model.fps": "25",
+        "model.generate_audio": true,
+        "model.resolution": "1920x1080",
+        "prompt": "Use the provided start image as the first frame. EPIC WIDE SHOT: a line of warships exchanges heavy fire with an enemy fleet in high orbit, massive beams of light crossing between the formations, each hit blooming into a burst of fire on the hulls, debris drifting between the ships. The ships fire in sequence, one beam after another, hull lights flashing along the battle line. The camera drifts slowly along the formation, passing the firing ships, their cannons glowing white-hot between shots. Deep resonant beam hums, rolling detonations through the void, the low rumble of the ships, a sustained combat tone. The camera pulls back to show the full line of ships locked in battle against the enemy fleet. No text, no black frames.",
+        "seed": 42
+      }
+    }
+  ],
+  "revision": 0,
+  "version": 0.4
+}

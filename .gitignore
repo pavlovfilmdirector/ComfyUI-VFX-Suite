@@ -1,0 +1,55 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+Thumbs.db
+*.tmp
+output_cache/
+
+# Local user data & third-party binaries (not part of the repo)
+projects/*/
+projects/projects_registry.json
+global_library/**/dataset_*/
+tools/DLSS-Enhancer/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# Machine-specific paths written by install.py
+keshiki_local.json
+install_log.txt
+
+# dubbing working data / models
+dubbing/input/
+dubbing/output/
+dubbing/temp/
+dubbing/models/
+dubbing/__pycache__/
+dubbing/nodes/__pycache__/
+
+# downloaded by install.py / local scratch
+tools/glomap/
+tools/glomap*.zip
+tools/colmap/
+keshiki_*_prompt.json
+_*.jpg
+_*.zip
+_*.txt
+_*.tgz
+web/standalone/*_v[0-9].png
+web/standalone/*_option_[0-9].png
+web/standalone/logo_v*.png
+web/standalone/stitch_reference_ui.html
+web/standalone/splash.html
+
+# local session outputs and unused logo drafts
+Claude outputs/
+web/standalone/favicon_*.png
+web/standalone/keshiki_favicon*.png
+web/standalone/keshiki_logo*.png
+web/standalone/keshiki_mark_*.png
+# internal work notes
+docs/STATUS_RU.md
+# third-party example workflows with someone else's local paths (not used by the studio)
+workflows/LTX-2.5/LTX-2.3_-_V2V_inpainting_*.json

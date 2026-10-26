@@ -1,0 +1,75 @@
+# ==============================================================================
+# Video Dubbing Studio - Clean Requirements
+# ==============================================================================
+# This list contains the top-level dependencies required to run the
+# standalone Video Dubbing Studio on a fresh Python environment.
+# Note: For PyTorch, you may want to install the specific CUDA version for your GPU.
+# Example: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# --- Core ML & PyTorch ---
+torch
+torchaudio
+torchvision
+pytorch-lightning
+
+# --- Audio & Speech Processing ---
+openai-whisper
+demucs
+pyannote.audio==3.4.0
+noisereduce
+audiostretchy
+pydub
+soundfile
+ffmpeg-python
+
+# --- Text & Language ---
+ruaccent
+jieba
+rjieba
+deep-translator
+num2words
+
+# --- General Utilities ---
+numpy
+tqdm
+urllib3
+requests
+pillow
+easyocr
+colorlog
+colorama
+
+# --- UI Application ---
+PyQt6
+PyQt6-Qt6
+qdarkstyle
+
+# --- TTS & Synthesis (F5-TTS / VibeVoice core dependencies) ---
+transformers
+accelerate
+safetensors
+vocos
+ema-pytorch
+wandb
+google-api-core
+google-auth
+google-cloud-storage
+boto3
+
+# ==============================================================================
+# --- Custom ComfyUI Nodes (TTS Wrappers) ---
+# The following must be installed via Git to acquire the specific wrapper logic:
+#
+# pip install git+https://github.com/niknah/ComfyUI-F5-TTS.git
+# pip install git+https://github.com/Enemyx-net/VibeVoice-ComfyUI.git
+#
+# IMPORTANT: Since this studio runs standalone without the full ComfyUI core,
+# you must mock the `comfy` module in your site-packages for these wrappers to work.
+# Create a folder `comfy` in `site-packages` with an `__init__.py` containing:
+# 
+# import logging
+# from . import model_management, utils
+# logger = logging.getLogger("comfy_mock")
+#
+# And create `model_management.py` and `utils.py` with minimal mock classes.
+# ==============================================================================

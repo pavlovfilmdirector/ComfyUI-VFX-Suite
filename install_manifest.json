@@ -1,0 +1,170 @@
+{
+  "node_packs": [
+    {
+      "dir": "ComfyUI-LTXVideo",
+      "git": "https://github.com/Lightricks/ComfyUI-LTXVideo",
+      "for": "LTX-2.5 IC-LoRA video generation"
+    },
+    {
+      "dir": "comfyui_controlnet_aux",
+      "git": "https://github.com/Fannovel16/comfyui_controlnet_aux",
+      "for": "DWPose skeleton, Canny"
+    },
+    {
+      "dir": "ComfyUI-DepthAnythingV2",
+      "git": "https://github.com/kijai/ComfyUI-DepthAnythingV2",
+      "for": "depth maps"
+    },
+    {
+      "dir": "ComfyUI-VideoHelperSuite",
+      "git": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite",
+      "for": "image sequences / video I/O"
+    },
+    {
+      "dir": "ComfyUI-segment-anything-2",
+      "git": "https://github.com/kijai/ComfyUI-segment-anything-2",
+      "for": "SAM2 object masks"
+    },
+    {
+      "dir": "ComfyUI-CorridorKey",
+      "git": "https://github.com/SeanBRVFX/ComfyUI-CorridorKey",
+      "for": "CorridorKey clean mattes (own non-commercial license)"
+    }
+  ],
+  "tools_windows": [
+    {
+      "name": "COLMAP 3.13.0 (CUDA) - features + matching for camera tracking",
+      "url": "https://github.com/colmap/colmap/releases/download/3.13.0/colmap-x64-windows-cuda.zip",
+      "size_mb": 258,
+      "dest": "tools/colmap",
+      "exe": "colmap.exe",
+      "which": "colmap"
+    },
+    {
+      "name": "GLOMAP 1.2.0 (CUDA) - global SfM solver, built against COLMAP 3.13",
+      "url": "https://github.com/colmap/glomap/releases/download/1.2.0/glomap-x64-windows-cuda.zip",
+      "size_mb": 73,
+      "dest": "tools/glomap",
+      "exe": "glomap.exe",
+      "which": "glomap"
+    }
+  ],
+  "models": [
+    {
+      "group": "core",
+      "file": "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "dir": "diffusion_models/ltx-2.5",
+      "size_gb": 21.5,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "ltx-2.5-video-vae-bf16.safetensors",
+      "dir": "vae/LTX-2.5",
+      "size_gb": 1.5,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "ltx-2.5-audio-vae-bf16.safetensors",
+      "dir": "vae/LTX-2.5",
+      "size_gb": 0.4,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/vae/ltx-2.5-audio-vae-bf16.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "dir": "text_encoders",
+      "size_gb": 15.4,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+      "dir": "loras/LTX-2.5",
+      "size_gb": 1.3,
+      "page": "https://huggingface.co/collections/Lightricks/ltx-25"
+    },
+    {
+      "group": "iclora",
+      "file": "ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+      "dir": "loras/LTX-2.5",
+      "size_gb": 1.3,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render/resolve/main/ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors"
+    },
+    {
+      "group": "iclora",
+      "file": "ltx-2.5-22b-ic-lora-refine-details-1.0.safetensors",
+      "dir": "loras/LTX-2.5",
+      "size_gb": 1.3,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Refine-Details/resolve/main/ltx-2.5-22b-ic-lora-refine-details-1.0.safetensors"
+    },
+    {
+      "group": "iclora",
+      "file": "ltx-2.5-22b-ic-lora-day-to-night-0.9.safetensors",
+      "dir": "loras/LTX-2.5",
+      "size_gb": 0.3,
+      "url": "https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Day-To-Night/resolve/main/ltx-2.5-22b-ic-lora-day-to-night-0.9.safetensors"
+    },
+    {
+      "group": "iclora",
+      "file": "(other LTX-2.5 IC-LoRAs: clean-plate, ingredients, colorization, restore, ...)",
+      "dir": "loras/LTX-2.5",
+      "page": "https://huggingface.co/collections/Lightricks/ltx-25"
+    },
+    {
+      "group": "image",
+      "file": "flux3-image-klein-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "size_gb": 5.8,
+      "url": "https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/resolve/main/diffusion_models/flux3-image-klein-int8-convrot.safetensors"
+    },
+    {
+      "group": "image",
+      "file": "qwen3vl_4b_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "size_gb": 4.9,
+      "url": "https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/resolve/main/text_encoders/qwen3vl_4b_int8_convrot.safetensors"
+    },
+    {
+      "group": "image",
+      "file": "flux2-vae.safetensors",
+      "dir": "vae",
+      "size_gb": 0.3,
+      "url": "https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/resolve/main/vae/flux2-vae.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "sam2_hiera_base_plus.safetensors",
+      "dir": "sam2",
+      "size_gb": 0.3,
+      "url": "https://huggingface.co/Kijai/sam2-safetensors/resolve/main/sam2_hiera_base_plus.safetensors"
+    },
+    {
+      "group": "core",
+      "file": "CorridorKey_v1.0.pth",
+      "dir": "@custom_nodes/ComfyUI-CorridorKey/models",
+      "size_gb": 0.4,
+      "any_pth": true,
+      "url": "https://huggingface.co/nikopueringer/CorridorKey_v1.0/resolve/main/CorridorKey_v1.0.pth"
+    },
+    {
+      "group": "auto",
+      "file": "depth_anything_v2_vitl_fp16.safetensors",
+      "dir": "depthanything",
+      "note": "downloaded automatically on first use"
+    },
+    {
+      "group": "auto",
+      "file": "dw-ll_ucoco_384_bs5.torchscript.pt / yolox_l.torchscript.pt",
+      "dir": "(controlnet_aux)",
+      "note": "downloaded automatically on first use"
+    },
+    {
+      "group": "auto",
+      "file": "yolov8n-seg.pt",
+      "dir": "(ultralytics)",
+      "note": "downloaded automatically on first use"
+    }
+  ]
+}

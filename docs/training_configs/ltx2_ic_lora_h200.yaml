@@ -1,0 +1,78 @@
+# =============================================================================
+# IC-LoRA Camera Control Training Configuration for LTX 2.3 — RunPod H200 141GB
+# =============================================================================
+# Based on the 24 GB config (ltx2_camcontrol_ic_lora.yaml), adapted for H200:
+#   • quantization:        int8-quanto → null    (141GB VRAM, no quantization needed)
+#   • text encoder 8bit:   true → false          (full-precision Gemma on H200)
+#   • gradient checkpointing: true → false       (~30% speedup, fits in 141GB)
+#   • batch_size:          1 → 2                 (modest bump; keep grad_accum for stability)
+#   • num_dataloader_workers: 4 → 8             (more CPU cores on RunPod)
+#   • paths:               /mnt/b/... → /workspace/...  (RunPod local disk)
+# All other hyperparameters as in the 24 GB config.
+# =============================================================================
+
+model:
+  model_path: "/workspace/models/ltx-2.3-22b-dev.safetensors"
+  text_encoder_path: "/workspace/models/gemma-3-12b-it-qat-q4_0-unquantized"
+  training_mode: "lora"
+  load_checkpoint: null
+
+lora:
+  rank: 64
+  alpha: 64
+  dropout: 0.0
+  target_modules:
+    - "to_k"
+    - "to_q"
+    - "to_v"
+    - "to_out.0"
+
+training_strategy:
+  name: "video_to_video"
+  first_frame_conditioning_p: 0.5
+  reference_latents_dir: "reference_latents"
+
+optimization:
+  learning_rate: 1e-4
+  steps: 2000                          # 5-hour budget: ~2.5–3.5h training on H200
+  batch_size: 4                        # H200 141GB — 4 samples per micro-batch
+  gradient_accumulation_steps: 1       # no accumulation needed; direct 4-sample steps
+  max_grad_norm: 1.0
+  optimizer_type: "adamw8bit"
+  scheduler_type: "cosine"
+  enable_gradient_checkpointing: false # H200 has enough VRAM — ~30% speedup
+
+acceleration:
+  mixed_precision_mode: "bf16"
+  quantization: null                   # no int8-quanto needed for 141GB
+  load_text_encoder_in_8bit: false     # full-precision Gemma on H200
+
+data:
+  preprocessed_data_root: "/workspace/dataset_ic-lora/.precomputed"
+  num_dataloader_workers: 8
+
+validation:
+  prompts:
+    - "A smooth camera pan to the right, camctrl, cinematic lighting."
+  negative_prompt: "worst quality, inconsistent motion, blurry, jittery, distorted"
+  video_dims: [960, 544, 49]
+  frame_rate: 25.0
+  seed: 42
+  inference_steps: 30
+  interval: 500
+  videos_per_prompt: 1
+  guidance_scale: 3.0
+  stg_scale: 1.0
+  stg_blocks: [29]
+  stg_mode: "stg_av"
+  reference_videos:
+    - "/workspace/dataset_ic-lora/000_ref.mp4"
+  skip_initial_validation: true
+
+checkpoints:
+  interval: 500
+  keep_last_n: 1
+  precision: "bfloat16"
+
+output_dir: "/workspace/models/camcontrol_iclora"
+seed: 42

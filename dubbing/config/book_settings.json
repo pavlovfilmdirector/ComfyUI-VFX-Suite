@@ -1,0 +1,32 @@
+{
+  "text": "",
+  "output_dir": "",
+  "speaker_ref": "",
+  "ref_start_time": 0.0,
+  "ref_end_time": 999999.0,
+  "tts_general": {
+    "engine": "F5-TTS",
+    "ref_text": ""
+  },
+  "f5_tts": {
+    "seed": 985,
+    "model": "model://Misha.pt",
+    "vocoder": "auto",
+    "speed": 1.0,
+    "model_type": "F5TTS_v1_Base"
+  },
+  "qwen": {
+    "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+  },
+  "vibevoice": {
+    "model": "VibeVoice-1.5B",
+    "seed": 42
+  },
+  "text_processing": {
+    "add_stress": true,
+    "fix_ortho": true,
+    "remove_punct": false,
+    "to_lowercase": true
+  },
+  "base_name": "Narration"
+}

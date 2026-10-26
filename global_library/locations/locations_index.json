@@ -1,0 +1,22 @@
+[
+  {
+    "id": "loc_neon_city",
+    "name": "Neon Megacity Rooftop",
+    "trigger_word": "loc_neon_city_vfx",
+    "lora_flux": "flux_loc_neon_city_v1.safetensors",
+    "lora_ltx": "ltx25_loc_neon_city_v1.safetensors",
+    "status": "ready",
+    "preview_url": "",
+    "description": "Rain-slicked cyberpunk high-rise rooftop with towering neon holograms"
+  },
+  {
+    "id": "loc_desert_citadel",
+    "name": "Desert Oasis Citadel",
+    "trigger_word": "loc_desert_citadel_vfx",
+    "lora_flux": "flux_loc_desert_citadel_v1.safetensors",
+    "lora_ltx": "ltx25_loc_desert_citadel_v1.safetensors",
+    "status": "ready",
+    "preview_url": "",
+    "description": "Ancient sandstone fortress amidst vast golden dunes, sunset lighting"
+  }
+]

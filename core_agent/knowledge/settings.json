@@ -1,0 +1,16 @@
+{
+  "cache": {
+    "default_ttl_seconds": 300,
+    "metric_window_minutes": 30,
+    "max_entries": 1500,
+    "top_keys_limit": 20,
+    "flush_scope": "all",
+    "prewarm_batch_size": 512,
+    "eviction_policy": "lru-ttl-hybrid"
+  },
+  "audit": {
+    "log_level": "info",
+    "retention_days": 30,
+    "sample_rate": 1.0
+  }
+}

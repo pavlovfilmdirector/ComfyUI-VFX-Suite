@@ -1,0 +1,24 @@
+[
+  {
+    "id": "char_cyber_stalker",
+    "name": "Кael (Cyberpunk Stalker)",
+    "trigger_word": "kael_stalker_vfx",
+    "lora_flux": "flux_kael_stalker_v1.safetensors",
+    "lora_ltx": "ltx25_kael_stalker_v1.safetensors",
+    "status": "training",
+    "preview_url": "",
+    "description": "Главный герой в потертом неоновом плаще, шрам на левой брови",
+    "dataset_count": 1,
+    "last_trained": 1792405903.922457
+  },
+  {
+    "id": "char_sci_fi_pilot",
+    "name": "Ева (Пилот Космофлота)",
+    "trigger_word": "eva_pilot_vfx",
+    "lora_flux": "flux_eva_pilot_v1.safetensors",
+    "lora_ltx": "ltx25_eva_pilot_v1.safetensors",
+    "status": "ready",
+    "preview_url": "",
+    "description": "Девушка-пилот в серебристом скафандре, короткая стрижка"
+  }
+]

@@ -1,0 +1,36 @@
+{
+  "load_audio": {
+    "file_path": "",
+    "start_time": 0,
+    "end_time": 999999
+  },
+  "whisper": {
+    "model": "large-v3-turbo",
+    "language": "ru",
+    "target_language": "Russian"
+  },
+  "tts_general": {
+    "engine": "F5-TTS",
+    "speaker_ref": "",
+    "ref_text": "",
+    "ref_start_time": 0.0,
+    "ref_end_time": 999999.0
+  },
+  "text_input": {
+    "text": ""
+  },
+  "f5_tts": {
+    "seed": 985,
+    "model": "auto",
+    "vocoder": "auto",
+    "speed": 1.0,
+    "model_type": "F5TTS_v1_Base"
+  },
+  "vibevoice": {
+    "model": "VibeVoice-1.5B",
+    "seed": 42
+  },
+  "qwen": {
+    "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+  }
+}
