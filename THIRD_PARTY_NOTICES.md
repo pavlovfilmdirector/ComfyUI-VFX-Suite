@@ -24,6 +24,7 @@ Check each upstream page for the current terms before commercial use.
 | ComfyUI-VideoHelperSuite | github.com/Kosinkadink/ComfyUI-VideoHelperSuite | see upstream |
 | ComfyUI-segment-anything-2 | github.com/kijai/ComfyUI-segment-anything-2 | see upstream |
 | ComfyUI-CorridorKey | github.com/SeanBRVFX/ComfyUI-CorridorKey | follows CorridorKey's own terms (below) |
+| Relight prompt formula | adapted from ComfyUI-qwenmultianglelight (aiwood, wallen) | MIT |
 | Python packages | `requirements.txt` | each package's own license (e.g. Ultralytics is AGPL-3.0) |
 
 ## Models (downloaded by the user)

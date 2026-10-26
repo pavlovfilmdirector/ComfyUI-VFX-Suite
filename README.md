@@ -12,10 +12,10 @@ No cloud APIs are used. Every model runs on your own GPU and is tuned for 24 GB 
 
 | Area | What you get |
 |---|---|
-| **2D: video** | Text masks with SAM 3.1 (`person`, `red car`), click-and-track SAM2, YOLO, CorridorKey, LTX Alpha · depth (Depth Anything V2 / 3, Apple Depth Pro) · DWPose · Canny · lens undistortion · camera tracking (COLMAP + GLOMAP) |
+| **Video** | Text masks with SAM 3.1 (`person`, `red car`), click-and-track SAM2, YOLO, CorridorKey, LTX Alpha · depth (Depth Anything V2 / 3, Apple Depth Pro) · DWPose · Canny · lens undistortion · camera tracking (COLMAP + GLOMAP) |
 | **Generation** | LTX-2.5 22B with IC-LoRAs: union-control (pose / depth / edges), layout-to-render, clean-plate, refine-details, restore, upscaler and more. Supports a first-frame guide, two stacked IC-LoRAs, one pass up to 97 frames, and longer clips in overlapping chunks with a smooth cross-fade |
-| **1D: images** | FLUX.3 Klein: text-to-image, editing with masks and references, pose transfer ("scene + skeleton + character" recipe). Optional Qwen-Image-Edit-2511 |
-| **3D** | Characters with FBX / Mixamo animation (auto retarget) or a built-in mannequin, primitives for set blocking, camera moves, tracked cameras. Pose, clay and environment renders are sent straight to the 2D clip as control layers |
+| **Image** | FLUX.3 Klein: text-to-image, editing with masks and references, pose transfer ("scene + skeleton + character" recipe). Optional Qwen-Image-Edit-2511 |
+| **3D** | Characters with FBX / Mixamo animation (auto retarget) or a built-in mannequin, primitives for set blocking, camera moves, tracked cameras. Pose, clay and environment renders are sent straight to the Video clip as control layers |
 | **Composite** | A subject from one source over another background, with edge erode / feather, colour harmonization and light wrap, then an optional LTX refine pass |
 | **Voice** | Video dubbing: Whisper → local LLM translation (Ollama) → F5-TTS / VibeVoice / Qwen3-TTS voice clone → timing and mix. Also voice cloning and long-text narration |
 | **3D assets** | TRELLIS.2 image → textured GLB, and texturing an existing mesh |
