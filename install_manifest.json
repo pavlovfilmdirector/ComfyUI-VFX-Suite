@@ -149,6 +149,14 @@
       "url": "https://huggingface.co/nikopueringer/CorridorKey_v1.0/resolve/main/CorridorKey_v1.0.pth"
     },
     {
+      "group": "maps",
+      "file": "moge_2_vitl_normal_fp16.safetensors",
+      "dir": "geometry_estimation",
+      "size_gb": 0.66,
+      "url": "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+      "note": "normal maps (MoGe-2, MIT)"
+    },
+    {
       "group": "auto",
       "file": "depth_anything_v2_vitl_fp16.safetensors",
       "dir": "depthanything",

@@ -64,6 +64,17 @@ try:
 except Exception as e:
     print(f"[ComfyUI-VFX-Suite] Error loading VFXCompositor: {e}")
 
+# 5. Loaders (text encoders with an explicit dtype - ACE-Step's LM crashes in fp16)
+try:
+    try:
+        from .vfx_nodes import loader_nodes as _ln
+    except (ImportError, ValueError):
+        from vfx_nodes import loader_nodes as _ln
+    NODE_CLASS_MAPPINGS.update(_ln.NODE_CLASS_MAPPINGS)
+    NODE_DISPLAY_NAME_MAPPINGS.update(_ln.NODE_DISPLAY_NAME_MAPPINGS)
+except Exception as e:
+    print(f"[ComfyUI-VFX-Suite] Error loading loader nodes: {e}")
+
 # Register Server Endpoints for 3D Viewport
 try:
     try:

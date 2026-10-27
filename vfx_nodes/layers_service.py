@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover
     from project_manager import get_project_dir
 
-LAYER_TYPES = ("paint", "mask", "depth", "canny", "pose")
+LAYER_TYPES = ("paint", "mask", "depth", "normal", "canny", "pose")
 _ID_RE = re.compile(r"[^A-Za-z0-9_\-]")
 _MAX_LAYER_BYTES = 64 * 1024 * 1024
 

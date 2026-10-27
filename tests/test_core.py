@@ -190,15 +190,10 @@ def _routes():
     return pats
 
 
-# Front-end code paths whose buttons are never rendered (kept out of the UI on purpose).
-DEAD_URLS = {"/vfx/enhance/dlss"}
-
-
-def test_dead_frontend_features_stay_hidden():
-    src = "".join(open(j, encoding="utf-8").read() for j in JS)
-    html = open(os.path.join(ROOT, "web", "standalone", "index.html"), encoding="utf-8").read()
-    for btn in ("btn-1d-dlss-enhance", "btn-2d-dlss-frame", "btn-comp-canvas-dlss", "btn-comp-dlss-2x"):
-        assert f'id="{btn}"' not in src + html, f"{btn} is rendered but /vfx/enhance/dlss has no backend"
+def test_no_dlss_leftovers():
+    """The fake "DLSS 5" upscaler (no backend, not open weights) was removed for good."""
+    for j in JS:
+        assert "dlss" not in open(j, encoding="utf-8").read().lower(), j
 
 
 def test_every_frontend_vfx_url_has_a_route():
@@ -211,8 +206,6 @@ def test_every_frontend_vfx_url_has_a_route():
             url = re.sub(r"\$\{[^}]*\}", "X", url)
             if url.endswith("/") or "X" in url.split("/")[-1] and url.split("/")[-1] != "X":
                 continue  # prefix built by concatenation
-            if url in DEAD_URLS:
-                continue
             if url.endswith("/X") and any(p.pattern.startswith("^" + re.escape(url[:-1])) for p in pats):
                 continue  # /prefix/${endpoint}: some route lives under the prefix
             if not any(p.match(url) for p in pats):

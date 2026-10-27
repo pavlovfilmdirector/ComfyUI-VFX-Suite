@@ -80,6 +80,8 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
     "music": {"title": "Сгенерировать музыку (ACE-Step 1.5)", "params": {"tags": "стиль по-английски: жанр, настроение, инструменты, голос",
               "lyrics": "текст песни со структурой [verse]/[chorus] или пусто (без слов)", "duration": "секунды (10-240)", "bpm": "темп"}, "heavy": True},
     "voice": {"title": "Закадровый голос: открыть редактор с текстом", "params": {"text": "текст для озвучки (абзацы через пустую строку)"}, "heavy": False},
+    "run_tool": {"title": "Запустить инструмент пользователя («Мои инструменты»)", "params": {
+        "tool_id": "id инструмента из списка ниже", "values": "{id входа: url медиа проекта, id параметра: значение}"}, "heavy": True},
     "show_workflow": {"title": "Показать граф нод ComfyUI для процесса", "params": {"process_id": "storyboard | video_gen"}, "heavy": False},
 }
 
@@ -264,7 +266,29 @@ def action_catalogue() -> str:
     for aid, a in ACTIONS.items():
         ps = ", ".join(f"{k}: {v}" for k, v in a["params"].items())
         lines.append(f"- {aid}: {a['title']}{' [тяжёлое — нужно подтверждение]' if a.get('heavy') else ''}. Параметры: {ps}")
+    tools = user_tools()
+    if tools:
+        lines.append("Инструменты пользователя (для run_tool):")
+        for t in tools:
+            ins = ", ".join(f"{i['id']} ({i['kind']}: {i['label']})" for i in t.get("inputs", []))
+            prs = ", ".join(f"{p['id']} ({p['label']}, по умолчанию {str(p.get('default'))[:40]})" for p in t.get("params", []))
+            lines.append(f"  - {t['id']}: {t.get('name')} — {t.get('description') or 'без описания'}. Входы: {ins or 'нет'}. Параметры: {prs or 'нет'}")
     return "\n".join(lines)
+
+
+def user_tools() -> List[Dict[str, Any]]:
+    """Passports of the user's own workflows (user_tools/<id>/tool.json), read straight from disk."""
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_tools")
+    out = []
+    if os.path.isdir(root):
+        for d in sorted(os.listdir(root)):
+            p = os.path.join(root, d, "tool.json")
+            try:
+                with open(p, encoding="utf-8") as f:
+                    out.append(json.load(f))
+            except (OSError, ValueError):
+                continue
+    return out
 
 
 OUTPUT_RULES = """
@@ -572,6 +596,8 @@ def to_studio_actions(action: str, params: Dict[str, Any], studio_ctx: Dict[str,
                                                      "duration": params.get("duration") or 60, "bpm": params.get("bpm") or 100}})
     elif action == "voice":
         acts.append({"type": "open_voiceover", "text": params.get("text", "")})
+    elif action == "run_tool":
+        acts.append({"type": "run_user_tool", "tool_id": str(params.get("tool_id") or ""), "values": params.get("values") or {}})
     elif action == "show_workflow":
         acts.append({"type": "visualize_workflow", "process_id": params.get("process_id") or "storyboard", "workflow_name": "FLUX.3_Klein_Text2Image.json"})
     return acts, extra

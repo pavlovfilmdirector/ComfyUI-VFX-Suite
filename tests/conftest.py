@@ -67,7 +67,7 @@ def comfy_dirs(tmp_path):
 
 
 SERVICES = ["project_manager", "process_runner", "local_config", "video_layers_service", "image_generate_service",
-            "dubbing_service", "voice_board_service", "narration_service", "music_service", "layers_service"]
+            "dubbing_service", "voice_board_service", "narration_service", "music_service", "layers_service", "user_tools_service"]
 
 
 def load(name):
