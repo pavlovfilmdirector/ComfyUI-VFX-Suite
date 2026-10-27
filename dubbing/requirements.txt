@@ -44,7 +44,7 @@ PyQt6
 PyQt6-Qt6
 qdarkstyle
 
-# --- TTS & Synthesis (F5-TTS / VibeVoice core dependencies) ---
+# --- TTS & Synthesis (F5-TTS core dependencies) ---
 transformers
 accelerate
 safetensors
@@ -61,7 +61,7 @@ boto3
 # The following must be installed via Git to acquire the specific wrapper logic:
 #
 # pip install git+https://github.com/niknah/ComfyUI-F5-TTS.git
-# pip install git+https://github.com/Enemyx-net/VibeVoice-ComfyUI.git
+# (VibeVoice is not used: Microsoft withdrew the model)
 #
 # IMPORTANT: Since this studio runs standalone without the full ComfyUI core,
 # you must mock the `comfy` module in your site-packages for these wrappers to work.

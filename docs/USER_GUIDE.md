@@ -23,6 +23,10 @@ Layers, masks, poses, FLUX.3 Klein generation: from text, editing by masks and r
 - **collage → blend in**: the Collage button (yellow "image +" icon) pastes a project image as its own layer; move it with V, trim it with the eraser; Generate blends it in (light, shadows, perspective).
 Each layer can carry a short note.
 
+**Layer transform.** Move tool (V): the active layer gets a box. Corners scale (free; Shift = proportional), edge handles stretch one axis, the yellow handle on top rotates (Shift = 15° steps), inside the box moves. Scale and rotation work around the box centre and are always rendered from the original pixels, so the layer does not get blurry.
+
+**Selection transform.** Make a selection (lasso, rectangle, ellipse) and press V: the box wraps the selection and the same handles move, rotate and scale the selected part of the active layer together with the selection. If the active layer is empty inside the selection, a piece of the picture itself is lifted onto a new "Selection copy" layer, handy for collages from parts of the frame.
+
 ### Video
 The clip and its layers: masks, depth, pose, generated clips, composites. Layers can be hidden, reordered, faded, and masks viewed in black and white.
 
@@ -94,13 +98,27 @@ A subject cut by its mask from one source over another background:
 5. **Generate** → layout-to-render on the environment + second control union-control on the pose (influence 0.8).
 
 ### Dub a video
-**Voice** tab → "Dub a video": the video file (the Video button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS / VibeVoice / Qwen3-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.
+**Voice** tab → "Dub a video": the video file (the Video button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.
 
 ### Join clips (editing without generation)
 In the Video view file strip press **Join**: click the clips in play order, set the dissolve (overlap frames) and press Join. Each clip's end fades into the next one's start. The result is a new project video. Picture only for now, no sound.
 
 ### Music (ACE-Step 1.5)
-**Music** tab: style (genre, mood, instruments, voice - click the ready tags), lyrics with structure ([verse], [chorus]… - the buttons insert a tag; empty = instrumental), length, BPM, key, meter, lyrics language, number of variants → Generate. Tracks collect in the project library (`music` folder): play them, add them to the project audio or re-run with the same settings. Models (~15 GB): `install.bat --download-models music`.
+**Music** tab: style (genre, mood, instruments, voice - click the ready tags), lyrics with structure ([verse], [chorus]… - the buttons insert a tag; empty = instrumental), length, BPM, key, meter, lyrics language, number of variants → Generate. Tracks collect in the project library (`music` folder): play them, add them to the project audio or re-run with the same settings. Models (~15 GB): `.\install.bat --download-models music`.
+
+### Voice board (voice + lip-sync)
+**Voice** tab → **Voice board**: a free node canvas, like ComfyUI. The top buttons add nodes: **Picture**, **Clip** (from the project), **Audio** (from the project, a file or a microphone take), **Text**. Drag nodes by the header; wheel = zoom, drag the background = pan, ⤢ = show all. To connect, drag from a node's right dot to another node; click a wire to remove it.
+- **Text → Picture/Clip**: a line of speech with a start (when it sounds) and a length (the voice is stretched or squeezed to fit). Voice = synthesise it (F5-TTS).
+- **Audio → Text**: the voice for that line. Audio roles:
+  - *voice sample*: the clone copies timbre and delivery (intonation, pace, emotion) of a fragment up to 10 s (from–to, ▶); it needs the fragment's exact words: type them or press Recognise;
+  - *draft take*: your own reading of the line; it gives the timing and, when the text is empty, the words; without a sample the voice is cloned from the draft itself.
+- **Audio → Picture/Clip**: the default sample for all lines, or *ready speech* (used as is, with its own start).
+- **Picture** → Lip-sync video (LTX-2.5 audio-to-video, the lips follow the voice, the picture is the first frame, up to 20 s).
+- **Clip** → Lay the voices onto the clip (its own sound can stay, quieter), or **DubIt** Re-voice + lips (LTX-2.3: the speaker says the texts' words with new lips and voice; one speaker, up to 8 s, words in the target language about as long as the original).
+"To project videos" adds the result to the files.
+
+### Voice-over (long text)
+**Voice** tab → **Voice-over**. Paste the text; separate paragraphs with an empty line. On the right: the voice sample (project or file), a fragment up to 10 s, its exact words (Recognise), language, pause between paragraphs, speed. **Prepare text**: ё, numbers as words and stress marks (Russian); stress can be fixed by hand. **Generate** voices only new and changed paragraphs, the rest come from the cache, and everything is joined into one track. Don't like a paragraph? Edit it and Generate again, or press ↻ on it for a new take of just that one. The track goes to the project audio with one button.
 
 ### Clone a voice / narrate a text
 **Voice** tab → "Clone a voice" (sample + text) or "Narrate text" (long text, Russian stress marks).

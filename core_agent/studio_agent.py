@@ -58,7 +58,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
         "heavy": False,
     },
     "dubbing": {
-        "title": "Дубляж / клон голоса / озвучка текста (Whisper + F5-TTS / VibeVoice / Qwen3-TTS, отдельное окружение)",
+        "title": "Дубляж / клон голоса / озвучка текста (Whisper + F5-TTS, отдельное окружение)",
         "params": {"mode": "dub | voice | narration",
                    "config": "dub: {player:{video_path,target_lang}, translation:{source_language,target_language,translator:'ollama'}}; "
                              "voice: {tts_general:{engine:'F5-TTS',speaker_ref,target_text}}; narration: {text, speaker_ref}",
@@ -77,8 +77,9 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
         "params": {"passes": "список: tracking_glomap, mask_sam2_rough, mask_corridor_key, mask_ltx_alpha_lora, pass_depth, pass_canny, pass_pose"},
         "heavy": False,
     },
-    "music": {"title": "Сгенерировать музыку (ACE-Step)", "params": {"prompt": "описание музыки по-английски"}, "heavy": True},
-    "voice": {"title": "Озвучка текста (TTS)", "params": {"text": "текст реплики", "voice": "голос"}, "heavy": False},
+    "music": {"title": "Сгенерировать музыку (ACE-Step 1.5)", "params": {"tags": "стиль по-английски: жанр, настроение, инструменты, голос",
+              "lyrics": "текст песни со структурой [verse]/[chorus] или пусто (без слов)", "duration": "секунды (10-240)", "bpm": "темп"}, "heavy": True},
+    "voice": {"title": "Закадровый голос: открыть редактор с текстом", "params": {"text": "текст для озвучки (абзацы через пустую строку)"}, "heavy": False},
     "show_workflow": {"title": "Показать граф нод ComfyUI для процесса", "params": {"process_id": "storyboard | video_gen"}, "heavy": False},
 }
 
@@ -153,9 +154,10 @@ HELP_WORDS = ("как ", "как?", "почему", "что делать", "не
               "объясни", "что такое", "зачем", "how ", "why", "help", "guide", "what is", "doesn't work", "не выходит", "ошибк")
 
 
-def _guide_sections() -> List[Tuple[str, str]]:
-    """(heading, text) for every ## / ### section of the user guide."""
-    for path in GUIDE_PATHS:
+def _guide_sections(lang: str = "ru") -> List[Tuple[str, str]]:
+    """(heading, text) for every ## / ### section of the user guide in that language (ru / en)."""
+    paths = GUIDE_PATHS if lang == "ru" else list(reversed(GUIDE_PATHS))
+    for path in paths:
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
@@ -179,7 +181,8 @@ def guide_snippets(question: str, k: int = 3, max_chars: int = 6000) -> str:
     stop = {"как", "что", "поче", "заче", "сдел", "можн", "нужн", "чтоб", "мне", "теб", "тобо", "это", "для", "или",
             "how", "what", "why", "can", "the", "and", "with", "make", "into", "пожа", "плиз", "есть", "был", "буде", "свою", "свой"}
     words = {w[:4] for w in re.findall(r"[\wё]{3,}", (question or "").lower())} - stop
-    secs = [(h, b) for h, b in _guide_sections() if len(b) >= 160]   # bare headings carry no instructions
+    lang = "ru" if re.search(r"[а-яё]", (question or "").lower()) else "en"
+    secs = [(h, b) for h, b in _guide_sections(lang) if len(b) >= 160]   # bare headings carry no instructions
     if not words or not secs:
         return ""
     stems = [{t[:4] for t in re.findall(r"[\wё]{3,}", (h + " " + b).lower())} for h, b in secs]
@@ -565,9 +568,10 @@ def to_studio_actions(action: str, params: Dict[str, Any], studio_ctx: Dict[str,
             passes = [x.strip() for x in passes.split(",")]
         acts.append({"type": "configure_deconstruction", "passes": {p: True for p in passes}})
     elif action == "music":
-        acts.append({"type": "generate_music", "engine": "ace_step", "prompt": params.get("prompt", "")})
+        acts.append({"type": "music_job", "params": {"tags": params.get("tags") or params.get("prompt", ""), "lyrics": params.get("lyrics", ""),
+                                                     "duration": params.get("duration") or 60, "bpm": params.get("bpm") or 100}})
     elif action == "voice":
-        acts.append({"type": "prepare_tts", "text": params.get("text", ""), "voice": params.get("voice") or "dmitry"})
+        acts.append({"type": "open_voiceover", "text": params.get("text", "")})
     elif action == "show_workflow":
         acts.append({"type": "visualize_workflow", "process_id": params.get("process_id") or "storyboard", "workflow_name": "FLUX.3_Klein_Text2Image.json"})
     return acts, extra

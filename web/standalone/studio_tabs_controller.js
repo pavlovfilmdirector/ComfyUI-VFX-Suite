@@ -461,6 +461,477 @@ export function initStudioArchitecture(ctx) {
     }
 
 
+
+
+    // Voice-over editor: long text in paragraphs (empty line = new paragraph). Generate voices only the paragraphs
+    // that changed (cache by text + voice settings); edit a paragraph, generate again; all joined into one track.
+    async function openNarrationEditor() {
+        const pid = currentProject?.id;
+        if (!pid) { showToastNotification(uiText("Open a project first", "Сначала откройте проект"), true); return; }
+        document.getElementById("vfx-narration")?.remove();
+        const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const fld = "background: #0f0f11; color: #e4e4e7; border: 1px solid #333; border-radius: 4px; font-size: 10.5px; padding: 3px 5px;";
+        const api = `/vfx/narration/${encodeURIComponent(pid)}`;
+        let doc = { text: "", parts: [], language: "ru", pause: 0.35, seed: 985, speed: 1 };
+        try { const d = await fetch(api).then(r => r.json()); if (!d.error) doc = d; } catch (_) {}
+        const ov = document.createElement("div");
+        ov.id = "vfx-narration"; ov.dataset.vfxModal = "1";
+        ov.style.cssText = "position: fixed; inset: 0; z-index: 100000; background: #0a0a0d; display: flex; flex-direction: column; color: #e4e4e7; font-size: 11px;";
+        ["keydown", "wheel"].forEach(ev => ov.addEventListener(ev, e => e.stopPropagation()));
+        document.body.appendChild(ov);
+        let saveT = null;
+        const fields = () => ({ text: doc.text, ref_audio: doc.ref_audio, ref_title: doc.ref_title, ref_start: doc.ref_start, ref_end: doc.ref_end,
+            ref_text: doc.ref_text, language: doc.language, pause: doc.pause, seed: doc.seed, speed: doc.speed });
+        const saveNow = async () => { const d = await fetch(api, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields()) }).then(r => r.json()); if (!d.error) { doc.parts = d.parts; } return d; };
+        const save = () => { clearTimeout(saveT); saveT = setTimeout(async () => { await saveNow(); renderParts(); }, 600); };
+        const upload = async (file) => { const fd = new FormData(); fd.append("file", file, file.name); const r = await fetch(`/vfx/projects/${encodeURIComponent(pid)}/upload_media`, { method: "POST", body: fd }).then(x => x.json()); return r?.uploaded?.[0]?.url || ""; };
+        const runJob = async (action, body) => {
+            const st = ov.querySelector("#nr-st");
+            try {
+                await saveNow();
+                const j0 = await fetch(`${api}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then(r => r.json());
+                if (j0.error) throw new Error(j0.error);
+                let j = j0;
+                while (j.status === "running") {
+                    await new Promise(r => setTimeout(r, 1500));
+                    j = await fetch(`/vfx/voiceboard_job/${j0.id}`).then(r => r.json());
+                    st.textContent = j.message || "";
+                }
+                if (j.status !== "done") throw new Error(j.message || j.status);
+                const d = await fetch(api).then(r => r.json()); if (!d.error) doc = d;
+                st.textContent = action === "generate" ? uiText(`Done: ${j.result.voiced} voiced, ${j.result.cached} from cache, ${j.result.seconds} s`, `Готово: озвучено ${j.result.voiced}, из кэша ${j.result.cached}, ${j.result.seconds} с`) : uiText("Done", "Готово");
+                render();
+            } catch (e) { st.textContent = String(e.message || e); }
+        };
+        const renderParts = () => {
+            const box = ov.querySelector("#nr-parts"); if (!box) return;
+            box.innerHTML = (doc.parts || []).map(pt => `
+                <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 5px; display: flex; flex-direction: column; gap: 3px;">
+                    <div style="display: flex; gap: 5px; align-items: center;"><b style="font-size: 10px; color: ${pt.audio ? "#86efac" : "#fbbf24"};">${pt.audio ? "✓" : "•"} ${pt.i + 1}</b>
+                        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75;">${esc(pt.text.slice(0, 90))}</span>
+                        <button class="vfx-btn nr-redo" data-i="${pt.i}" style="padding: 0 5px;" title="${uiText("Voice this paragraph again (new take)", "Переозвучить этот абзац (новый дубль)")}">↻</button></div>
+                    ${pt.audio ? `<audio controls preload="none" src="${esc(pt.audio)}" style="height: 24px; width: 100%;"></audio>` : `<span style="font-size: 9.5px; opacity: .5;">${uiText("new / changed — will be voiced", "новый / изменён — будет озвучен")}</span>`}
+                </div>`).join("") || `<div style="opacity: .5;">${uiText("Paragraphs appear here", "Здесь появятся абзацы")}</div>`;
+            box.querySelectorAll(".nr-redo").forEach(b => b.onclick = () => runJob("generate", { only: [+b.dataset.i] }));
+        };
+        const render = () => {
+            ov.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <b style="font-size: 12.5px;">📖 ${uiText("Voice-over", "Закадровый голос")}</b>
+                    <span style="opacity: .55;">${uiText("empty line = new paragraph · only changed paragraphs are re-voiced · F5-TTS", "пустая строка — новый абзац · переозвучиваются только изменённые абзацы · F5-TTS")}</span>
+                    <span style="flex: 1;"></span>
+                    <button class="vfx-btn" id="nr-x" style="padding: 4px 10px;">✕</button>
+                </div>
+                <div style="flex: 1; display: flex; min-height: 0;">
+                    <div style="flex: 1.4; display: flex; flex-direction: column; gap: 6px; padding: 10px; min-width: 0;">
+                        <textarea id="nr-text" style="${fld} flex: 1; resize: none; font-size: 12px; line-height: 1.5; padding: 8px;" placeholder="${uiText("Paste the text. Separate paragraphs with an empty line.", "Вставьте текст. Абзацы разделяйте пустой строкой.")}">${esc(doc.text || "")}</textarea>
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <button class="vfx-btn" id="nr-prep">${uiText("Prepare text: ё, numbers, stress marks", "Подготовить текст: ё, числа, ударения")}</button>
+                            <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="nr-stress" checked> ${uiText("stress marks (Russian)", "ударения (рус.)")}</label>
+                            <span style="flex: 1;"></span>
+                            <button class="vfx-btn vfx-btn-primary" id="nr-gen" style="padding: 5px 14px;">${uiText("Generate (changed only)", "Сгенерировать (только изменённое)")}</button>
+                        </div>
+                        <div id="nr-st" style="font-size: 10.5px; opacity: .7; min-height: 14px;"></div>
+                        ${doc.result ? `<div style="display: flex; gap: 6px; align-items: center;"><audio controls src="${esc(doc.result)}" style="flex: 1; height: 30px;"></audio><button class="vfx-btn" id="nr-add">+ ${uiText("to project audio", "в аудио проекта")}</button></div>` : ""}
+                    </div>
+                    <div style="flex: 1; max-width: 460px; border-left: 1px solid rgba(255,255,255,0.08); padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto;">
+                        <b>${uiText("Voice", "Голос")}</b>
+                        <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                            <span style="color: ${doc.ref_audio ? "#86efac" : "rgba(255,255,255,.45)"};">${esc(doc.ref_title || (doc.ref_audio ? "✓" : uiText("no voice sample", "нет образца")))}</span>
+                            <button class="vfx-btn" id="nr-ref-pick" style="padding: 0 6px;">${uiText("from project", "из проекта")}</button>
+                            <button class="vfx-btn" id="nr-ref-up" style="padding: 0 6px;">${uiText("file", "файл")}</button>
+                        </div>
+                        <div style="display: flex; gap: 4px; align-items: center;">${uiText("fragment, s", "фрагмент, с")}
+                            <input type="number" step="0.1" min="0" id="nr-ra" value="${doc.ref_start || 0}" style="${fld} width: 58px;">–<input type="number" step="0.1" min="0" id="nr-rb" value="${doc.ref_end || ""}" placeholder="+10" style="${fld} width: 58px;">
+                            <button class="vfx-btn" id="nr-play" style="padding: 0 6px;">▶</button></div>
+                        <div style="display: flex; gap: 4px; align-items: flex-start;"><textarea id="nr-reftext" rows="2" style="${fld} flex: 1;" placeholder="${uiText("Exact words of the fragment", "Точные слова фрагмента")}">${esc(doc.ref_text || "")}</textarea>
+                            <button class="vfx-btn" id="nr-asr" style="padding: 1px 6px;">${uiText("Recognise", "Распознать")}</button></div>
+                        <div style="opacity: .5; font-size: 10px; line-height: 1.35;">${uiText("The clone copies timbre and delivery of this ≤10 s fragment.", "Клон копирует тембр и подачу этого фрагмента до 10 с.")}</div>
+                        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;">
+                            <label>${uiText("Lang", "Язык")}<select id="nr-lang" style="${fld} width: 100%;">${["ru", "en", "es", "fr", "de"].map(l => `<option ${doc.language === l ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+                            <label>${uiText("Pause, s", "Пауза, с")}<input type="number" step="0.05" min="0" id="nr-pause" value="${doc.pause ?? 0.35}" style="${fld} width: 100%;"></label>
+                            <label>${uiText("Speed", "Темп")}<input type="number" step="0.05" min="0.6" max="1.6" id="nr-speed" value="${doc.speed || 1}" style="${fld} width: 100%;"></label>
+                            <label>Seed<input type="number" id="nr-seed" value="${doc.seed || 985}" style="${fld} width: 100%;"></label>
+                        </div>
+                        <b style="margin-top: 6px;">${uiText("Paragraphs", "Абзацы")}</b>
+                        <div id="nr-parts" style="display: flex; flex-direction: column; gap: 5px;"></div>
+                    </div>
+                </div>`;
+            const q = (id) => ov.querySelector(id);
+            q("#nr-x").onclick = async () => { await saveNow(); ov.remove(); };
+            q("#nr-text").oninput = (e) => { doc.text = e.target.value; save(); };
+            q("#nr-ra").oninput = (e) => { doc.ref_start = +e.target.value || 0; doc.ref_text = ""; q("#nr-reftext").value = ""; save(); };
+            q("#nr-rb").oninput = (e) => { let v = +e.target.value || 0; const a = +doc.ref_start || 0; if (v > a + 10) { v = +(a + 10).toFixed(1); e.target.value = v; } doc.ref_end = v; doc.ref_text = ""; q("#nr-reftext").value = ""; save(); };
+            q("#nr-reftext").oninput = (e) => { doc.ref_text = e.target.value; save(); };
+            q("#nr-lang").onchange = (e) => { doc.language = e.target.value; save(); };
+            q("#nr-pause").oninput = (e) => { doc.pause = +e.target.value; save(); };
+            q("#nr-speed").oninput = (e) => { doc.speed = +e.target.value || 1; save(); };
+            q("#nr-seed").oninput = (e) => { doc.seed = +e.target.value || 985; save(); };
+            q("#nr-play").onclick = () => { if (!doc.ref_audio) return; const a = +doc.ref_start || 0, b = (+doc.ref_end > a) ? +doc.ref_end : a + 10; const au = new Audio(doc.ref_audio); au.currentTime = a; au.play().catch(() => {}); au.addEventListener("timeupdate", function f() { if (au.currentTime >= b) { au.pause(); au.removeEventListener("timeupdate", f); } }); };
+            q("#nr-ref-up").onclick = () => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "audio/*,video/*"; inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; doc.ref_audio = await upload(f); doc.ref_title = f.name; doc.ref_text = ""; await saveNow(); render(); }; inp.click(); };
+            q("#nr-ref-pick").onclick = () => {
+                const list = (mediaAudio || []).filter(a => a.audioUrl && !String(a.audioUrl).startsWith("blob:"));
+                const pop = openGenPopover(q("#nr-ref-pick"), `<b>${uiText("Voice sample", "Образец голоса")}</b>${list.length ? list.map((a, i) => `<button class="vfx-btn nr-pa" data-i="${i}" style="text-align: left; padding: 3px 6px;">${esc(a.title)}</button>`).join("") : `<div style="opacity: .6;">${uiText("No audio in the project", "В проекте нет аудио")}</div>`}`, 260);
+                pop.style.zIndex = "100003";
+                pop.querySelectorAll(".nr-pa").forEach(b => b.onclick = async () => { const a = list[+b.dataset.i]; doc.ref_audio = a.audioUrl; doc.ref_title = a.title; doc.ref_text = ""; pop.remove(); await saveNow(); render(); });
+            };
+            q("#nr-asr").onclick = () => runJob("transcribe_ref");
+            q("#nr-prep").onclick = () => runJob("prepare", { add_stress: q("#nr-stress").checked });
+            q("#nr-gen").onclick = () => runJob("generate", {});
+            q("#nr-add")?.addEventListener("click", () => { mediaAudio.unshift({ id: `aud_vo_${Date.now()}`, title: uiText("Voice-over", "Закадровый голос"), badge: "VO", type: "audio", audioUrl: doc.result, duration: "" }); saveProjectAudio(); renderTopViewportBar(); showToastNotification(uiText("Added to the project audio", "Добавлено в аудио проекта")); });
+            renderParts();
+        };
+        render();
+    }
+
+    // Voice board: a free canvas of nodes. Picture / clip nodes take inputs; audio and text nodes plug into them.
+    //   text -> picture/clip       : a line of speech (start, length) to voice
+    //   audio -> text              : that line's voice sample (fragment <= 10 s + its words) or draft take
+    //   audio -> picture/clip      : default voice sample for all its lines, or ready speech (role "speech")
+    // Picture: Lip-sync video (LTX-2.5 audio-to-video). Clip: lay voices on it, or DubIt (new words + lips).
+    // The canvas compiles to the board's cards/cues that the server jobs use.
+    async function openVoiceBoard() {
+        const pid = currentProject?.id;
+        if (!pid) { showToastNotification(uiText("Open a project first", "Сначала откройте проект"), true); return; }
+        document.getElementById("vfx-voiceboard")?.remove();
+        const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const fld = "background: #0f0f11; color: #e4e4e7; border: 1px solid #333; border-radius: 4px; font-size: 10.5px; padding: 2px 5px;";
+        const API = `/vfx/voiceboard/${encodeURIComponent(pid)}`;
+        let board = { cards: [], language: "ru" };
+        try { const b = await fetch(API).then(r => r.json()); if (b && !b.error) board = b; } catch (_) {}
+        board.cards = board.cards || [];
+        const cv = board.canvas = board.canvas || { nodes: [], edges: [], view: { x: 40, y: 40, z: 1 } };
+        cv.nodes = cv.nodes || []; cv.edges = cv.edges || []; cv.view = cv.view || { x: 40, y: 40, z: 1 };
+        const W = { image: 250, video: 270, audio: 270, text: 270 };
+        const COLORS = { image: "#3b82f6", video: "#a855f7", audio: "#22c55e", text: "#f59e0b" };
+        const uid = (p) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        const node = (id) => cv.nodes.find(n => n.id === id);
+        const isMedia = (n) => n && (n.type === "image" || n.type === "video");
+
+        // ---------- canvas -> cards / cues (ids stay stable so results survive recompiles)
+        const compile = () => {
+            const prev = new Map(); board.cards.forEach(c => { prev.set(c.id, c); (c.cues || []).forEach(q => prev.set(q.id, q)); });
+            const into = (id) => cv.edges.filter(e => e.to === id).map(e => node(e.from)).filter(Boolean);
+            const sampleOf = (list) => list.find(a => a.type === "audio" && (a.role || "sample") === "sample");
+            board.cards = cv.nodes.filter(isMedia).map(m => {
+                const old = prev.get(m.id) || {};
+                const ins = into(m.id), mediaSample = sampleOf(ins);
+                const cues = [];
+                ins.filter(n => n.type === "text").forEach(t => {
+                    const tin = into(t.id), smp = sampleOf(tin) || mediaSample, draft = tin.find(a => a.type === "audio" && a.role === "draft");
+                    const o = prev.get(t.id) || {};
+                    cues.push({ id: t.id, text: t.text || "", start: +t.start || 0, duration: +t.duration || 0,
+                        ref_audio: smp ? smp.url : "", ref_title: smp ? smp.title : "", ref_start: smp ? +smp.a || 0 : 0, ref_end: smp ? +smp.b || 0 : 0, ref_text: smp ? (smp.words || "") : "",
+                        draft_audio: draft ? draft.url : "", ref_source: (!smp && draft) ? "draft" : "sample",
+                        audio: t.audio || o.audio || "", audio_seconds: t.audio_seconds || o.audio_seconds || 0 });
+                });
+                ins.filter(n => n.type === "audio" && n.role === "speech").forEach(a => {
+                    const o = prev.get(a.id) || {};
+                    cues.push({ id: a.id, speech: a.url, start: +a.start || 0, duration: 0, text: a.words || "", audio: o.audio || "", audio_seconds: o.audio_seconds || 0 });
+                });
+                return { id: m.id, kind: m.type, media: m.url, title: m.title || "", prompt: m.prompt || "", keep_original: m.keep !== false,
+                    dub_start: +m.dub_start || 0, dub_len: +m.dub_len || 5, result_video: m.result_video || old.result_video || "", cues };
+            });
+        };
+        const absorb = (b) => {   // results from the server back onto the nodes
+            (b.cards || []).forEach(c => {
+                const m = node(c.id); if (m && c.result_video) m.result_video = c.result_video;
+                (c.cues || []).forEach(q => {
+                    const t = node(q.id); if (!t) return;
+                    if (q.audio) { t.audio = q.audio; t.audio_seconds = q.audio_seconds; }
+                    if (t.type === "text" && q.text && !t.text) t.text = q.text;
+                });
+            });
+        };
+        let saveT = null;
+        const saveNow = async () => { compile(); await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(board) }).catch(() => {}); };
+        const save = () => { clearTimeout(saveT); saveT = setTimeout(saveNow, 500); };
+        const upload = async (blob, name) => { const fd = new FormData(); fd.append("file", blob, name); const r = await fetch(`/vfx/projects/${encodeURIComponent(pid)}/upload_media`, { method: "POST", body: fd }).then(x => x.json()); return r?.uploaded?.[0]?.url || ""; };
+        const runJob = async (action, body, statusEl, onResult) => {
+            try {
+                await saveNow();
+                const j0 = await fetch(`${API}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
+                if (j0.error) throw new Error(j0.error);
+                let j = j0;
+                while (j.status === "running") {
+                    await new Promise(r => setTimeout(r, 1500));
+                    j = await fetch(`/vfx/voiceboard_job/${j0.id}`).then(r => r.json());
+                    if (statusEl && statusEl.isConnected) statusEl.textContent = j.message || "";
+                }
+                if (j.status !== "done") throw new Error(j.message || j.status);
+                const b = await fetch(API).then(r => r.json()); if (!b.error) { board.cards = b.cards || []; absorb(b); }
+                onResult && onResult(j.result);
+                await saveNow();
+            } catch (e) { showToastNotification(String(e.message || e), true); if (statusEl && statusEl.isConnected) statusEl.textContent = String(e.message || e); }
+            renderNodes();
+        };
+
+        // ---------- overlay skeleton
+        const ov = document.createElement("div");
+        ov.id = "vfx-voiceboard"; ov.dataset.vfxModal = "1";
+        ov.style.cssText = "position: fixed; inset: 0; z-index: 100000; background: #0a0a0d; display: flex; flex-direction: column; color: #e4e4e7; font-size: 11px; user-select: none;";
+        ov.addEventListener("keydown", e => e.stopPropagation());
+        ov.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); flex-wrap: wrap;">
+                <b style="font-size: 12.5px;">🎙 ${uiText("Voice board", "Холст озвучки")}</b>
+                <button class="vfx-btn vb-addn" data-t="image" style="padding: 3px 8px; border-color: ${COLORS.image};">+ ${uiText("Picture", "Фото")}</button>
+                <button class="vfx-btn vb-addn" data-t="video" style="padding: 3px 8px; border-color: ${COLORS.video};">+ ${uiText("Clip", "Видео")}</button>
+                <button class="vfx-btn vb-addn" data-t="audio" style="padding: 3px 8px; border-color: ${COLORS.audio};">+ ${uiText("Audio", "Аудио")}</button>
+                <button class="vfx-btn vb-addn" data-t="text" style="padding: 3px 8px; border-color: ${COLORS.text};">+ ${uiText("Text", "Текст")}</button>
+                <span style="opacity: .5; margin-left: 6px;">${uiText("drag from a node's right dot to a picture / clip / text to connect · click a wire to remove it · wheel = zoom, drag the background = pan", "тяните от правой точки узла к фото / видео / тексту — соединить · клик по проводу — убрать · колесо — масштаб, фон — двигать")}</span>
+                <span style="flex: 1;"></span>
+                <button class="vfx-btn" id="vb-fit" style="padding: 3px 8px;" title="${uiText("Show all nodes", "Показать все узлы")}">⤢</button>
+                ${uiText("Language", "Язык")} <select id="vb-lang" style="${fld}">${["ru", "en", "es", "fr", "de", "it", "pt", "uk", "ja", "zh"].map(l => `<option ${board.language === l ? "selected" : ""}>${l}</option>`).join("")}</select>
+                <button class="vfx-btn" id="vb-close" style="padding: 3px 10px;">✕</button>
+            </div>
+            <div id="vb-stage" style="flex: 1; position: relative; overflow: hidden; cursor: grab; background: radial-gradient(circle, #1b1f2b 1px, transparent 1px), #08090d; background-size: 22px 22px;">
+                <div id="vb-world" style="position: absolute; left: 0; top: 0; transform-origin: 0 0;">
+                    <svg id="vb-wires" style="position: absolute; left: 0; top: 0; overflow: visible; width: 1px; height: 1px;"></svg>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const stage = ov.querySelector("#vb-stage"), world = ov.querySelector("#vb-world"), wires = ov.querySelector("#vb-wires");
+        const applyView = () => { world.style.transform = `translate(${cv.view.x}px, ${cv.view.y}px) scale(${cv.view.z})`; stage.style.backgroundPosition = `${cv.view.x}px ${cv.view.y}px`; };
+        const toWorld = (cx, cy) => { const r = stage.getBoundingClientRect(); return { x: (cx - r.left - cv.view.x) / cv.view.z, y: (cy - r.top - cv.view.y) / cv.view.z }; };
+        ov.querySelector("#vb-close").onclick = async () => { if (rec) rec.mr.stop(); await saveNow(); ov.remove(); };
+        ov.querySelector("#vb-lang").onchange = (e) => { board.language = e.target.value; save(); };
+        const fitView = () => {
+            const r = stage.getBoundingClientRect();
+            if (!cv.nodes.length || !r.width) { cv.view = { x: 40, y: 40, z: 1 }; applyView(); return; }
+            const x0 = Math.min(...cv.nodes.map(n => n.x)), y0 = Math.min(...cv.nodes.map(n => n.y));
+            const x1 = Math.max(...cv.nodes.map(n => n.x + (W[n.type] || 260))), y1 = Math.max(...cv.nodes.map(n => n.y + 320));
+            const z = Math.max(0.3, Math.min(1, Math.min((r.width - 80) / (x1 - x0), (r.height - 80) / (y1 - y0))));
+            cv.view = { x: 40 - x0 * z + Math.max(0, (r.width - 80 - (x1 - x0) * z) / 2), y: 40 - y0 * z, z };
+            applyView();
+        };
+        ov.querySelector("#vb-fit").onclick = () => { fitView(); save(); };
+
+        // ---------- wires
+        const portPos = (n, side) => {
+            const el = world.querySelector(`.vbn[data-id="${n.id}"]`);
+            const h = el ? Math.min(el.offsetHeight, 60) : 40;
+            return side === "out" ? { x: n.x + (W[n.type] || 260), y: n.y + 16 } : { x: n.x, y: n.y + 16 + (h > 0 ? 0 : 0) };
+        };
+        const curve = (a, b) => { const dx = Math.max(40, Math.abs(b.x - a.x) / 2); return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`; };
+        let tempWire = null;
+        const drawWires = () => {
+            wires.innerHTML = cv.edges.map((e, i) => {
+                const a = node(e.from), b = node(e.to); if (!a || !b) return "";
+                const d = curve(portPos(a, "out"), portPos(b, "in")), col = COLORS[a.type] || "#888";
+                return `<path d="${d}" stroke="${col}" stroke-width="2.5" fill="none" opacity=".85"/><path class="vb-wire" data-i="${i}" d="${d}" stroke="transparent" stroke-width="14" fill="none" style="cursor: pointer; pointer-events: stroke;"/>`;
+            }).join("") + (tempWire ? `<path d="${curve(tempWire.a, tempWire.b)}" stroke="#e4e4e7" stroke-dasharray="5 4" stroke-width="2" fill="none"/>` : "");
+            wires.querySelectorAll(".vb-wire").forEach(p => p.addEventListener("mousedown", (ev) => { ev.stopPropagation(); cv.edges.splice(+p.dataset.i, 1); drawWires(); save(); }));
+        };
+        const canConnect = (a, b) => a && b && a.id !== b.id && ((a.type === "audio" && (isMedia(b) || b.type === "text")) || (a.type === "text" && isMedia(b)))
+            && !cv.edges.some(e => e.from === a.id && e.to === b.id);
+
+        // ---------- pickers
+        const pickFrom = (title, items, onPick) => {
+            const box = document.createElement("div");
+            box.style.cssText = "position: fixed; inset: 0; z-index: 100002; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;";
+            box.innerHTML = `<div style="width: min(760px, 94vw); max-height: 80vh; overflow: auto; background: #141418; border: 1px solid #333; border-radius: 8px; padding: 10px;">
+                <div style="display: flex; align-items: center; margin-bottom: 8px;"><b style="flex: 1;">${title}</b><button class="vfx-btn" id="pk-x">✕</button></div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;">${items.length ? items.map((it, k) => `<button class="vfx-btn pk-it" data-k="${k}" style="display: flex; flex-direction: column; gap: 3px; padding: 4px; text-align: left;">${it.thumb || ""}<span style="font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;">${esc(it.title)}</span></button>`).join("") : `<div style="opacity: .6;">${uiText("Nothing in the project yet", "В проекте пока ничего нет")}</div>`}</div>
+                ${onPick.file ? `<div style="margin-top: 8px;"><button class="vfx-btn" id="pk-file">${uiText("Upload a file…", "Загрузить файл…")}</button>${onPick.record ? ` <button class="vfx-btn" id="pk-rec">● ${uiText("Record from the microphone", "Записать с микрофона")}</button>` : ""}</div>` : ""}</div>`;
+            ov.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector("#pk-x").onclick = close;
+            box.addEventListener("mousedown", e => { if (e.target === box) close(); });
+            box.querySelectorAll(".pk-it").forEach(b => b.onclick = () => { close(); onPick(items[+b.dataset.k]); });
+            box.querySelector("#pk-file")?.addEventListener("click", () => { close(); onPick.file(); });
+            box.querySelector("#pk-rec")?.addEventListener("click", () => { close(); onPick.record(); });
+        };
+        const centerPos = () => { const r = stage.getBoundingClientRect(); const p = toWorld(r.left + r.width / 2 - 120, r.top + r.height / 2 - 80); return { x: Math.round(p.x + (Math.random() * 60 - 30)), y: Math.round(p.y + (Math.random() * 60 - 30)) }; };
+        const addNode = (n) => {
+            let pos = centerPos();
+            if (cv.nodes.length) {   // next to the last node, so it never lands off-screen
+                const last = cv.nodes[cv.nodes.length - 1];
+                pos = { x: last.x + (W[last.type] || 260) + 60, y: last.y };
+            }
+            cv.nodes.push({ ...pos, ...n }); renderNodes(); fitView(); save();
+        };
+        let rec = null;
+        const recordInto = async (n) => {
+            if (rec) { rec.mr.stop(); return; }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mr = new MediaRecorder(stream); const chunks = [];
+                mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+                mr.onstop = async () => {
+                    stream.getTracks().forEach(t => t.stop()); rec = null;
+                    const url = await upload(new Blob(chunks, { type: mr.mimeType || "audio/webm" }), `take_${n.id}.webm`);
+                    if (url) { n.url = url; n.title = uiText("recorded take", "запись с микрофона"); n.recording = false; }
+                    renderNodes(); save();
+                };
+                rec = { mr, n }; n.recording = true; mr.start(); renderNodes();
+            } catch (e) { showToastNotification(uiText("No microphone access", "Нет доступа к микрофону") + ": " + (e.message || e), true); }
+        };
+        ov.querySelectorAll(".vb-addn").forEach(b => b.onclick = () => {
+            const t = b.dataset.t;
+            if (t === "text") { addNode({ id: uid("txt"), type: "text", text: "", start: 0 }); return; }
+            if (t === "image") {
+                pickFrom(uiText("Picture from the project", "Фото из проекта"), (mediaImages1D || []).filter(i => i.url || i.fallbackUrl).map(i => ({ title: i.title, url: i.url || i.fallbackUrl, thumb: `<img src="${esc(i.url || i.fallbackUrl)}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 3px;">` })),
+                    (it) => addNode({ id: uid("img"), type: "image", url: it.url, title: it.title }));
+                return;
+            }
+            if (t === "video") {
+                pickFrom(uiText("Clip from the project", "Видео из проекта"), (mediaVideos2D || []).filter(v => v.videoUrl && !String(v.videoUrl).startsWith("blob:")).map(v => ({ title: v.title, url: v.videoUrl, thumb: `<video src="${esc(v.videoUrl)}" muted preload="metadata" style="width: 100%; height: 80px; object-fit: cover; border-radius: 3px; background: #000;"></video>` })),
+                    (it) => addNode({ id: uid("vid"), type: "video", url: it.url, title: it.title, keep: true, dub_len: 5 }));
+                return;
+            }
+            const onPick = (it) => addNode({ id: uid("aud"), type: "audio", url: it.url, title: it.title, role: "sample", a: 0, b: 0 });
+            onPick.file = () => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "audio/*,video/*"; inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const url = await upload(f, f.name); if (url) onPick({ url, title: f.name }); }; inp.click(); };
+            onPick.record = () => { const n = { id: uid("aud"), type: "audio", url: "", title: "", role: "draft", a: 0, b: 0 }; addNode(n); recordInto(node(n.id)); };
+            pickFrom(uiText("Audio from the project", "Аудио из проекта"), (mediaAudio || []).filter(a => a.audioUrl && !String(a.audioUrl).startsWith("blob:")).map(a => ({ title: a.title, url: a.audioUrl, thumb: `<div style="height: 30px; display: flex; align-items: center; justify-content: center; color: ${COLORS.audio};">♪</div>` })), onPick);
+        });
+
+        // ---------- nodes
+        const nodeBody = (n) => {
+            if (n.type === "image") return `<img src="${esc(n.url)}" style="width: 100%; max-height: 170px; object-fit: contain; background: #000; border-radius: 4px;">
+                <input class="vb-f" data-k="prompt" placeholder="${uiText("How the person moves (optional)", "Как двигается персонаж (необязательно)")}" value="${esc(n.prompt || "")}" style="${fld}">
+                <button class="vfx-btn vfx-btn-primary vb-act" data-a="lipsync" style="padding: 3px;">${uiText("Lip-sync video (LTX-2.5)", "Видео с липсинком (LTX-2.5)")}</button>`;
+            if (n.type === "video") return `<video src="${esc(n.url)}" controls preload="metadata" style="width: 100%; max-height: 170px; background: #000; border-radius: 4px;"></video>
+                <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" class="vb-keep" ${n.keep === false ? "" : "checked"}> ${uiText("keep the clip's sound (quieter)", "оставить звук клипа (тише)")}</label>
+                <button class="vfx-btn vfx-btn-primary vb-act" data-a="mix" style="padding: 3px;">${uiText("Lay the voices onto the clip", "Наложить голоса на клип")}</button>
+                <div style="border-top: 1px dashed rgba(244,114,182,0.4); padding-top: 4px; display: flex; flex-direction: column; gap: 3px;">
+                    <span style="color: #f9a8d4; font-size: 9.5px;">DubIt: ${uiText("the speaker says the texts' words (new lips + voice), one speaker", "человек говорит слова из текстов (новые губы и голос), один говорящий")}</span>
+                    <input class="vb-f" data-k="prompt" placeholder="${uiText("Who is speaking (optional)", "Кто говорит (необязательно)")}" value="${esc(n.prompt || "")}" style="${fld}">
+                    <div style="display: flex; gap: 4px; align-items: center;">${uiText("from", "с")} <input type="number" class="vb-f" data-k="dub_start" step="0.1" min="0" value="${n.dub_start || 0}" style="${fld} width: 50px;"> ${uiText("len", "длина")} <input type="number" class="vb-f" data-k="dub_len" step="0.5" min="1" max="8" value="${n.dub_len || 5}" style="${fld} width: 44px;">
+                        <button class="vfx-btn vb-act" data-a="dubit" style="padding: 2px 6px; flex: 1; border-color: rgba(244,114,182,0.6);">${uiText("Re-voice + lips", "Переозвучить + губы")}</button></div>
+                </div>`;
+            if (n.type === "text") return `<textarea class="vb-f" data-k="text" rows="3" placeholder="${uiText("Line of speech (empty = words of the connected draft)", "Реплика (пусто — слова подключённого черновика)")}" style="${fld} resize: vertical; user-select: text;">${esc(n.text || "")}</textarea>
+                <div style="display: flex; gap: 4px; align-items: center;">${uiText("start, s", "старт, с")} <input type="number" class="vb-f" data-k="start" step="0.1" min="0" value="${n.start || 0}" style="${fld} width: 50px;">
+                    ${uiText("length, s", "длит., с")} <input type="number" class="vb-f" data-k="duration" step="0.1" min="0" value="${n.duration || ""}" placeholder="auto" style="${fld} width: 50px;">
+                    <button class="vfx-btn vfx-btn-primary vb-act" data-a="voice" style="padding: 2px 8px; margin-left: auto;">${uiText("Voice", "Голос")}</button></div>
+                ${n.audio ? `<audio controls preload="none" src="${esc(n.audio)}" style="width: 100%; height: 26px;"></audio>` : `<span style="opacity: .45; font-size: 9.5px;">${uiText("connect a voice sample (audio) and press Voice", "подключите образец голоса (аудио) и нажмите «Голос»")}</span>`}`;
+            // audio
+            return `${n.url ? `<audio controls preload="none" src="${esc(n.url)}" style="width: 100%; height: 26px;"></audio>` : `<button class="vfx-btn vb-rec" style="padding: 3px; color: ${n.recording ? "#f87171" : ""};">${n.recording ? "■ " + uiText("Stop recording", "Остановить запись") : "● " + uiText("Record", "Записать")}</button>`}
+                <select class="vb-f" data-k="role" style="${fld}">
+                    <option value="sample" ${(n.role || "sample") === "sample" ? "selected" : ""}>${uiText("voice sample (timbre + delivery for the clone)", "образец голоса (тембр и подача для клона)")}</option>
+                    <option value="draft" ${n.role === "draft" ? "selected" : ""}>${uiText("draft take (timing + words of the text)", "черновик (тайминг и слова для текста)")}</option>
+                    <option value="speech" ${n.role === "speech" ? "selected" : ""}>${uiText("ready speech (used as is)", "готовая речь (как есть)")}</option>
+                </select>
+                ${(n.role || "sample") === "sample" ? `<div style="display: flex; gap: 4px; align-items: center;">${uiText("fragment", "фрагмент")} <input type="number" class="vb-f" data-k="a" step="0.1" min="0" value="${n.a || 0}" style="${fld} width: 48px;">–<input type="number" class="vb-f" data-k="b" step="0.1" min="0" value="${n.b || ""}" placeholder="+10" style="${fld} width: 48px;"> s <button class="vfx-btn vb-play" style="padding: 0 6px;">▶</button></div>
+                <div style="display: flex; gap: 4px;"><textarea class="vb-f" data-k="words" rows="2" placeholder="${uiText("Exact words of the fragment", "Точные слова фрагмента")}" style="${fld} flex: 1; user-select: text;">${esc(n.words || "")}</textarea><button class="vfx-btn vb-asr" style="padding: 0 5px;">${uiText("Recognise", "Распознать")}</button></div>`
+                : n.role === "speech" ? `<div style="display: flex; gap: 4px; align-items: center;">${uiText("start, s", "старт, с")} <input type="number" class="vb-f" data-k="start" step="0.1" min="0" value="${n.start || 0}" style="${fld} width: 50px;"></div>` : ""}`;
+        };
+        const TITLES = { image: uiText("Picture", "Фото"), video: uiText("Clip", "Видео"), audio: uiText("Audio", "Аудио"), text: uiText("Text", "Текст") };
+        const renderNodes = () => {
+            world.querySelectorAll(".vbn").forEach(e => e.remove());
+            cv.nodes.forEach(n => {
+                const el = document.createElement("div");
+                el.className = "vbn"; el.dataset.id = n.id;
+                el.style.cssText = `position: absolute; left: ${n.x}px; top: ${n.y}px; width: ${W[n.type]}px; background: #131317; border: 1px solid ${COLORS[n.type]}88; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.5);`;
+                el.innerHTML = `
+                    <div class="vb-head" style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: ${COLORS[n.type]}22; border-radius: 8px 8px 0 0; cursor: move;">
+                        <b style="color: ${COLORS[n.type]};">${TITLES[n.type]}</b>
+                        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .7;">${esc(n.title || "")}</span>
+                        <button class="vfx-btn vb-del" style="padding: 0 5px;">✕</button>
+                    </div>
+                    ${n.type === "image" || n.type === "video" || n.type === "text" ? `<div class="vb-in" title="${uiText("inputs", "входы")}" style="position: absolute; left: -7px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: #0a0a0d; border: 2px solid ${COLORS[n.type]};"></div>` : ""}
+                    ${n.type === "audio" || n.type === "text" ? `<div class="vb-out" title="${uiText("drag to connect", "тяните, чтобы соединить")}" style="position: absolute; right: -7px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: ${COLORS[n.type]}; cursor: crosshair;"></div>` : ""}
+                    <div style="padding: 7px; display: flex; flex-direction: column; gap: 5px;">${nodeBody(n)}
+                        <div class="vb-st" style="font-size: 9.5px; opacity: .65; min-height: 11px;"></div>
+                        ${isMedia(n) && n.result_video ? `<video src="${esc(n.result_video)}" controls preload="metadata" style="width: 100%; max-height: 170px; background: #000; border-radius: 4px;"></video><button class="vfx-btn vb-tofiles" style="padding: 2px;">+ ${uiText("to project videos", "в видео проекта")}</button>` : ""}
+                    </div>`;
+                el.addEventListener("mousedown", e => e.stopPropagation());
+                el.addEventListener("wheel", e => e.stopPropagation());
+                // drag by the header
+                el.querySelector(".vb-head").addEventListener("mousedown", (e) => {
+                    if (e.target.closest("button")) return;
+                    const s = toWorld(e.clientX, e.clientY), ox = n.x, oy = n.y;
+                    const mv = (ev) => { const p = toWorld(ev.clientX, ev.clientY); n.x = Math.round(ox + p.x - s.x); n.y = Math.round(oy + p.y - s.y); el.style.left = n.x + "px"; el.style.top = n.y + "px"; drawWires(); };
+                    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); save(); };
+                    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+                });
+                // connect: drag from the out port onto a node with inputs
+                el.querySelector(".vb-out")?.addEventListener("mousedown", (e) => {
+                    e.preventDefault();
+                    const a = portPos(n, "out");
+                    const mv = (ev) => { tempWire = { a, b: toWorld(ev.clientX, ev.clientY) }; drawWires(); };
+                    const up = (ev) => {
+                        window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up);
+                        tempWire = null;
+                        const hit = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(".vbn");
+                        const target = hit ? node(hit.dataset.id) : null;
+                        if (canConnect(n, target)) { cv.edges.push({ from: n.id, to: target.id }); save(); }
+                        else if (target && target.id !== n.id) showToastNotification(uiText("Audio connects to a text, picture or clip; a text — to a picture or clip", "Аудио подключается к тексту, фото или видео; текст — к фото или видео"), true);
+                        drawWires();
+                    };
+                    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+                });
+                el.querySelector(".vb-del").onclick = () => { if (!confirm(uiText("Remove this node?", "Удалить узел?"))) return; cv.nodes = cv.nodes.filter(x => x.id !== n.id); cv.edges = cv.edges.filter(e => e.from !== n.id && e.to !== n.id); renderNodes(); save(); };
+                el.querySelectorAll(".vb-f").forEach(inp => {
+                    const k = inp.dataset.k;
+                    const set = () => {
+                        let v = inp.type === "number" ? (+inp.value || 0) : inp.value;
+                        if (k === "b" && v && v > (+n.a || 0) + 10) { v = +((+n.a || 0) + 10).toFixed(1); inp.value = v; showToastNotification(uiText("The fragment is limited to 10 s", "Фрагмент — не длиннее 10 с")); }
+                        if (k === "dub_len") v = Math.min(8, v || 5);
+                        n[k] = v;
+                        if (k === "a" || k === "b") { n.words = ""; const w = el.querySelector('[data-k="words"]'); if (w) w.value = ""; }
+                        if (k === "role") renderNodes();
+                        save();
+                    };
+                    inp.addEventListener(inp.tagName === "SELECT" ? "change" : "input", set);
+                });
+                el.querySelector(".vb-keep")?.addEventListener("change", (e) => { n.keep = e.target.checked; save(); });
+                el.querySelector(".vb-rec")?.addEventListener("click", () => recordInto(n));
+                el.querySelector(".vb-play")?.addEventListener("click", () => { if (!n.url) return; const a = +n.a || 0, b = (+n.b > a) ? +n.b : a + 10; const au = new Audio(n.url); au.currentTime = a; au.play().catch(() => {}); au.addEventListener("timeupdate", function f() { if (au.currentTime >= b) { au.pause(); au.removeEventListener("timeupdate", f); } }); });
+                el.querySelector(".vb-asr")?.addEventListener("click", (e) => {
+                    if (!n.url) return; e.currentTarget.disabled = true;
+                    runJob("asr", { url: n.url, start: +n.a || 0, end: +n.b || 0, language: board.language }, el.querySelector(".vb-st"), (r) => { n.words = r.text || ""; });
+                });
+                el.querySelectorAll(".vb-act").forEach(b => b.onclick = async () => {
+                    const a = b.dataset.a, st = el.querySelector(".vb-st");
+                    b.disabled = true;
+                    if (a === "voice") {
+                        const media = cv.edges.filter(e => e.from === n.id).map(e => node(e.to)).find(isMedia);
+                        if (!media) { showToastNotification(uiText("Connect this text to a picture or clip first", "Сначала подключите текст к фото или видео"), true); b.disabled = false; return; }
+                        runJob("voice", { card_id: media.id, cue_id: n.id }, st);
+                    } else if (a === "lipsync") runJob("lipsync", { card_id: n.id, prompt: n.prompt || "" }, st);
+                    else if (a === "mix") runJob("mix", { card_id: n.id, keep_original: n.keep !== false }, st);
+                    else if (a === "dubit") runJob("dubit", { card_id: n.id, desc: n.prompt || "", start: +n.dub_start || 0, max_s: +n.dub_len || 5 }, st);
+                });
+                el.querySelector(".vb-tofiles")?.addEventListener("click", () => {
+                    mediaVideos2D.unshift({ id: `vid_user_${Date.now()}`, title: (n.type === "image" ? "Lipsync: " : "Voiced: ") + (n.title || "").slice(0, 28), badge: n.type === "image" ? "LIPSYNC" : "VOICE", type: "html5", videoUrl: n.result_video, fps: 24 });
+                    saveProject2DVideos(); renderTopViewportBar(); showToastNotification(uiText("Added to the project videos", "Добавлено в видео проекта"));
+                });
+                world.appendChild(el);
+            });
+            drawWires();
+        };
+
+        // ---------- pan / zoom
+        stage.addEventListener("mousedown", (e) => {
+            if (e.target !== stage && e.target !== world && e.target !== wires) return;
+            const sx = e.clientX - cv.view.x, sy = e.clientY - cv.view.y; stage.style.cursor = "grabbing";
+            const mv = (ev) => { cv.view.x = ev.clientX - sx; cv.view.y = ev.clientY - sy; applyView(); };
+            const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); stage.style.cursor = "grab"; save(); };
+            window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+        });
+        stage.addEventListener("wheel", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+            const z0 = cv.view.z, z1 = Math.max(0.3, Math.min(2, z0 * (e.deltaY < 0 ? 1.1 : 0.9)));
+            cv.view.x = mx - (mx - cv.view.x) * z1 / z0; cv.view.y = my - (my - cv.view.y) * z1 / z0; cv.view.z = z1;
+            applyView(); save();
+        }, { passive: false });
+
+        // first open: turn old card lists into nodes once
+        if (!cv.nodes.length && board.cards.length) {
+            board.cards.forEach((c, i) => {
+                cv.nodes.push({ id: c.id, type: c.kind, url: c.media, title: c.title, prompt: c.prompt, keep: c.keep_original, result_video: c.result_video, x: 380, y: 30 + i * 330 });
+                (c.cues || []).forEach((q, k) => {
+                    cv.nodes.push({ id: q.id, type: "text", text: q.text, start: q.start, duration: q.duration, audio: q.audio, x: 60, y: 30 + i * 330 + k * 150 });
+                    cv.edges.push({ from: q.id, to: c.id });
+                });
+            });
+        }
+        applyView();
+        renderNodes();
+        requestAnimationFrame(fitView);
+    }
+
     // Montage: join project videos with a dissolve (no generation) -> a new project video
     function openMontageDialog(anchor) {
         const vids = mediaVideos2D.filter(v => v && v.videoUrl);
@@ -1329,7 +1800,8 @@ export function initStudioArchitecture(ctx) {
             }
             const prompt = panel.querySelector("#inp-gen1d-prompt").value.trim();
             const useCtx = panel.querySelector("#chk-gen1d-context")?.checked;
-            if (!prompt && !useCtx) { status.textContent = uiText("Write what to generate", "Напишите, что сгенерировать"); return; }
+            const anyDrawing = !!panel.querySelector(".chk-gen1d-draw:checked");
+            if (!prompt && !useCtx && !anyDrawing) { status.textContent = uiText("Write what to generate", "Напишите, что сгенерировать"); return; }
             runTag = `gen1d_${Date.now()}`;
             runBtn.textContent = uiText("■ Stop", "■ Стоп");
             runBtn.classList.remove("vfx-btn-primary");
@@ -7747,6 +8219,8 @@ export function initStudioArchitecture(ctx) {
     // 7A. 1D STATIC IMAGE VIEWER + VERTICAL LEFT TOOLS + UNDO + COMMENT BAR
     // -------------------------------------------------------------------------
     function render1DStaticImageViewport() {
+        let xfEditVer1D = 0;   // bumped whenever something else rewrites the active layer (strokes, undo, layer switch)
+        let selVer1D = 0;      // bumped by the selection tools; the transform keeps its session while it is unchanged
         // Always clear centerStageArea first so clicking tools or refreshing never splits the screen!
         centerStageArea.innerHTML = "";
 
@@ -7815,7 +8289,7 @@ export function initStudioArchitecture(ctx) {
 
         const toolButtons = [
             ["pan", "hand", "Pan / Zoom", "Панорама и Масштаб", "Drag to move image; scroll wheel to zoom in/out.", "Перетаскивайте изображение мышью; крутите колесико для масштабирования."],
-            ["move", "move", "Move Layer (V)", "Перемещение слоя (V)", "Drag any object: click picks the topmost layer under the cursor (paint, mask, pose, depth…) and moves it. Ctrl+drag moves the active layer only.", "Перетаскивание объектов: клик выбирает верхний слой под курсором (рисунок, маска, поза, глубина…) и двигает его. Ctrl+перетаскивание — только активный слой."],
+            ["move", "move", "Move / Transform Layer (V)", "Перемещение и трансформ слоя (V)", "Drag any object: click picks the topmost layer under the cursor. The active layer gets a box: corners scale (Shift = proportional), edge handles stretch one side, the yellow handle rotates (Shift = 15° steps). Ctrl+drag moves the active layer only.", "Перетаскивание объектов: клик выбирает верхний слой под курсором (рисунок, маска, поза, глубина…) и двигает его. У активного слоя рамка: углы — масштаб (Shift — пропорционально), стороны — растянуть по одной оси, жёлтая ручка — поворот (Shift — шаг 15°). Ctrl+перетаскивание — только активный слой."],
             ["crop", "crop", "Crop Tool", "Кадрирование (Crop)", "Drag to crop image. Click image to deselect. Enter to apply.", "Выделите прямоугольную область для обрезки кадра. Щелчок по изображению сбрасывает выделение."],
             ["draw", "pen-tool", "Draw / Note Brush", "Кисть Пометок", "Draw visual notes, arrows, and highlights on the non-destructive overlay layer.", "Рисование пометок и указаний поверх изображения на отдельном отключаемом слое."],
             ["mask", "highlighter", "Mask Selection Brush", "Кисть Выделения Маски", "Paint semi-transparent selection mask on the overlay layer.", "Выделение полупрозрачной маски объекта на верхнем слое."],
@@ -8081,6 +8555,7 @@ export function initStudioArchitecture(ctx) {
 
         let drawSeq1D = 0;
         function drawDataUrlToCanvas(dataUrl) {
+            xfEditVer1D++;
             const c2d = annotCanvas.getContext("2d");
             c2d.clearRect(0, 0, annotCanvas.width, annotCanvas.height);
             const seq = ++drawSeq1D;
@@ -8097,7 +8572,7 @@ export function initStudioArchitecture(ctx) {
         // 1D Selection Mask Architecture (Non-compounding flat alpha union/subtract)
         const activeSelectionCanvas = document.createElement("canvas");
         const activeSelectionCtx = activeSelectionCanvas.getContext("2d");
-        let hasActiveSelection = false;
+        let hasActiveSelection = false; selVer1D++;
         let currentSelectionMode = "replace"; // "replace" | "add" | "subtract"
 
         function renderActiveSelectionDisplay(previewPoly = null, mode = "replace") {
@@ -8181,7 +8656,7 @@ export function initStudioArchitecture(ctx) {
             activeSelectionCanvas.width = nw;
             activeSelectionCanvas.height = nh;
             activeSelectionCtx.clearRect(0, 0, nw, nh);
-            hasActiveSelection = false;
+            hasActiveSelection = false; selVer1D++;
             if (imgObj.layerDataUrl) {
                 drawDataUrlToCanvas(imgObj.layerDataUrl);
             }
@@ -8194,6 +8669,7 @@ export function initStudioArchitecture(ctx) {
         baseImg.src = imgObj.url;
 
         function push1DUndoSnapshot() {
+            xfEditVer1D++;
             try {
                 const snap = {
                     layer: annotCanvas.toDataURL("image/png"),
@@ -8392,6 +8868,7 @@ export function initStudioArchitecture(ctx) {
             imgObj._layersDirty = true;
             const l = getActiveLayer1D(imgObj);
             drawDataUrlToCanvas(l?.src || "");
+            if (img1DTool === "move") setTimeout(() => window.__vfxXfRefresh1D && window.__vfxXfRefresh1D(), 250);
             renderLayerStack1D();
             renderLayersPanel1D();
             scheduleLayerSync1D();
@@ -9332,7 +9809,9 @@ export function initStudioArchitecture(ctx) {
             hasPushedUndoForStroke = false;
 
             if (e.button === 0 && !e.spaceKey && img1DTool === "move") {
-                moveMouseDown1D(getCanvasCoords(e), e);
+                const ptM = getCanvasCoords(e);
+                if (xfMouseDown1D(ptM, e)) return;
+                moveMouseDown1D(ptM, e);
                 return;
             }
             if (e.button === 0 && !e.spaceKey && img1DTool !== "pose" && typeof activeSkeleton1D === "function") {
@@ -9446,6 +9925,192 @@ export function initStudioArchitecture(ctx) {
             }
             return false;
         }
+        // --- Free transform (move tool on a raster layer): box with handles around the layer's pixels.
+        // Corners scale (free; Shift = proportional), edge handles stretch one axis, the round handle above
+        // rotates (Shift snaps to 15 deg), inside the box moves. Every edit re-renders from the untouched
+        // original pixels, so repeated scaling does not blur the layer. Scaling is around the box centre.
+        let xf1D = null;   // { layerId, orig, bx, by, bw, bh, t: {x, y, sx, sy, r}, bakedSrc }
+        let xfDrag1D = null;
+        function xfBBox1D(canvas) {
+            const W = canvas.width, H = canvas.height, k = Math.max(1, Math.ceil(Math.max(W, H) / 512));
+            const c = document.createElement("canvas"); c.width = Math.ceil(W / k); c.height = Math.ceil(H / k);
+            const cx = c.getContext("2d"); cx.drawImage(canvas, 0, 0, c.width, c.height);
+            const d = cx.getImageData(0, 0, c.width, c.height).data;
+            let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+            for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+                if (d[(y * c.width + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+            }
+            if (x1 < 0) return null;
+            return { x: x0 * k, y: y0 * k, w: Math.min(W, (x1 + 1) * k) - x0 * k, h: Math.min(H, (y1 + 1) * k) - y0 * k };
+        }
+        // Selection transform: the selected pixels of the active layer float (or, when that layer is empty there,
+        // a copy of the photo under the selection goes to a new layer) and transform together with the selection.
+        function xfSelSession1D() {
+            const l0 = getActiveLayer1D(imgObj);
+            if (xf1D && xf1D.sel && xf1D.selVer === selVer1D && l0 && xf1D.layerId === l0.id && xf1D.editVer === xfEditVer1D) return xf1D;
+            const W = annotCanvas.width, H = annotCanvas.height;
+            const mask = document.createElement("canvas"); mask.width = W; mask.height = H;
+            mask.getContext("2d").drawImage(activeSelectionCanvas, 0, 0, W, H);
+            const bb = xfBBox1D(mask);
+            if (!bb) { xf1D = null; return null; }
+            const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
+            let l = l0;
+            const layerPx = mk();
+            if (l && !Array.isArray(l.skeleton) && l.visible !== false) layerPx.getContext("2d").drawImage(annotCanvas, 0, 0);
+            const floating = mk(), fx = floating.getContext("2d");
+            fx.drawImage(layerPx, 0, 0); fx.globalCompositeOperation = "destination-in"; fx.drawImage(mask, 0, 0);
+            let rest = mk();
+            if (!xfBBox1D(floating)) {   // nothing of this layer is selected: lift the photo under the selection
+                fx.globalCompositeOperation = "source-over"; fx.clearRect(0, 0, W, H);
+                fx.drawImage(baseImg, 0, 0, W, H); fx.globalCompositeOperation = "destination-in"; fx.drawImage(mask, 0, 0);
+                // one lift per selection: a second press reuses the copy instead of stacking new layers
+                l = addLayer1D("paint", uiText("Selection copy", "Копия выделения"), "");
+                drawSeq1D++;
+                try { imgObj.undoStack.push({ createdLayerId: l.id }); } catch (_) {}
+            } else {
+                const rx = rest.getContext("2d"); rx.drawImage(layerPx, 0, 0); rx.globalCompositeOperation = "destination-out"; rx.drawImage(mask, 0, 0);
+            }
+            fx.globalCompositeOperation = "source-over";
+            xf1D = { sel: true, layerId: l.id, orig: floating, rest, mask, bx: bb.x, by: bb.y, bw: bb.w, bh: bb.h,
+                     t: { x: 0, y: 0, sx: 1, sy: 1, r: 0 }, selVer: selVer1D, editVer: xfEditVer1D };
+            return xf1D;
+        }
+        function xfSession1D() {
+            if (hasActiveSelection) return xfSelSession1D();
+            const l = getActiveLayer1D(imgObj);
+            if (!l || Array.isArray(l.skeleton) || l.visible === false) { xf1D = null; return null; }
+            if (xf1D && !xf1D.sel && xf1D.layerId === l.id && xf1D.editVer === xfEditVer1D) return xf1D;
+            const orig = document.createElement("canvas"); orig.width = annotCanvas.width; orig.height = annotCanvas.height;
+            try { orig.getContext("2d").drawImage(annotCanvas, 0, 0); } catch (_) { xf1D = null; return null; }
+            const bb = xfBBox1D(orig);
+            if (!bb) { xf1D = null; return null; }
+            xf1D = { sel: false, layerId: l.id, orig, bx: bb.x, by: bb.y, bw: bb.w, bh: bb.h, t: { x: 0, y: 0, sx: 1, sy: 1, r: 0 }, editVer: xfEditVer1D };
+            return xf1D;
+        }
+        function xfCenter1D(x) { return { x: x.bx + x.bw / 2 + x.t.x, y: x.by + x.bh / 2 + x.t.y }; }
+        // original local offset (from the box centre) -> canvas point
+        function xfToCanvas1D(x, lx, ly) {
+            const c = xfCenter1D(x), cs = Math.cos(x.t.r), sn = Math.sin(x.t.r);
+            const ax = lx * x.t.sx, ay = ly * x.t.sy;
+            return { x: c.x + ax * cs - ay * sn, y: c.y + ax * sn + ay * cs };
+        }
+        function xfToLocal1D(x, p) {  // canvas point -> rotated-frame offset from the centre (not scaled)
+            const c = xfCenter1D(x), cs = Math.cos(-x.t.r), sn = Math.sin(-x.t.r), dx = p.x - c.x, dy = p.y - c.y;
+            return { x: dx * cs - dy * sn, y: dx * sn + dy * cs };
+        }
+        function xfHandles1D(x) {
+            const hw = x.bw / 2, hh = x.bh / 2, px = annotCanvas.width / Math.max(1, annotCanvas.getBoundingClientRect().width);
+            const H = [["nw", -hw, -hh], ["n", 0, -hh], ["ne", hw, -hh], ["e", hw, 0], ["se", hw, hh], ["s", 0, hh], ["sw", -hw, hh], ["w", -hw, 0]]
+                .map(([id, lx, ly]) => ({ id, lx, ly, ...xfToCanvas1D(x, lx, ly) }));
+            const top = xfToCanvas1D(x, 0, -hh), c = xfCenter1D(x);
+            const dl = Math.hypot(top.x - c.x, top.y - c.y) || 1, off = 28 * px;
+            H.push({ id: "rot", x: top.x + (top.x - c.x) / dl * off, y: top.y + (top.y - c.y) / dl * off });
+            return { list: H, px };
+        }
+        function xfRender1D() {
+            const x = xf1D; if (!x) return;
+            const c2d = annotCanvas.getContext("2d");
+            c2d.setTransform(1, 0, 0, 1, 0, 0);
+            c2d.clearRect(0, 0, annotCanvas.width, annotCanvas.height);
+            const c = xfCenter1D(x), oc = { x: x.bx + x.bw / 2, y: x.by + x.bh / 2 };
+            c2d.save();
+            c2d.translate(c.x, c.y); c2d.rotate(x.t.r); c2d.scale(x.t.sx, x.t.sy); c2d.translate(-oc.x, -oc.y);
+            c2d.imageSmoothingQuality = "high";
+            c2d.drawImage(x.orig, 0, 0);
+            c2d.restore();
+            if (x.sel) {
+                c2d.save(); c2d.globalCompositeOperation = "destination-over"; c2d.drawImage(x.rest, 0, 0); c2d.restore();
+                const m = activeSelectionCanvas.getContext("2d");
+                m.setTransform(1, 0, 0, 1, 0, 0);
+                m.clearRect(0, 0, activeSelectionCanvas.width, activeSelectionCanvas.height);
+                const k = activeSelectionCanvas.width / annotCanvas.width;
+                m.save(); m.scale(k, k);
+                m.translate(c.x, c.y); m.rotate(x.t.r); m.scale(x.t.sx, x.t.sy); m.translate(-oc.x, -oc.y);
+                m.drawImage(x.mask, 0, 0);
+                m.restore();
+            }
+        }
+        function xfDrawHandles1D() {
+            if (img1DTool !== "move") return;
+            const sCtx = selectionCanvas.getContext("2d");
+            if (hasActiveSelection) renderActiveSelectionDisplay();
+            else sCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+            const x = xf1D; if (!x) return;
+            const { list, px } = xfHandles1D(x);
+            const corner = ["nw", "ne", "se", "sw"].map(id => list.find(h => h.id === id));
+            sCtx.save();
+            sCtx.strokeStyle = "#38bdf8"; sCtx.lineWidth = 1.5 * px; sCtx.setLineDash([5 * px, 4 * px]);
+            sCtx.beginPath(); corner.forEach((h, i) => i ? sCtx.lineTo(h.x, h.y) : sCtx.moveTo(h.x, h.y)); sCtx.closePath(); sCtx.stroke();
+            sCtx.setLineDash([]);
+            const n = list.find(h => h.id === "n"), rot = list.find(h => h.id === "rot");
+            sCtx.beginPath(); sCtx.moveTo(n.x, n.y); sCtx.lineTo(rot.x, rot.y); sCtx.stroke();
+            list.forEach(h => {
+                sCtx.fillStyle = h.id === "rot" ? "#fbbf24" : "#ffffff";
+                sCtx.beginPath();
+                if (h.id === "rot") sCtx.arc(h.x, h.y, 5 * px, 0, Math.PI * 2);
+                else sCtx.rect(h.x - 4 * px, h.y - 4 * px, 8 * px, 8 * px);
+                sCtx.fill(); sCtx.stroke();
+            });
+            sCtx.restore();
+        }
+        // the layer canvas reloads asynchronously after a layer switch: retry until its pixels are there
+        window.__vfxXfRefresh1D = (tries = 8) => {
+            if (img1DTool !== "move") return;
+            if (xf1D && (xf1D.layerId !== imgObj.activeLayerId || xf1D.sel !== hasActiveSelection)) xf1D = null;
+            const x = xfSession1D();
+            xfDrawHandles1D();
+            if (!x && tries > 0) setTimeout(() => window.__vfxXfRefresh1D(tries - 1), 200);
+        };
+        // returns true when the press started a transform drag
+        function xfMouseDown1D(pt, e) {
+            if (e.ctrlKey || e.metaKey) return false;
+            const x = xfSession1D(); if (!x) return false;
+            const { list, px } = xfHandles1D(x);
+            const hit = list.find(h => Math.hypot(h.x - pt.x, h.y - pt.y) < 12 * px);
+            const loc = xfToLocal1D(x, pt);
+            const inside = Math.abs(loc.x) <= Math.abs(x.bw / 2 * x.t.sx) && Math.abs(loc.y) <= Math.abs(x.bh / 2 * x.t.sy);
+            if (!hit && !inside) return false;
+            push1DUndoSnapshot();
+            x.editVer = xfEditVer1D;
+            xfDrag1D = { mode: hit ? hit.id : "move", start: pt, t0: { ...x.t }, c0: xfCenter1D(x) };
+            return true;
+        }
+        function xfMouseMove1D(pt, e) {
+            const x = xf1D, d = xfDrag1D; if (!x || !d) return;
+            const t = x.t;
+            if (d.mode === "move") { t.x = d.t0.x + pt.x - d.start.x; t.y = d.t0.y + pt.y - d.start.y; }
+            else if (d.mode === "rot") {
+                const a0 = Math.atan2(d.start.y - d.c0.y, d.start.x - d.c0.x), a1 = Math.atan2(pt.y - d.c0.y, pt.x - d.c0.x);
+                let r = d.t0.r + a1 - a0;
+                if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12);
+                t.r = r;
+            } else {
+                const loc = xfToLocal1D({ ...x, t: d.t0 }, pt);   // in the box's rotated frame, from the centre
+                const hw = x.bw / 2 || 1, hh = x.bh / 2 || 1;
+                const ax = /e|w/.test(d.mode) && d.mode !== "n" && d.mode !== "s", ay = /n|s/.test(d.mode) && d.mode !== "e" && d.mode !== "w";
+                let sx = ax ? loc.x / (hw * (d.mode.includes("w") ? -1 : 1)) : d.t0.sx;
+                let sy = ay ? loc.y / (hh * (d.mode.includes("n") ? -1 : 1)) : d.t0.sy;
+                if (e.shiftKey && ax && ay) {   // proportional: keep the aspect of the start of the drag
+                    const k = Math.max(Math.abs(sx / (d.t0.sx || 1)), Math.abs(sy / (d.t0.sy || 1)));
+                    sx = d.t0.sx * k * Math.sign(sx || 1); sy = d.t0.sy * k * Math.sign(sy || 1);
+                }
+                const tiny = 0.02;
+                t.sx = Math.abs(sx) < tiny ? tiny * Math.sign(sx || 1) : sx;
+                t.sy = Math.abs(sy) < tiny ? tiny * Math.sign(sy || 1) : sy;
+            }
+            xfRender1D(); xfDrawHandles1D();
+        }
+        function xfMouseUp1D() {
+            const d = xfDrag1D; xfDrag1D = null;
+            if (!d || !xf1D) return;
+            const url = annotCanvas.toDataURL("image/png");
+            imgObj.layerDataUrl = url;
+            const l = getActiveLayer1D(imgObj);
+            if (xf1D) xf1D.editVer = xfEditVer1D;
+            renderTopViewportBar();
+            addLog("UI", `Image layer transformed: ${l ? l.name : ""}`);
+        }
+
         function moveMouseDown1D(pt, e) {
             // a joint under the cursor wins: drag the joint, not the whole skeleton
             if (!(e.ctrlKey || e.metaKey)) {
@@ -9506,10 +10171,12 @@ export function initStudioArchitecture(ctx) {
             if (m.origSkel) { commitSkeleton1D(m.layer); if (typeof drawPoseHandles1D === "function") drawPoseHandles1D(); }
             else { imgObj.layerDataUrl = annotCanvas.toDataURL("image/png"); renderTopViewportBar(); }
             addLog("UI", `1D layer moved: ${m.layer.name}`);
+            if (window.__vfxXfRefresh1D) window.__vfxXfRefresh1D();
         }
 
         const onWindowMouseMove = (e) => {
             if (mainViewDim !== "1D") return;
+            if (xfDrag1D) { xfMouseMove1D(getCanvasCoords(e), e); return; }
             if (move1D) { moveMouseMove1D(getCanvasCoords(e)); return; }
             if (isPanning) {
                 img1DPanX = e.clientX - startX;
@@ -9628,7 +10295,8 @@ export function initStudioArchitecture(ctx) {
                 return;
             }
 
-            if (move1D) { moveMouseUp1D(); return; }
+            if (xfDrag1D) { xfMouseUp1D(); return; }
+            if (move1D) { moveMouseUp1D(); setTimeout(() => window.__vfxXfRefresh1D && window.__vfxXfRefresh1D(), 0); return; }
             if (isPanning) {
                 isPanning = false;
                 stageViewport.style.cursor = img1DTool === "pan" ? "grab" : (img1DTool === "move" ? "move" : "crosshair");
@@ -9675,7 +10343,7 @@ export function initStudioArchitecture(ctx) {
                     if (isClick && (!polyToCommit || polyToCommit.length < 3)) {
                         // Click / Deselect
                         activeSelectionCtx.clearRect(0, 0, activeSelectionCanvas.width, activeSelectionCanvas.height);
-                        hasActiveSelection = false;
+                        hasActiveSelection = false; selVer1D++;
                         renderActiveSelectionDisplay(null);
                     } else if (polyToCommit && polyToCommit.length >= 3) {
                         // Commit to activeSelectionCanvas cleanly
@@ -9697,7 +10365,7 @@ export function initStudioArchitecture(ctx) {
                         }
                         activeSelectionCtx.closePath();
                         activeSelectionCtx.fill();
-                        hasActiveSelection = true;
+                        hasActiveSelection = true; selVer1D++;
                         renderActiveSelectionDisplay(null);
                     }
                     lassoPoints = [];
@@ -9861,6 +10529,8 @@ export function initStudioArchitecture(ctx) {
                 }
                 img1DTool = b.dataset.tool;
                 stageViewport.style.cursor = img1DTool === "pan" ? "grab" : (img1DTool === "move" ? "move" : "crosshair");
+                if (img1DTool === "move") setTimeout(() => window.__vfxXfRefresh1D && window.__vfxXfRefresh1D(), 0);
+                else if (!hasActiveSelection && img1DTool !== "pose") { try { selectionCanvas.getContext("2d").clearRect(0, 0, selectionCanvas.width, selectionCanvas.height); } catch (_) {} }
                 toolsBar.querySelectorAll(".btn-1d-tool").forEach(btn => {
                     const isAct = btn.dataset.tool === img1DTool;
                     btn.style.background = isAct ? "#ffffff" : "transparent";
@@ -9980,7 +10650,7 @@ export function initStudioArchitecture(ctx) {
                 }
 
                 activeSelectionCtx.clearRect(0, 0, activeSelectionCanvas.width, activeSelectionCanvas.height);
-                hasActiveSelection = false;
+                hasActiveSelection = false; selVer1D++;
                 renderActiveSelectionDisplay(null);
 
                 renderTopViewportBar();
@@ -10023,7 +10693,7 @@ export function initStudioArchitecture(ctx) {
                     c2d.clearRect(0, 0, annotCanvas.width, annotCanvas.height);
                     c2d.drawImage(maskTemp, 0, 0);
                     activeSelectionCtx.clearRect(0, 0, activeSelectionCanvas.width, activeSelectionCanvas.height);
-                    hasActiveSelection = false;
+                    hasActiveSelection = false; selVer1D++;
                     renderActiveSelectionDisplay(null);
                 } else {
                     c2d.fillStyle = "rgba(255, 255, 255, 0.55)";
@@ -20446,6 +21116,17 @@ export function initStudioArchitecture(ctx) {
                             body: JSON.stringify({ mode: act.mode || "dub", config: act.config || {}, start_at_stage: act.start_at_stage || 0,
                                 project_id: (window.currentProject && window.currentProject.id) || "" }) })
                             .then(r => r.json()).then(j => showToastNotification(j.error ? `❌ ${j.error}` : uiText("Dubbing started — progress in the Voice tab", "Дубляж запущен — прогресс во вкладке «Голос»"), !!j.error));
+                    } else if (act.type === "music_job") {
+                        const body = { project_id: currentProject?.id || "", ...(act.params || {}) };
+                        fetch("/vfx/music/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+                            .then(r => r.json()).then(j => showToastNotification(j.error ? j.error : uiText("Music is being generated — see the Music tab", "Музыка генерируется — смотрите вкладку «Музыка»"), !!j.error))
+                            .catch(e => showToastNotification(String(e), true));
+                    } else if (act.type === "open_voiceover") {
+                        (async () => {
+                            const pidV = currentProject?.id;
+                            if (pidV && act.text) await fetch(`/vfx/narration/${encodeURIComponent(pidV)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: act.text }) }).catch(() => {});
+                            openNarrationEditor();
+                        })();
                     } else if (act.type === "mesh3d_job") {
                         switchTab("mesh_gen");
                         fetch("/vfx/mesh3d/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(act.params || {}) })
@@ -22162,7 +22843,7 @@ export function initStudioArchitecture(ctx) {
         }
 
         else if (activeTab === "tts_stage1") {
-            // Dubbing & voice: the Video Dubbing Studio engines (Whisper, F5-TTS / VibeVoice / Qwen3-TTS) run in
+            // Dubbing & voice: the Video Dubbing Studio engines (Whisper, F5-TTS) run in
             // their own Python env through /vfx/dubbing/*; results land in the project's audio_tts folder.
             const dubMode = window.__dubMode || "dub";
             const pidNow = (window.currentProject && window.currentProject.id) || "";
@@ -22179,9 +22860,11 @@ export function initStudioArchitecture(ctx) {
                     <span id="dub-env" style="margin-left: auto; font-size: 9.5px; font-weight: 400; opacity: .7;">…</span>
                 </div>
                 <div style="display: flex; gap: 4px;">
-                    ${[["dub", uiText("Dub a video", "Дубляж видео")], ["voice", uiText("Clone a voice", "Клон голоса")], ["narration", uiText("Narrate text", "Озвучка текста")]]
+                    ${[["dub", uiText("Dub a video", "Дубляж видео")], ["voice", uiText("Clone a voice", "Клон голоса")]]
                         .map(([k, t]) => `<button class="vfx-btn ${dubMode === k ? "vfx-btn-primary" : ""} dub-mode" data-mode="${k}" style="flex: 1; padding: 4px; font-size: 10px;">${t}</button>`).join("")}
                 </div>
+                <button class="vfx-btn" id="btn-open-narration" style="padding: 5px; font-size: 10.5px; border-color: rgba(56,189,248,0.5); color: #bae6fd;">📖 ${uiText("Voice-over: long text, fix a paragraph and re-voice only it", "Закадровый голос: длинный текст, правка абзаца — переозвучка только его")}</button>
+                <button class="vfx-btn" id="btn-open-voiceboard" style="padding: 5px; font-size: 10.5px; border-color: rgba(251,191,36,0.5); color: #fde68a;">🎙 ${uiText("Voice board: pictures & clips + lines → voice, lip-sync", "Холст озвучки: картинки и клипы + реплики → голос, липсинк")}</button>
                 <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 6px;">
                     ${dubMode === "dub" ? `
                         <label style="${row}">${uiText("Video file", "Видеофайл")}</label>
@@ -22189,7 +22872,7 @@ export function initStudioArchitecture(ctx) {
                         <div style="display: flex; gap: 6px;"><div style="flex: 1;"><div style="font-size: 9.5px; opacity: .6;">${uiText("From", "С языка")}</div>${langSel("dub-src", "en")}</div>
                             <div style="flex: 1;"><div style="font-size: 9.5px; opacity: .6;">${uiText("To", "На язык")}</div>${langSel("dub-tgt", "ru")}</div></div>
                         <div style="display: flex; gap: 6px;"><div style="flex: 1;"><div style="font-size: 9.5px; opacity: .6;">${uiText("Translator", "Переводчик")}</div><select id="dub-tr" style="${fld}"></select></div>
-                            <div style="flex: 1;"><div style="font-size: 9.5px; opacity: .6;">${uiText("Voice engine", "Движок голоса")}</div><select id="dub-eng" style="${fld}"><option value="f5tts">F5-TTS</option><option value="vibevoice">VibeVoice</option><option value="qwen">Qwen3-TTS</option></select></div></div>
+                            <div style="flex: 1;"><div style="font-size: 9.5px; opacity: .6;">${uiText("Voice engine", "Движок голоса")}</div><select id="dub-eng" style="${fld}"><option value="f5tts">F5-TTS</option></select></div></div>
                         <label style="${row}"><input type="checkbox" id="dub-bg" checked> ${uiText("Keep the original background sound / music", "Оставить фон и музыку оригинала")}</label>
                         <label style="${row}"><input type="checkbox" id="dub-diar"> ${uiText("Several speakers (diarization)", "Несколько дикторов (диаризация)")}</label>
                         <div style="font-size: 9.5px; opacity: .6;">${uiText("Voice sample (optional; by default the original speaker is cloned)", "Образец голоса (необязательно; по умолчанию клонируется голос оригинала)")}</div>
@@ -22202,13 +22885,13 @@ export function initStudioArchitecture(ctx) {
                         <div style="display: flex; gap: 6px;"><input id="dub-ref-a" type="number" step="0.1" value="0" style="${fld}" title="${uiText("from, s", "с, сек")}"><input id="dub-ref-b" type="number" step="0.1" value="0" style="${fld}" title="${uiText("to, s (0 = to the end)", "до, сек (0 = до конца)")}"></div>
                         <textarea id="dub-reftext" rows="2" style="${fld}" placeholder="${uiText("What is said in the sample (empty = Whisper transcribes it)", "Что говорится в образце (пусто — Whisper расшифрует сам)")}"></textarea>
                         <textarea id="dub-text" rows="4" style="${fld}" placeholder="${uiText("Text to speak in this voice", "Текст, который нужно произнести этим голосом")}"></textarea>
-                        <div style="display: flex; gap: 6px;"><select id="dub-eng" style="${fld}"><option value="F5-TTS">F5-TTS</option><option value="VibeVoice">VibeVoice</option><option value="Qwen">Qwen3-TTS</option></select>${langSel("dub-tgt", "ru")}</div>
+                        <div style="display: flex; gap: 6px;"><select id="dub-eng" style="${fld}"><option value="F5-TTS">F5-TTS</option></select>${langSel("dub-tgt", "ru")}</div>
                     ` : `
                         <div style="font-size: 9.5px; opacity: .6;">${uiText("Narrator voice sample", "Образец голоса диктора")}</div>
                         <input id="dub-ref" style="${fld}" placeholder="${uiText("path to the sample", "путь к образцу")}">
                         <textarea id="dub-reftext" rows="2" style="${fld}" placeholder="${uiText("What is said in the sample", "Что говорится в образце")}"></textarea>
                         <textarea id="dub-text" rows="7" style="${fld}" placeholder="${uiText("Long text, chapter or script", "Длинный текст, глава или сценарий")}"></textarea>
-                        <div style="display: flex; gap: 6px;"><select id="dub-eng" style="${fld}"><option value="F5-TTS">F5-TTS</option><option value="VibeVoice">VibeVoice</option><option value="Qwen">Qwen3-TTS</option></select>
+                        <div style="display: flex; gap: 6px;"><select id="dub-eng" style="${fld}"><option value="F5-TTS">F5-TTS</option></select>
                             <label style="${row} white-space: nowrap;"><input type="checkbox" id="dub-stress" checked> ${uiText("RU stress marks", "Ударения (RU)")}</label></div>
                     `}
                     <div style="display: flex; gap: 5px;">
@@ -22223,6 +22906,9 @@ export function initStudioArchitecture(ctx) {
             `;
             if (window.lucide) lucide.createIcons();
             const q = (s) => customTabPane.querySelector(s);
+            customTabPane.querySelector("#btn-open-voiceboard")?.addEventListener("click", () => openVoiceBoard());
+            customTabPane.querySelector("#btn-open-narration")?.addEventListener("click", () => openNarrationEditor());
+            if (window.__dubMode === "narration") window.__dubMode = "dub";
             customTabPane.querySelectorAll(".dub-mode").forEach(b => b.onclick = () => { window.__dubMode = b.dataset.mode; renderActiveCustomTab(); });
             fetch("/vfx/dubbing/status").then(r => r.json()).then(st => {
                 const env = q("#dub-env"); if (!env) return;
@@ -22257,7 +22943,7 @@ export function initStudioArchitecture(ctx) {
                         player: { video_path: v("#dub-video").trim(), target_lang: v("#dub-tgt"), tts_engine: v("#dub-eng") },
                         analysis: { source_language: v("#dub-src"), enable_speaker_diarization: q("#dub-diar").checked },
                         translation: { source_language: v("#dub-src"), target_language: v("#dub-tgt"), translator: v("#dub-tr") },
-                        tts: { engine: { f5tts: "F5-TTS", vibevoice: "VibeVoice", qwen: "Qwen" }[v("#dub-eng")], speaker_ref: v("#dub-ref").trim() },
+                        tts: { engine: { f5tts: "F5-TTS", qwen: "Qwen" }[v("#dub-eng")], speaker_ref: v("#dub-ref").trim() },
                         finalize: { add_original_background: q("#dub-bg").checked, add_original_noise: q("#dub-bg").checked } } };
                 } else if (dubMode === "voice") {
                     if (!v("#dub-ref").trim() || !v("#dub-text").trim()) { showToastNotification(uiText("A voice sample and a text are needed", "Нужны образец голоса и текст"), true); return; }
@@ -23277,7 +23963,7 @@ export function initStudioArchitecture(ctx) {
                     q("#mu-ready").style.color = st.ready ? "#4ade80" : "#fbbf24";
                     const miss = q("#mu-missing");
                     miss.style.display = st.ready ? "none" : "block";
-                    if (!st.ready) miss.innerHTML = `${uiText("Download the ACE-Step 1.5 models (~15 GB): Settings → Music, or run", "Скачайте модели ACE-Step 1.5 (~15 ГБ): Настройки → Музыка, или запустите")} <code>install.bat --download-models music</code><br>${(st.missing || []).map(escM).join("<br>")}`;
+                    if (!st.ready) miss.innerHTML = `${uiText("Download the ACE-Step 1.5 models (~15 GB): Settings → Music, or run", "Скачайте модели ACE-Step 1.5 (~15 ГБ): Настройки → Музыка, или запустите")} <code>.\install.bat --download-models music</code><br>${(st.missing || []).map(escM).join("<br>")}`;
                     q("#mu-go").disabled = !st.ready;
                     renderLib(st.tracks || []);
                 } catch (e) { q("#mu-st").textContent = String(e.message || e); }

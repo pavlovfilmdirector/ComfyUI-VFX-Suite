@@ -193,6 +193,14 @@
       "dir": "vae",
       "size_gb": 0.34,
       "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/vae/ace_1.5_vae.safetensors"
+    },
+    {
+      "group": "iclora",
+      "file": "ltx-2.3-22b-ic-lora-dubit-0.9.safetensors",
+      "dir": "loras/LTX-2.3",
+      "size_gb": 2.47,
+      "page": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-DubIt",
+      "note": "gated: accept the license on the page, then download; used by the Voice board (re-voice a clip with lip-sync)"
     }
   ]
 }

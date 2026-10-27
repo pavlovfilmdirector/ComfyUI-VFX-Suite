@@ -12,7 +12,7 @@ Endpoint Groups:
 3. `/vfx/save_layout_batch`      : Multi-pass WebGL baking (Depth / Normal / Mask) + `layout_manifest.json`.
 4. `/vfx/mesh3d/*`               : Async 3D asset generation bridge (`Hunyuan3D-Omni` BBox & `TRELLIS.2-4B`).
 5. `/vfx/plate_prep/{node_id}/*` : Non-destructive 2D pipeline (Raw -> Undistort -> SAM2 -> CorridorKey -> Paint).
-6. `/vfx/pipeline/*`             : Master Cinematic Cocktail orchestrator (LTX-2.3 22B + IC-LoRA + Qwen3-TTS).
+6. `/vfx/pipeline/*`             : Master Cinematic Cocktail orchestrator (LTX-2.3 22B + IC-LoRA + TTS).
 """
 
 import os
@@ -603,6 +603,95 @@ def register_server_routes():
         async def vfx_music_cancel(request):
             from .music_service import cancel as _mcancel
             return add_cors_headers(web.json_response(_mcancel(request.match_info["job_id"])))
+
+        # --- Voice board: cards (image / video) with lines of speech -> voice clone, lip-sync, mix ---
+        @routes.get("/vfx/voiceboard/{project_id}")
+        async def vfx_voiceboard_get(request):
+            from .voice_board_service import load_board as _vb_load
+            return add_cors_headers(web.json_response(_vb_load(_sanitize_id(request.match_info["project_id"]))))
+
+        @routes.post("/vfx/voiceboard/{project_id}")
+        async def vfx_voiceboard_save(request):
+            from .voice_board_service import save_board as _vb_save
+            try:
+                data = await request.json()
+                return add_cors_headers(web.json_response(_vb_save(_sanitize_id(request.match_info["project_id"]), data)))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.post("/vfx/voiceboard/{project_id}/{action}")
+        async def vfx_voiceboard_action(request):
+            from . import voice_board_service as _vb
+            pid = _sanitize_id(request.match_info["project_id"])
+            action = request.match_info["action"]
+            try:
+                d = await request.json()
+                if action == "voice":
+                    res = _vb.start_voice(pid, str(d["card_id"]), str(d["cue_id"]))
+                elif action == "lipsync":
+                    res = _vb.start_lipsync(pid, str(d["card_id"]), str(d.get("prompt") or ""), d.get("seed"))
+                elif action == "transcribe":
+                    res = _vb.start_transcribe(pid, str(d["card_id"]), str(d["cue_id"]), str(d.get("which") or "ref"))
+                elif action == "asr":
+                    res = _vb.start_asr(pid, str(d["url"]), float(d.get("start") or 0), float(d.get("end") or 0),
+                                        str(d.get("language") or "ru"), bool(d.get("whole")))
+                elif action == "dubit":
+                    res = _vb.start_dubit(pid, str(d["card_id"]), str(d.get("desc") or ""), float(d.get("start") or 0),
+                                          float(d.get("max_s") or 5), d.get("seed"))
+                elif action == "mix":
+                    res = _vb.start_mix(pid, str(d["card_id"]), bool(d.get("keep_original", True)))
+                else:
+                    raise ValueError(f"Unknown action {action}")
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.get("/vfx/voiceboard_job/{job_id}")
+        async def vfx_voiceboard_job(request):
+            from .voice_board_service import get_job as _vb_job
+            return add_cors_headers(web.json_response(_vb_job(request.match_info["job_id"])))
+
+        @routes.post("/vfx/voiceboard_job/{job_id}/cancel")
+        async def vfx_voiceboard_cancel(request):
+            from .voice_board_service import cancel as _vb_cancel
+            return add_cors_headers(web.json_response(_vb_cancel(request.match_info["job_id"])))
+
+        # --- Voice-over: long text, paragraph cache (only edited paragraphs are re-voiced) ---
+        @routes.get("/vfx/narration/{project_id}")
+        async def vfx_narration_get(request):
+            from .narration_service import status_parts as _n_st
+            return add_cors_headers(web.json_response(_n_st(_sanitize_id(request.match_info["project_id"]))))
+
+        @routes.post("/vfx/narration/{project_id}")
+        async def vfx_narration_save(request):
+            from .narration_service import save_doc as _n_save, status_parts as _n_st
+            pid = _sanitize_id(request.match_info["project_id"])
+            try:
+                data = await request.json()
+                keep = {k: data[k] for k in ("text", "ref_audio", "ref_title", "ref_start", "ref_end", "ref_text", "language", "pause", "seed", "speed") if k in data}
+                _n_save(pid, keep)
+                return add_cors_headers(web.json_response(_n_st(pid)))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.post("/vfx/narration/{project_id}/{action}")
+        async def vfx_narration_action(request):
+            from . import narration_service as _n
+            pid = _sanitize_id(request.match_info["project_id"])
+            action = request.match_info["action"]
+            try:
+                d = await request.json()
+                if action == "generate":
+                    res = _n.start_generate(pid, [int(i) for i in (d.get("only") or [])])
+                elif action == "prepare":
+                    res = _n.start_prepare(pid, bool(d.get("add_stress", True)))
+                elif action == "transcribe_ref":
+                    res = _n.start_transcribe_ref(pid)
+                else:
+                    raise ValueError(f"Unknown action {action}")
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
 
         # --- VFX Director Agent Endpoint (Non-blocking via asyncio.to_thread) ---
         def _studio_agent_turn(data, msg, history, references, agent_config, timeline_context):

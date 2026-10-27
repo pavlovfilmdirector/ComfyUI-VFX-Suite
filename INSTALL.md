@@ -25,9 +25,9 @@ KESHIKI is a ComfyUI custom node pack with its own studio UI. It runs fully loca
    - download COLMAP 3.13 (CUDA, ~258 MB) and GLOMAP 1.2.0 (CUDA, ~73 MB) into `tools/colmap` and `tools/glomap`
      for camera tracking (GLOMAP's global mapper on COLMAP's features gives the most accurate solves);
    - list which models are present and where the missing ones go.
-3. Models: run `install.bat --download-models core` to fetch the core set (~40 GB), or download the files
+3. Models: run `.\install.bat --download-models core` to fetch the core set (~40 GB), or download the files
    listed by the installer yourself. Already have them elsewhere? Point ComfyUI at that folder with
-   `extra_model_paths.yaml`. `install.bat --check` re-checks without changing anything.
+   `extra_model_paths.yaml`. `.\install.bat --check` re-checks without changing anything.
 4. Start ComfyUI as usual and open **http://127.0.0.1:8188/vfx/studio/**
    (or use `run_keshiki_studio.bat`, which starts ComfyUI and opens the studio in an app window).
 
@@ -68,10 +68,9 @@ These tools need packages that clash with ComfyUI's, so KESHIKI runs them as sep
 }
 ```
 
-- **Dubbing & voice** (`dubbing/`): Whisper, Demucs, F5-TTS / VibeVoice / Qwen3-TTS, RUAccent. Create a Python 3.11
-  environment and install `dubbing/requirements.txt` plus the TTS wrappers it lists (ComfyUI-F5-TTS,
-  VibeVoice-ComfyUI). VibeVoice needs `transformers<5` and F5-TTS pins `pydantic`, which is why it can't share
-  ComfyUI's environment. Models go to `dubbing_models` (`F5-TTS/`, `Whisper/`, `vibevoice/`, `Qwen/`).
+- **Dubbing & voice** (`dubbing/`): Whisper, Demucs, F5-TTS, RUAccent. Create a Python 3.11
+  environment and install `dubbing/requirements.txt` plus the TTS wrapper it lists (ComfyUI-F5-TTS). F5-TTS pins `pydantic` and the engines need older `transformers`, which is why it can't share
+  ComfyUI's environment. Models go to `dubbing_models` (`F5-TTS/`, `Whisper/`, `Qwen/`). VibeVoice is not used: Microsoft withdrew the model.
   Translation runs on a local LLM through Ollama by default.
 - **TRELLIS.2** (image → 3D, mesh texturing): install Microsoft's TRELLIS.2 repo in its own environment and download
   `TRELLIS.2-4B` into `<trellis_root>/weights/microsoft/TRELLIS.2-4B`. KESHIKI calls `tools/trellis_runner.py` inside it.

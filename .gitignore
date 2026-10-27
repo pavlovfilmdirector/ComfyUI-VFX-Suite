@@ -53,3 +53,4 @@ web/standalone/keshiki_mark_*.png
 docs/STATUS_RU.md
 # third-party example workflows with someone else's local paths (not used by the studio)
 workflows/LTX-2.5/LTX-2.3_-_V2V_inpainting_*.json
+tests/_*
