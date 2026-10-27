@@ -38,7 +38,7 @@ except ImportError:  # pragma: no cover
     from process_runner import ProcessError, get_run_status, load_template, run_process
 
 _ID_RE = re.compile(r"[^A-Za-z0-9_\-]")
-LAYER_TYPES = ("mask", "matte", "alpha", "depth", "canny", "pose", "plate")
+LAYER_TYPES = ("mask", "matte", "alpha", "depth", "normal", "canny", "pose", "plate")
 _JOBS: Dict[str, Dict[str, Any]] = {}
 _JOBS_LOCK = threading.Lock()
 _GPU_LOCK = threading.Lock()
@@ -514,7 +514,7 @@ def _cancelled(job_id: str) -> bool:
 
 def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str, Any]:
     fn = {
-        "prepare": _job_prepare, "depth": _job_preprocess, "canny": _job_preprocess, "pose": _job_preprocess,
+        "prepare": _job_prepare, "depth": _job_preprocess, "normal": _job_preprocess, "canny": _job_preprocess, "pose": _job_preprocess,
         "detect_all": _job_detect_all, "track_object": _job_track_object,
         "corridor_key": _job_corridor_key, "undistort": _job_undistort, "track_camera": _job_track_camera,
         "ltx_alpha": _job_ltx_ic_lora, "ltx_ic_lora": _job_ltx_ic_lora,
@@ -825,7 +825,17 @@ def _job_relight_frame(job_id, kind, pid, vid, p):
         _job_update(job_id, message="Qwen Edit: directional relight…", progress=15)
         res = run_qwen_edit([_png_data_url(src)], prompt, seed=p.get("seed") or None, size_from=0,
                             megapixels=float(p.get("megapixels", 1.0)), run_tag=job_id)
+    _free_vram()   # Qwen Edit (40 GB, partly offloaded) leaves VRAM fragmented: the next LTX run crawled at ~4 min/step
     return {"image": _save_first_frame(pid, vid, res["image"]), "seed": res["seed"], "seconds": res["seconds"]}
+
+
+def _free_vram():
+    """Same as ComfyUI's /free: the flags are applied between prompts, so a running prompt is never disturbed."""
+    try:
+        from .process_runner import free_memory
+    except ImportError:  # pragma: no cover
+        from process_runner import free_memory
+    free_memory(wait_s=0)
 
 
 def _job_first_frame(job_id, kind, pid, vid, p):
@@ -970,6 +980,11 @@ def _job_preprocess(job_id, kind, pid, vid, p):
         return _depth_pro_video(job_id, pid, vid, p, total, src_dir)
     template = f"{kind}_da3_video" if (kind == "depth" and engine == "da3") else f"{kind}_video"
     title = "Depth (DA3)" if template == "depth_da3_video" else kind.capitalize()
+    extra_params = {}
+    if kind == "normal":   # MoGe-2 normals; DirectX = Unreal (green down), OpenGL = Blender / Substance / Unity
+        gl = str(p.get("convention") or "directx").lower() == "opengl"
+        extra_params["Render.output"] = "normal_opengl" if gl else "normal_directx"
+        title = "Normals (OpenGL)" if gl else "Normals (DirectX)"
     layer = _add_layer(pid, vid, kind, p.get("name") or title, extra={"transparentBg": kind in ("canny", "pose"), "engine": engine or "v2"})
     out_dir = _layer_dir(pid, vid, layer["id"])
     chunk = int(p.get("chunk", 48))
@@ -980,7 +995,7 @@ def _job_preprocess(job_id, kind, pid, vid, p):
         _job_update(job_id, message=f"{kind}: frames {start}–{min(total, start + chunk) - 1} of {total}", progress=int(100 * start / total))
         prompt = load_template("deconstruct", template)
         q = run_process("deconstruct", prompt=prompt, client_id="keshiki_2d", run_tag=job_id, params={
-            "Frames.directory": src_dir, "Frames.image_load_cap": chunk, "Frames.skip_first_images": start,
+            "Frames.directory": src_dir, "Frames.image_load_cap": chunk, "Frames.skip_first_images": start, **extra_params,
         })
         imgs = _wait_images(q["prompt_id"], job_id)
         for i, item in enumerate(imgs):
@@ -1831,6 +1846,8 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     preset = p.get("preset") or ("alpha" if kind == "ltx_alpha" else "")
     lora, ltype, lname, is_matte = LTX_IC_LORAS.get(preset, (p.get("lora"), "matte" if p.get("output") == "matte" else "rgb",
                                                             p.get("name") or "LTX IC-LoRA", p.get("output") == "matte"))
+    if p.get("name"):          # the user's layer name wins over a preset's default
+        lname = str(p["name"])
     keep_out_size = p.get("output") == "upscale"
     if not lora:
         raise ProcessError("No IC-LoRA chosen")
@@ -1975,6 +1992,8 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
         if n_ok == 0 or n_clip == 0:
             raise ProcessError(f"Could not build the source clip for frames {r0 + start}–{r0 + start + n_real - 1} (no readable frames)")
         seed = int(p.get("seed", 42))
+        # clean plate: describe the empty scene in the prompt; whatever must go is named in the negative too
+        negative = str(p.get("negative") or ("people, person, pedestrians, vehicles, body parts" if "clean-plate" in str(lora) else ""))
         try:
             for attempt in range(2):
                 prompt = load_template("video_fx", "ltx25_ic_lora_v2v")
@@ -1990,7 +2009,7 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
                     _add_first_frame_guide(prompt, chunk_ref, float(p.get("ref_strength", 1.0)), after=last_guide)
                 q = run_process("video_fx", prompt=prompt, client_id="keshiki_2d", run_tag=job_id, params={
                     "Source Video.file": clip_name, "IC LoRA.lora_name": lora,
-                    "Prompt.value": p.get("prompt", ""), "Seed.noise_seed": seed + attempt,
+                    "Prompt.value": p.get("prompt", ""), "Negative.value": negative, "Seed.noise_seed": seed + attempt,
                     "Save.filename_prefix": f"keshiki/video/{job_id}",
                 })
                 outs = _wait_images(q["prompt_id"], job_id, timeout_s=3600)

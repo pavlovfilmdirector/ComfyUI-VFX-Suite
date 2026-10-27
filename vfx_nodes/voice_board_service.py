@@ -341,6 +341,14 @@ def _cue_track(pid: str, card: Dict[str, Any], fps: float) -> (str, float):
     return out, _duration(out)
 
 
+def _free_memory():
+    try:
+        from .process_runner import free_memory
+    except ImportError:  # pragma: no cover
+        from process_runner import free_memory
+    free_memory()
+
+
 def _lipsync(job_id: str, pid: str, card_id: str, prompt: str, seed: Optional[int]) -> Dict[str, Any]:
     import folder_paths
     board = load_board(pid)
@@ -355,11 +363,7 @@ def _lipsync(job_id: str, pid: str, card_id: str, prompt: str, seed: Optional[in
     secs = max(1.0, min(secs + 0.3, 20.0))
     frames = 1 + int(secs * fps // 8) * 8
     _update(job_id, message=f"LTX-2.5 audio-to-video: {frames} frames (first run loads the model)", progress=10)
-    try:   # free VRAM held by other models
-        import comfy.model_management as mm
-        mm.unload_all_models(); mm.soft_empty_cache()
-    except Exception:  # noqa: BLE001
-        pass
+    _free_memory()   # drop other models from VRAM and RAM between prompts (DubIt after LTX-2.5 ran the PC out of RAM)
     params = {
         "Image.image": _to_input(img, "a2v_img"), "Audio.audio": _to_input(track, "a2v_aud"),
         "Trim.duration": secs, "Length.length": frames, "Conditioning.frame_rate": fps, "Video.fps": fps,
@@ -485,11 +489,7 @@ def _dubit(job_id: str, pid: str, card_id: str, desc: str, start: float, max_s: 
     say = LANG_SAY.get(lang, "Russian")
     prompt = f'{(desc or card.get("prompt") or "The person in the video").strip()}, speaking in {say} saying: "{text}"'
     _update(job_id, message=f"DubIt (LTX-2.3): {frames} frames (first run loads the model)", progress=10)
-    try:
-        import comfy.model_management as mm
-        mm.unload_all_models(); mm.soft_empty_cache()
-    except Exception:  # noqa: BLE001
-        pass
+    _free_memory()   # drop other models from VRAM and RAM between prompts (DubIt after LTX-2.5 ran the PC out of RAM)
     params = {"Source Video.file": name, "Prompt.text": prompt, "Length.length": frames, "Audio length.frames_number": frames,
               "Seed.noise_seed": int(seed or int(time.time()) % 2**31)}
     q = run_process("video_fx", prompt=load_template("voice", "ltx23_dubit"), params=params, client_id="keshiki_voice", run_tag=job_id)

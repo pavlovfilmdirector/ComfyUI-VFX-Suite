@@ -20,6 +20,7 @@ No cloud APIs are used. Every model runs on your own GPU and is tuned for 24 GB 
 | **Voice** | Video dubbing: Whisper → local LLM translation (Ollama) → F5-TTS voice clone → timing and mix. Also voice cloning and long-text narration |
 | **3D assets** | TRELLIS.2 image → textured GLB, and texturing an existing mesh |
 | **Agent** | A local LLM through Ollama (Qwen, Gemma). It sees the open clip and its layers, explains each step from the user guide, asks before running heavy jobs and works one step at a time |
+| **AI agents (MCP)** | Any MCP agent can run the studio from a plain task ([docs/MCP.md](docs/MCP.md)) |
 | **LoRA training** | Configs and notes for LTX-2 LoRAs and IC-LoRAs on 24 GB ([docs/LORA_TRAINING.md](docs/LORA_TRAINING.md)) |
 
 ## Tested recipes
@@ -64,6 +65,7 @@ The studio opens at `http://127.0.0.1:8188/vfx/studio/`. Full instructions, opti
 - [User guide (EN)](docs/USER_GUIDE.md) · [Инструкция (RU)](docs/USER_GUIDE_RU.md): views, every video process, step-by-step recipes, talking to the agent, troubleshooting
 - [INSTALL.md](INSTALL.md): setup and optional modules
 - [docs/LORA_TRAINING.md](docs/LORA_TRAINING.md): training your own LTX LoRAs (Linux / WSL2, 24 GB configs)
+- [docs/MCP.md](docs/MCP.md): drive the studio from any AI agent (Claude, Cursor, Antigravity...) over MCP
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): licenses of bundled libraries, tools and models
 
 ## Tests

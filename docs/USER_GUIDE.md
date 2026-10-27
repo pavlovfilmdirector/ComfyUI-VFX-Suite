@@ -47,6 +47,7 @@ Storyboard · Characters · Locations · **Voice (dubbing)** · Video · **3D me
 
 ### Maps
 - **Depth** — Depth Anything V2 (default, best relief), **Depth Anything 3** (sharper edges) or **Apple Depth Pro** (clean silhouettes, steady over time, ~1 s/frame). **Background only**: the character is cut out of the depth by its mask and filled from the set, so depth drives the set and the camera while pose drives the character.
+- **Normals** — MoGe-2 (Microsoft, MIT): surface normal map per frame, **DirectX** (Unreal, green down) or **OpenGL** (Blender, Substance, Unity, glTF). Frames are solved one by one, so video may flicker slightly. Also in the Image view (Normal Map button).
 - **Pose** — DWPose skeleton per frame.
 - **Canny** edges.
 
@@ -128,6 +129,9 @@ In the Video view file strip press **Join**: click the clips in play order, set 
 
 ### Train your own LoRA
 See [LORA_TRAINING.md](LORA_TRAINING.md) (Linux/WSL2, VRAM notes, configs tested on 24 GB).
+
+### Your own workflows ("My tools")
+Build a graph in ComfyUI ("Open ComfyUI" in the My tools window). Title the loaders the studio should fill `IN: Plate`, `IN: Reference`; expose settings with nodes titled `PARAM: Strength` (without them the studio shows prompts and seeds). Export with Workflow → Export (API). In the studio: **🧰 My tools** → name, description (what it does - the agent reads it), tab → "Choose workflow .json". The studio checks the nodes and writes the passport: inputs, settings, outputs. The tool then runs from a form on project media; results land in the project (`user_tools/<name>`). Tell the agent "run my grade on shot 3" - it knows every tool and its description. External agents see them over MCP ([MCP.md](MCP.md)).
 
 ## Talking to the agent
 

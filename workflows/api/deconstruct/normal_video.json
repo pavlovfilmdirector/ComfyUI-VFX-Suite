@@ -1,0 +1,71 @@
+{
+ "1": {
+  "class_type": "VHS_LoadImagesPath",
+  "inputs": {
+   "directory": "",
+   "image_load_cap": 48,
+   "skip_first_images": 0,
+   "select_every_nth": 1
+  },
+  "_meta": {
+   "title": "Frames"
+  }
+ },
+ "2": {
+  "class_type": "LoadMoGeModel",
+  "inputs": {
+   "model_name": "moge_2_vitl_normal_fp16.safetensors"
+  },
+  "_meta": {
+   "title": "Normal Model"
+  }
+ },
+ "3": {
+  "class_type": "MoGeInference",
+  "inputs": {
+   "moge_model": [
+    "2",
+    0
+   ],
+   "image": [
+    "1",
+    0
+   ],
+   "resolution_level": 9,
+   "fov_x_degrees": 0.0,
+   "batch_size": 4,
+   "force_projection": true,
+   "apply_mask": false,
+   "refine_steps": 0
+  },
+  "_meta": {
+   "title": "Geometry"
+  }
+ },
+ "4": {
+  "class_type": "MoGeRender",
+  "inputs": {
+   "moge_geometry": [
+    "3",
+    0
+   ],
+   "output": "normal_directx"
+  },
+  "_meta": {
+   "title": "Render"
+  }
+ },
+ "9": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "4",
+    0
+   ],
+   "filename_prefix": "keshiki/video/normal"
+  },
+  "_meta": {
+   "title": "Save"
+  }
+ }
+}

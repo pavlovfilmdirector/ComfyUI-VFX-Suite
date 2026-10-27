@@ -33,6 +33,7 @@
 | corridor_key | чистый матт и передний план по черновой маске (CorridorKey) | mask_layer_id |
 | ltx_alpha | матт без маски, LTX Alpha (тяжёлое, 22B) | start, end |
 | depth | глубина | engine: "" (V2), "da3" или "depth_pro" (Apple Depth Pro, ~1 с/кадр); exclude_mask: id маски — убрать персонажа из глубины (только фон и камера) |
+| normal | нормали поверхности (MoGe-2) | convention: "directx" (Unreal, по умолчанию) или "opengl" (Blender, Substance, Unity) |
 | pose / canny | поза DWPose / контуры | — |
 | track_camera | трекинг камеры GLOMAP (тяжёлое) | — |
 | first_frame | первый кадр персонажа (Klein) | guide_layer (рендер сцены/окружения), pose_layer, ref_image (картинка персонажа), scene (во что превратить примитивы), prompt (уточнения) |
@@ -43,6 +44,10 @@
 | render / layer_to_video | свести слои в видео / слой в видео | — |
 
 Файлы LoRA: "LTX-2.5\\ltx-2.5-22b-ic-lora-<имя>-1.0.safetensors" (layout-to-render, clean-plate, refine-details…), union-control: "LTX-2.3\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors".
+
+## Инструменты пользователя (action run_tool)
+
+Свои воркфлоу ComfyUI пользователь добавляет в окне «🧰 Мои инструменты» (экспорт Workflow → Export (API); входы — загрузчики `IN: имя`, настройки — ноды `PARAM: имя`). Список с описаниями, входами и параметрами есть в каталоге действий. run_tool: tool_id + values {id входа: url медиа проекта, id параметра: значение}; открывает форму с заполненными полями. Если пользователь спрашивает, как добавить свой воркфлоу, — объясни эти шаги.
 
 ## Правила
 

@@ -575,7 +575,8 @@ def register_server_routes():
         @routes.get("/vfx/music/status")
         async def vfx_music_status(request):
             from .music_service import status as _mst, list_tracks as _mlist
-            pid = _sanitize_id(request.query.get("project_id", ""))
+            raw_pid = request.query.get("project_id", "").strip()
+            pid = _sanitize_id(raw_pid) if raw_pid else ""   # empty must not create a new project folder
             try:
                 res = _mst()
                 res["tracks"] = _mlist(pid) if pid else []
@@ -588,8 +589,54 @@ def register_server_routes():
             from .music_service import start as _mstart
             try:
                 data = await request.json()
-                pid = _sanitize_id(str(data.get("project_id", "")))
+                pid = _sanitize_id(str(data.get("project_id") or "sandbox_playground"))
                 res = await asyncio.to_thread(_mstart, pid, data)
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        # --- user tools: own ComfyUI workflows run by the studio (vfx_nodes/user_tools_service.py) ---
+        @routes.get("/vfx/tools")
+        async def vfx_tools_list(request):
+            from .user_tools_service import list_tools as _tl
+            return add_cors_headers(web.json_response({"tools": _tl()}))
+
+        @routes.post("/vfx/tools/import")
+        async def vfx_tools_import(request):
+            from .user_tools_service import import_tool as _ti
+            try:
+                d = await request.json()
+                res = await asyncio.to_thread(_ti, d.get("workflow"), str(d.get("name", "")), str(d.get("description", "")),
+                                              str(d.get("tab", "any")), str(d.get("id", "")))
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.post("/vfx/tools/job/{job_id}/cancel")
+        async def vfx_tools_cancel(request):
+            from .user_tools_service import cancel as _tc
+            return add_cors_headers(web.json_response(_tc(request.match_info["job_id"])))
+
+        @routes.get("/vfx/tools/job/{job_id}")
+        async def vfx_tools_job(request):
+            from .user_tools_service import get_job as _tj
+            return add_cors_headers(web.json_response(_tj(request.match_info["job_id"])))
+
+        @routes.post("/vfx/tools/{tool_id}/{action}")
+        async def vfx_tools_action(request):
+            from . import user_tools_service as _ut
+            tid, action = request.match_info["tool_id"], request.match_info["action"]
+            try:
+                d = await request.json()
+                if action == "run":
+                    pid = _sanitize_id(str(d.get("project_id") or "sandbox_playground"))
+                    res = await asyncio.to_thread(_ut.start, pid, tid, d.get("values") or {})
+                elif action == "save":
+                    res = await asyncio.to_thread(_ut.save_passport, {**(d.get("tool") or {}), "id": tid})
+                elif action == "delete":
+                    res = await asyncio.to_thread(_ut.delete_tool, tid)
+                else:
+                    raise ValueError(f"Unknown action {action}")
                 return add_cors_headers(web.json_response(res))
             except Exception as e:
                 return add_cors_headers(web.json_response({"error": str(e)}, status=400))
@@ -3587,8 +3634,13 @@ subprocess.Popen(cmd, cwd=cwd, creationflags=flags)
                 "vfx_nodes.plate_prep_service",
                 "vfx_nodes.mesh3d_service",
                 "vfx_nodes.splat3d_service",
-                "vfx_nodes.server_api",
             ]
+            # every other vfx_nodes module that is loaded (music, voice, narration, dubbing, loaders...), then server_api
+            for k in sorted(sys.modules):
+                tail = k[k.find("vfx_nodes."):] if "vfx_nodes." in k else ""
+                if tail and tail.count(".") == 1 and tail not in suffixes and tail != "vfx_nodes.server_api":
+                    suffixes.append(tail)
+            suffixes.append("vfx_nodes.server_api")
             for suffix in suffixes:
                 keys = [k for k in list(sys.modules) if k == suffix or k.endswith("." + suffix)]
                 for mod_name in keys:

@@ -17,7 +17,7 @@ try:
 except ImportError:  # pragma: no cover
     from process_runner import ProcessError, get_run_status, run_process
 
-KINDS = {"depth": "depth_image", "canny": "canny_image", "pose": "pose_image"}
+KINDS = {"depth": "depth_image", "normal": "normal_image", "canny": "canny_image", "pose": "pose_image"}
 
 
 def _input_dir() -> str:

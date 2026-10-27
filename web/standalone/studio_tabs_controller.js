@@ -228,6 +228,8 @@ export function initStudioArchitecture(ctx) {
         ["depth", "mountain", "Depth (video)", "Глубина (видео)", "Depth Anything V2 / 3 or Apple Depth Pro on every frame; optionally without the character (background and camera only).", "Depth Anything V2 / 3 или Apple Depth Pro на каждом кадре; можно без персонажа (только фон и камера)."],
         ["composite", "layers", "Composite: subject over a background", "Сведение: объект поверх фона", "Subject by its mask from one source over another background, with colour harmonization and light wrap.", "Объект по маске из одного источника поверх другого фона, с гармонизацией цвета и обтеканием светом."],
         ["depth_da3", "mountain-snow", "Depth: Depth Anything 3", "Глубина: Depth Anything 3", "Depth Anything 3 Mono-Large: sharper object edges, flatter gradients than V2.", "Depth Anything 3 Mono-Large: чётче края объектов, но ровнее градиент, чем у V2."],
+        ["normal", "compass", "Normals (video, MoGe-2)", "Нормали (видео, MoGe-2)", "Surface normals on every frame, DirectX convention (Unreal: green down).", "Нормали поверхности на каждом кадре, DirectX (Unreal: зелёный вниз)."],
+        ["normal_gl", "compass", "Normals: OpenGL (Blender, Unity)", "Нормали: OpenGL (Blender, Unity)", "Same normals, OpenGL convention (green up): Blender, Substance, Unity, glTF.", "Те же нормали в OpenGL (зелёный вверх): Blender, Substance, Unity, glTF."],
         ["canny", "scan-line", "Canny (video)", "Контуры (видео)", "Canny edges on every frame.", "Контуры Canny на каждом кадре."],
         ["pose", "person-standing", "Pose (video)", "Поза (видео)", "DWPose skeleton on every frame.", "Скелет DWPose на каждом кадре."],
         ["undistort", "aperture", "Lens: auto undistort", "Линза: авто-исправление дисторсии", "Estimates k1 from straight lines and undistorts the plate.", "Оценивает k1 по прямым линиям и исправляет дисторсию плейта."],
@@ -239,7 +241,7 @@ export function initStudioArchitecture(ctx) {
     const PROC_GROUPS_2D = [
         { id: "masks", variants: ["pick", "text_mask", "detect_yolo", "detect_all"] },
         { id: "matte", variants: ["corridor_key", "ltx_alpha", "composite"] },
-        { id: "maps", variants: ["depth", "depth_da3", "canny", "pose"] },
+        { id: "maps", variants: ["depth", "depth_da3", "normal", "normal_gl", "canny", "pose"] },
         { id: "lens", variants: ["undistort"] },
         { id: "camera", variants: ["track_camera"] }
     ];
@@ -465,6 +467,192 @@ export function initStudioArchitecture(ctx) {
 
     // Voice-over editor: long text in paragraphs (empty line = new paragraph). Generate voices only the paragraphs
     // that changed (cache by text + voice settings); edit a paragraph, generate again; all joined into one track.
+    // ---------------------------------------------------------------- ✨ Create: one entry to every generator
+    // Always visible at the top of Image / Video / 3D. "New" makes something from scratch; "From what is open"
+    // works on the current picture or clip. The canvas buttons stay as quick shortcuts for the open item.
+    function openCreateMenu(anchor) {
+        const img = mainViewDim === "1D" ? (mediaImages1D.find(i => i.id === activeImageId) || null) : null;
+        const vid = mainViewDim === "2D" ? (mediaVideos2D.find(v => v.id === activeVideoId) || null) : null;
+        const opt = "display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 6px 8px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); cursor: pointer; width: 100%;";
+        const item = (id, icon, t, d) => `<button class="vfx-btn cm-opt" data-a="${id}" style="${opt}"><span>${icon} ${t}</span><span style="opacity:.55; font-size: 9.5px;">${d}</span></button>`;
+        const head = (t) => `<div style="font-size: 9.5px; color: rgba(255,255,255,0.45); margin-top: 4px; text-transform: uppercase; letter-spacing: .04em;">${t}</div>`;
+        const ctx = [];
+        if (img) {
+            ctx.push(item("edit_img", "🖌", uiText("Edit this picture", "Изменить этот кадр"), uiText("FLUX: masks, drawings, references, pose / depth", "FLUX: маски, рисунки, референсы, поза / глубина")));
+            ctx.push(item("img_video", "🎬", uiText("Video from this picture", "Видео из этого кадра"), uiText("LTX-2.5: first frame or first + last", "LTX-2.5: первый кадр или первый + последний")));
+        }
+        if (vid) {
+            ctx.push(item("redo_clip", "🎞", uiText("Rework this clip", "Переделать этот клип"), uiText("LTX IC-LoRA: clean plate, day→night, restyle, upscale…", "IC-LoRA LTX: чистый плейт, день→ночь, стиль, апскейл…")));
+            ctx.push(item("montage", "✂", uiText("Join clips (dissolve)", "Склеить клипы (растворение)"), uiText("no generation", "без генерации")));
+        }
+        const pop = openGenPopover(anchor, `
+            <b style="font-size: 12px;">✨ ${uiText("Create", "Создать")}</b>
+            ${ctx.length ? head(uiText("From what is open", "Из открытого")) + ctx.join("") : ""}
+            ${head(uiText("New", "Новое"))}
+            ${item("new_img", "🖼", uiText("Picture from text", "Изображение по тексту"), "FLUX.3 Klein")}
+            <div class="cm-opt" data-a="t2v" style="${opt} cursor: default;">
+                <span>🎬 ${uiText("Video from text", "Видео по тексту")} <span style="opacity:.5">LTX-2.5</span></span>
+                <textarea id="cm-t2v" rows="2" placeholder="${uiText("What happens in the shot, camera, sound", "Что происходит в кадре, камера, звук")}" style="width: 100%; box-sizing: border-box; background: #0f0f11; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: 10.5px; margin-top: 3px;"></textarea>
+                <button class="vfx-btn" id="cm-t2v-go" style="margin-top: 4px; padding: 3px 8px; font-size: 10.5px;">${uiText("Generate video", "Сгенерировать видео")}</button>
+            </div>
+            ${item("music", "🎵", uiText("Music", "Музыка"), "ACE-Step 1.5")}
+            ${item("voiceover", "🗣", uiText("Voice-over from text", "Закадровый голос по тексту"), uiText("F5-TTS voice clone, paragraph by paragraph", "клон голоса F5-TTS, по абзацам"))}
+            ${item("voiceboard", "🎙", uiText("Voice board & lip-sync", "Холст озвучки и липсинк"), uiText("pictures / clips + lines → voice, lips", "картинки / клипы + реплики → голос, губы"))}
+            ${item("mesh", "🧊", uiText("3D model from a picture", "3D-модель из картинки"), "TRELLIS.2")}
+            ${item("tools", "🧰", uiText("My tools", "Мои инструменты"), uiText("your own ComfyUI workflows", "ваши воркфлоу ComfyUI"))}
+        `, 320);
+        const go = {
+            edit_img: () => openImageGeneratePanel1D(img),
+            img_video: () => open1DGenerateChooser(anchor, img),
+            redo_clip: () => { const b = document.querySelector("#btn-2d-notes-generate"); if (b) b.click(); else showToastNotification(uiText("Open the clip's notes panel (Generate)", "Откройте панель клипа (кнопка «Сгенерировать»)"), true); },
+            montage: () => openMontageDialog(anchor),
+            new_img: () => { if (mainViewDim !== "1D") switchMainDimension("1D"); setTimeout(() => openImageGeneratePanel1D(null), 60); },
+            music: () => switchTab("music"),
+            voiceover: () => openNarrationEditor(),
+            voiceboard: () => openVoiceBoard(),
+            mesh: () => switchTab("mesh_gen"),
+            tools: () => openMyTools(),
+        };
+        pop.querySelectorAll("button.cm-opt").forEach(b => b.onclick = () => { pop.remove(); go[b.dataset.a]?.(); });
+        const t2v = pop.querySelector("#cm-t2v");
+        ["keydown", "mousedown"].forEach(ev => t2v.addEventListener(ev, e => e.stopPropagation()));
+        pop.querySelector("#cm-t2v-go").onclick = () => {
+            const prompt = (t2v.value || "").trim();
+            if (!prompt) { showToastNotification(uiText("Describe the shot first", "Сначала опишите, что происходит в кадре"), true); t2v.focus(); return; }
+            pop.remove();
+            triggerAgentWorkflowExecution(prompt, null, "video", { workflow_type: "ltx_video", ltx_prompt: prompt, references: [] });
+        };
+    }
+
+    // ---------------------------------------------------------------- My tools: the user's own ComfyUI workflows
+    // Import a graph exported with "Save (API)"; the server builds its passport (inputs = load nodes / "IN: name",
+    // settings = "PARAM: name" nodes or prompts and seeds, outputs = Save nodes). Run it on project media from a form.
+    async function openMyTools(prefill) {
+        const pid = currentProject?.id || "sandbox_playground";
+        document.getElementById("vfx-mytools")?.remove();
+        const esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const fld = "background: #0f0f11; color: #e4e4e7; border: 1px solid #333; border-radius: 4px; font-size: 10.5px; padding: 4px 6px;";
+        const ov = document.createElement("div");
+        ov.id = "vfx-mytools"; ov.dataset.vfxModal = "1";
+        ov.style.cssText = "position: fixed; inset: 40px; z-index: 100000; background: #0a0a0d; border: 1px solid #333; border-radius: 8px; display: flex; flex-direction: column; color: #e4e4e7; font-size: 11px; box-shadow: 0 20px 60px rgba(0,0,0,0.8);";
+        ["keydown", "wheel"].forEach(ev => ov.addEventListener(ev, e => e.stopPropagation()));
+        document.body.appendChild(ov);
+        let tools = [], sel = null, values = {};
+        const media = () => {
+            const p = currentProject || {};
+            const imgs = (typeof mediaImages1D !== "undefined" ? mediaImages1D : p.mediaImages1D || []).map(i => ({ kind: "image", title: i.title, url: i.url })).filter(x => x.url && x.url.startsWith("/vfx/"));
+            const vids = (p.mediaVideos2D || []).map(v => ({ kind: "video", title: v.title, url: v.videoUrl })).filter(x => x.url);
+            const auds = (p.mediaAudio || []).map(a => ({ kind: "audio", title: a.title, url: a.url || a.audioUrl })).filter(x => x.url);
+            return [...imgs, ...vids, ...auds];
+        };
+        const load = async () => { try { tools = (await fetch("/vfx/tools").then(r => r.json())).tools || []; } catch (_) { tools = []; } };
+        const upload = async (file) => { const fd = new FormData(); fd.append("file", file, file.name); const r = await fetch(`/vfx/projects/${encodeURIComponent(pid)}/upload_media`, { method: "POST", body: fd }).then(x => x.json()); return r?.uploaded?.[0]?.url || ""; };
+        const render = () => {
+            const t = tools.find(x => x.id === sel);
+            ov.innerHTML = `
+              <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #222;">
+                <b style="font-size:12px;">🧰 ${uiText("My tools", "Мои инструменты")}</b>
+                <span style="opacity:.55;">${uiText("your ComfyUI workflows, run by the studio", "ваши воркфлоу ComfyUI под управлением студии")}</span>
+                <button class="vfx-btn" id="mt-comfy" style="margin-left:auto; padding:4px 9px;">⇄ ${uiText("Open ComfyUI", "Открыть ComfyUI")}</button>
+                <button class="vfx-btn" id="mt-close" style="padding:4px 9px;">✕</button>
+              </div>
+              <div style="flex:1; display:flex; min-height:0;">
+                <div style="width:260px; border-right:1px solid #222; overflow:auto; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                  ${tools.map(x => `<div class="mt-item" data-id="${esc(x.id)}" style="padding:6px 8px; border-radius:5px; cursor:pointer; border:1px solid ${x.id === sel ? "#a855f7" : "#262626"}; background:${x.id === sel ? "rgba(168,85,247,.12)" : "#111"};">
+                     <div style="font-weight:600;">${esc(x.name)}</div><div style="opacity:.55; font-size:10px;">${esc(x.tab)} · ${(x.inputs || []).length} ${uiText("inputs", "вх.")} · ${(x.params || []).length} ${uiText("settings", "настр.")}</div></div>`).join("") || `<div style="opacity:.5;">${uiText("No tools yet", "Пока нет инструментов")}</div>`}
+                  <div style="margin-top:8px; border-top:1px solid #222; padding-top:8px; display:flex; flex-direction:column; gap:5px;">
+                    <b>${uiText("Add a workflow", "Добавить воркфлоу")}</b>
+                    <div style="opacity:.6; font-size:10px; line-height:1.4;">${uiText("In ComfyUI: Workflow → Export (API). Title loaders “IN: Plate”, settings “PARAM: Strength”.", "В ComfyUI: Workflow → Export (API). Загрузчики назовите «IN: Плейт», настройки — «PARAM: Сила».")}</div>
+                    <input id="mt-name" placeholder="${uiText("Name", "Название")}" style="${fld}">
+                    <textarea id="mt-desc" rows="2" placeholder="${uiText("What it does (the agent reads this)", "Что делает (это читает агент)")}" style="${fld} resize:vertical;"></textarea>
+                    <select id="mt-tab" style="${fld}">${["any", "image", "video", "voice", "music"].map(k => `<option value="${k}">${k}</option>`).join("")}</select>
+                    <label class="vfx-btn" style="padding:5px; text-align:center; cursor:pointer;">📂 ${uiText("Choose workflow .json", "Выбрать .json воркфлоу")}<input id="mt-file" type="file" accept=".json" style="display:none;"></label>
+                    <div id="mt-imp-st" style="font-size:10px; opacity:.8;"></div>
+                  </div>
+                </div>
+                <div style="flex:1; overflow:auto; padding:12px;">${t ? toolForm(t) : `<div style="opacity:.5;">${uiText("Choose a tool on the left", "Выберите инструмент слева")}</div>`}</div>
+              </div>`;
+            ov.querySelector("#mt-close").onclick = () => ov.remove();
+            ov.querySelector("#mt-comfy").onclick = () => window.open("/", "_blank");
+            ov.querySelectorAll(".mt-item").forEach(el => el.onclick = () => { sel = el.dataset.id; values = {}; render(); });
+            ov.querySelector("#mt-file").onchange = async (e) => {
+                const f = e.target.files[0]; if (!f) return;
+                const st = ov.querySelector("#mt-imp-st"); st.textContent = uiText("Checking…", "Проверяю…");
+                let wf; try { wf = JSON.parse(await f.text()); } catch (err) { st.textContent = "JSON: " + err.message; return; }
+                const r = await fetch("/vfx/tools/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+                    workflow: wf, name: ov.querySelector("#mt-name").value || f.name.replace(/\.json$/i, ""), description: ov.querySelector("#mt-desc").value, tab: ov.querySelector("#mt-tab").value }) }).then(x => x.json());
+                if (r.error) { st.textContent = r.error; st.style.color = "#fca5a5"; return; }
+                await load(); sel = r.id; values = {}; render(); showToastNotification(uiText("Tool added", "Инструмент добавлен"));
+            };
+            if (t) wireForm(t);
+        };
+        const toolForm = (t) => {
+            const m = media();
+            const inp = (t.inputs || []).map(i => `
+                <div style="display:flex; flex-direction:column; gap:3px;">
+                  <span>${esc(i.label)} <span style="opacity:.5;">(${i.kind})</span></span>
+                  <div style="display:flex; gap:4px;">
+                    <select class="mt-in" data-id="${esc(i.id)}" style="${fld} flex:1;"><option value="">—</option>
+                      ${m.filter(x => x.kind === i.kind).map(x => `<option value="${esc(x.url)}" ${values[i.id] === x.url ? "selected" : ""}>${esc(x.title)}</option>`).join("")}
+                      ${values[i.id] && !m.some(x => x.url === values[i.id]) ? `<option value="${esc(values[i.id])}" selected>${esc(values[i.id].split("/").pop())}</option>` : ""}</select>
+                    <label class="vfx-btn" style="padding:3px 7px; cursor:pointer;">⬆<input class="mt-up" data-id="${esc(i.id)}" type="file" style="display:none;"></label>
+                  </div></div>`).join("");
+            const prm = (t.params || []).map(p => {
+                const v = values[p.id] ?? p.default;
+                const ctl = p.type === "bool" ? `<input type="checkbox" class="mt-p" data-id="${esc(p.id)}" ${v ? "checked" : ""}>`
+                    : p.type === "text" ? `<textarea class="mt-p" data-id="${esc(p.id)}" rows="${String(v || "").length > 60 ? 3 : 1}" style="${fld} resize:vertical;">${esc(v)}</textarea>`
+                    : `<input type="number" class="mt-p" data-id="${esc(p.id)}" value="${esc(v)}" step="${p.type === "int" ? 1 : "any"}" style="${fld}">`;
+                return `<div style="display:flex; flex-direction:column; gap:3px;"><span>${esc(p.label)}</span>${ctl}</div>`;
+            }).join("");
+            return `
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <input id="mt-edit-name" value="${esc(t.name)}" style="${fld} font-size:13px; font-weight:600; flex:1;">
+                <button class="vfx-btn" id="mt-save" style="padding:4px 9px;">💾 ${uiText("Save passport", "Сохранить паспорт")}</button>
+                <button class="vfx-btn" id="mt-del" style="padding:4px 9px; color:#fca5a5;">🗑</button>
+              </div>
+              <textarea id="mt-edit-desc" rows="2" style="${fld} width:100%; box-sizing:border-box; margin-bottom:10px;" placeholder="${uiText("What it does", "Что делает")}">${esc(t.description)}</textarea>
+              <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:10px;">${inp}${prm}</div>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+                <button class="vfx-btn vfx-btn-primary" id="mt-run" style="padding:6px 16px; font-weight:700;">▶ ${uiText("Run", "Запустить")}</button>
+                <button class="vfx-btn" id="mt-stop" style="padding:6px 10px; display:none;">■</button>
+                <span id="mt-st" style="opacity:.8;"></span>
+              </div>
+              <div id="mt-out" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>`;
+        };
+        const wireForm = (t) => {
+            ov.querySelectorAll(".mt-in").forEach(el => el.onchange = () => { values[el.dataset.id] = el.value; });
+            ov.querySelectorAll(".mt-up").forEach(el => el.onchange = async () => { const f = el.files[0]; if (!f) return; values[el.dataset.id] = await upload(f); render(); });
+            ov.querySelectorAll(".mt-p").forEach(el => el.onchange = () => { values[el.dataset.id] = el.type === "checkbox" ? el.checked : el.value; });
+            ov.querySelector("#mt-save").onclick = async () => {
+                const r = await fetch(`/vfx/tools/${encodeURIComponent(t.id)}/save`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool: { name: ov.querySelector("#mt-edit-name").value, description: ov.querySelector("#mt-edit-desc").value } }) }).then(x => x.json());
+                if (r.error) showToastNotification(r.error, true); else { await load(); render(); showToastNotification(uiText("Saved", "Сохранено")); }
+            };
+            ov.querySelector("#mt-del").onclick = async () => {
+                if (!confirm(uiText(`Delete the tool “${t.name}”?`, `Удалить инструмент «${t.name}»?`))) return;
+                await fetch(`/vfx/tools/${encodeURIComponent(t.id)}/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                sel = null; await load(); render();
+            };
+            ov.querySelector("#mt-run").onclick = () => runTool(t);
+        };
+        const runTool = async (t) => {
+            const st = ov.querySelector("#mt-st"), out = ov.querySelector("#mt-out"), stop = ov.querySelector("#mt-stop");
+            st.style.color = ""; st.textContent = uiText("Starting…", "Запуск…");
+            const j0 = await fetch(`/vfx/tools/${encodeURIComponent(t.id)}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: pid, values }) }).then(r => r.json());
+            if (j0.error) { st.textContent = j0.error; st.style.color = "#fca5a5"; return; }
+            stop.style.display = ""; stop.onclick = () => fetch(`/vfx/tools/job/${j0.id}/cancel`, { method: "POST" });
+            let j = j0;
+            while (j.status === "running") { await new Promise(r => setTimeout(r, 1500)); j = await fetch(`/vfx/tools/job/${j0.id}`).then(r => r.json()); if (document.body.contains(st)) st.textContent = j.message || ""; }
+            stop.style.display = "none";
+            if (j.status !== "done") { st.textContent = j.message; st.style.color = "#fca5a5"; return; }
+            st.textContent = uiText(`Done in ${j.result.seconds} s — saved to the project (user_tools/${t.id})`, `Готово за ${j.result.seconds} с — сохранено в проект (user_tools/${t.id})`);
+            out.innerHTML = j.result.files.map(f => f.kind === "image" ? `<a href="${f.url}" target="_blank"><img src="${f.url}" style="max-width:320px; max-height:240px; border-radius:4px;"></a>`
+                : f.kind === "video" ? `<video src="${f.url}" controls style="max-width:420px; border-radius:4px;"></video>` : `<audio src="${f.url}" controls></audio>`).join("");
+        };
+        await load();
+        if (prefill?.tool_id) { sel = prefill.tool_id; values = { ...(prefill.values || {}) }; }
+        render();
+    }
+
     async function openNarrationEditor() {
         const pid = currentProject?.id;
         if (!pid) { showToastNotification(uiText("Open a project first", "Сначала откройте проект"), true); return; }
@@ -1439,7 +1627,7 @@ export function initStudioArchitecture(ctx) {
     // are accessors to the ACTIVE layer, so all existing drawing tools paint into it.
     // =========================================================================
     const LAYER_COLORS_1D = ["#f43f5e", "#38bdf8", "#a3e635", "#fbbf24", "#c084fc", "#fb923c", "#2dd4bf", "#f472b6"];
-    const LAYER_TYPE_LABELS_1D = { paint: "Paint", mask: "Mask", depth: "Depth", canny: "Canny", pose: "Pose" };
+    const LAYER_TYPE_LABELS_1D = { paint: "Paint", mask: "Mask", depth: "Depth", normal: "Normals", canny: "Canny", pose: "Pose" };
 
     function newLayerId1D() {
         return "lyr_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1926,62 +2114,6 @@ export function initStudioArchitecture(ctx) {
     let expandedAssetId = null; // top strip: asset shown expanded with its attached files (layers, notes)
     let mediaImages1D = loadProject1DImages(currentProject?.id);
     let activeImageId = mediaImages1D[0]?.id || null;
-
-    // --- NVIDIA DLSS 5 NEURAL ENHANCER & UPSCALER (RTX 3090 Ti) ---
-    async function runDlssEnhanceOnImage(imgObj, scale = 2) {
-        if (!imgObj || (!imgObj.url && !imgObj.fallbackUrl)) {
-            showToastNotification(uiText("No image selected for DLSS enhancement", "Нет изображения для улучшения через DLSS"), true);
-            return null;
-        }
-        const sourceUrl = imgObj.url || imgObj.fallbackUrl;
-        showToastNotification(uiText(`✨ Running NVIDIA DLSS 5 (${scale}x RTX Tensor Core)...`, `✨ Запуск NVIDIA DLSS 5 (${scale}x RTX Tensor Core)...`));
-        addLog("DLSS", `Initiating DLSS 5 ${scale}x enhancement for: ${imgObj.title || 'image'}`);
-        try {
-            const resp = await fetch("/vfx/enhance/dlss", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    url: sourceUrl,
-                    image_url: sourceUrl,
-                    scale: scale,
-                    engine: "rtx"
-                })
-            });
-            const data = await resp.json();
-            const outUrl = data.upscaled_url || data.url;
-            if ((data.status === "success" || data.status === "ok" || data.success) && outUrl) {
-                const elapsedSec = data.elapsed_seconds || data.time_sec || 1.5;
-                const newId = `img_dlss_${Date.now()}`;
-                const enhancedItem = {
-                    id: newId,
-                    title: `${(imgObj.title || 'Shot').replace(/_DLSS_\d+x/g, '')}_DLSS_${scale}x`,
-                    badge: `DLSS ${scale}x`,
-                    url: outUrl,
-                    fallbackUrl: null,
-                    comment: `NVIDIA DLSS 5 Enhanced (${scale}x, ${elapsedSec}s, RTX Tensor Core)`,
-                    layerDataUrl: null,
-                    layerVisible: true
-                };
-                mediaImages1D.unshift(enhancedItem);
-                activeImageId = newId;
-                saveProject1DImages();
-                if (typeof saveCurrentProject === "function") saveCurrentProject();
-                renderMainViewport();
-                renderTopViewportBar();
-                if (typeof renderDetailsInstances === "function") renderDetailsInstances();
-                showToastNotification(uiText(`✨ DLSS 5 ${scale}x Complete (${elapsedSec}s)!`, `✨ DLSS 5 ${scale}x: Кадр улучшен (${elapsedSec}s)!`));
-                addLog("DLSS", `DLSS 5 ${scale}x saved: ${data.filename} (${elapsedSec}s)`);
-                return enhancedItem;
-            } else {
-                throw new Error(data.error || "DLSS enhancement failed");
-            }
-        } catch (err) {
-            console.error("DLSS enhancement error:", err);
-            showToastNotification(uiText(`DLSS Error: ${err.message}`, `Ошибка DLSS: ${err.message}`), true);
-            addLog("ERROR", `DLSS enhancement failed: ${err.message}`);
-            return null;
-        }
-    }
 
     // 1D Canvas Zoom/Pan & Paint State
     let img1DZoom = 1.0;
@@ -6328,6 +6460,23 @@ export function initStudioArchitecture(ctx) {
     topStripResizer.onmouseleave = () => { topStripResizer.style.background = "#141416"; };
     mainViewportHost.appendChild(topStripResizer);
 
+    // ✨ Create: floats at the top centre of the canvas in Image / Video / 3D (a zero-height dock, so no layout shift)
+    const createDock = document.createElement("div");
+    createDock.style.cssText = "position: relative; height: 0; flex-shrink: 0; z-index: 21; pointer-events: none;";
+    createDock.innerHTML = `<button class="vfx-btn" id="btn-canvas-create" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); pointer-events: auto;
+        display: flex; align-items: center; gap: 6px; padding: 6px 20px; font-size: 12px; font-weight: 700; border-radius: 18px; white-space: nowrap;
+        background: linear-gradient(135deg, rgba(168,85,247,0.92), rgba(236,72,153,0.92)); border: 1px solid rgba(255,255,255,0.28); color: #fff;
+        box-shadow: 0 4px 18px rgba(168,85,247,0.45);"><span>✨ ${uiText("Create", "Создать")}</span></button>`;
+    mainViewportHost.appendChild(createDock);
+    {
+        const b = createDock.querySelector("#btn-canvas-create");
+        b.setAttribute("data-tip-t-en", "Create"); b.setAttribute("data-tip-t-ru", "Создать");
+        b.setAttribute("data-tip-d-en", "Make something new or rework what is open: picture, video, music, voice, 3D, your own tools.");
+        b.setAttribute("data-tip-d-ru", "Создать новое или переделать открытое: изображение, видео, музыка, голос, 3D, свои инструменты.");
+        b.addEventListener("mousedown", e => e.stopPropagation());
+        b.onclick = (e) => { e.stopPropagation(); openCreateMenu(b); };
+    }
+
     const centerStageArea = document.createElement("div");
     centerStageArea.id = "vfx-center-stage-area";
     centerStageArea.style.cssText = `
@@ -6674,9 +6823,13 @@ export function initStudioArchitecture(ctx) {
                             ${tipAttr("Workflow Previz", "Превиз воркфлоу", "Visualizer for ComfyUI nodes, connections and parameters. Tweak settings directly into JSON and run headless.", "Визуализатор нод ComfyUI, связей и параметров. Правка настроек прямо в JSON и запуск под капотом.", "GET /vfx/agent/latest_workflow")}
                             style="display: flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.4); color: #d8b4fe; border-radius: 6px; cursor: pointer; flex-shrink: 0;">
                             <i data-lucide="sliders" style="width: 12px; height: 12px;"></i>
-                            <span>🎛️ Воркфлоу</span>
+                            <span>🎛️ ${uiText("Workflow", "Воркфлоу")}</span>
                         </button>
 
+                        <button class="vfx-btn" id="btn-top-my-tools" ${tipAttr("My tools", "Мои инструменты", "Your own ComfyUI workflows added to the studio: run them on project media from a form, or ask the agent.", "Ваши воркфлоу ComfyUI, добавленные в студию: запуск на медиа проекта из формы или через агента.")}
+                            style="display: flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.4); color: #a7f3d0;">
+                            <span>🧰 ${uiText("My tools", "Мои инструменты")}</span>
+                        </button>
                         <div style="width: 1px; height: 22px; background: rgba(255,255,255,0.08); flex-shrink: 0;"></div>
 
                         <!-- Frames to generate (project length), always visible and editable -->
@@ -6728,6 +6881,8 @@ export function initStudioArchitecture(ctx) {
             </div>
         `;
 
+        const myToolsBtn = topViewportBar.querySelector("#btn-top-my-tools");
+        if (myToolsBtn) myToolsBtn.onclick = () => openMyTools();
         const previzTopBtn = topViewportBar.querySelector("#btn-top-workflow-previz");
         if (previzTopBtn) {
             previzTopBtn.onclick = () => openProcessGraphViewer();
@@ -8378,6 +8533,7 @@ export function initStudioArchitecture(ctx) {
 
             <div style="width: 18px; height: 1px; background: rgba(255,255,255,0.08); margin: 2px 0;"></div>
             ${[["depth", "mountain", "Depth Map", "Карта глубины", "Depth Anything V2 → new Depth layer"],
+               ["normal", "compass", "Normal Map (MoGe-2)", "Карта нормалей (MoGe-2)", "Surface normals, DirectX convention (Unreal) → new Normals layer"],
                ["canny", "scan-line", "Canny Edges", "Контуры (Canny)", "Canny edge map → new Canny layer"],
                ["pose", "person-standing", "Pose (DWPose)", "Поза (DWPose)", "Body, hands and face skeleton → new Pose layer"]].map(([k, icon, tEn, tRu, dEn]) => `
                 <button class="vfx-btn btn-1d-preprocess" data-kind="${k}"
@@ -10748,62 +10904,6 @@ export function initStudioArchitecture(ctx) {
 
         toolsBar.querySelector("#btn-1d-send-agent").onclick = () => sendImgToAgent();
 
-        const btnDlss1D = toolsBar.querySelector("#btn-1d-dlss-enhance");
-        if (btnDlss1D) {
-            btnDlss1D.onclick = () => {
-                const img = mediaImages1D.find(i => i.id === activeImageId) || mediaImages1D[0];
-                if (!img) return;
-                const existingPop = document.getElementById("vfx-dlss-quick-popover");
-                if (existingPop) { existingPop.remove(); return; }
-                const pop = document.createElement("div");
-                pop.id = "vfx-dlss-quick-popover";
-                pop.style.cssText = `
-                    position: absolute;
-                    right: 48px;
-                    bottom: 12px;
-                    background: rgba(14, 16, 22, 0.96);
-                    border: 1px solid rgba(52, 211, 153, 0.4);
-                    border-radius: 6px;
-                    padding: 8px;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 6px;
-                    z-index: 100;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.85);
-                    backdrop-filter: blur(14px);
-                    min-width: 155px;
-                `;
-                pop.innerHTML = `
-                    <div style="font-size: 10.5px; font-weight: 600; color: #34d399; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 5px;">
-                        <span style="display: flex; align-items: center; gap: 4px;">
-                            <i data-lucide="sparkles" style="width: 11px; height: 11px;"></i>
-                            <span>NVIDIA DLSS 5</span>
-                        </span>
-                        <span style="font-size: 8.5px; padding: 1px 4px; background: rgba(52,211,153,0.18); border-radius: 3px; font-family: monospace;">RTX 3090 Ti</span>
-                    </div>
-                    <button class="vfx-btn" id="pop-dlss-2x" style="font-size: 10px; font-weight: 500; padding: 5px 8px; background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.3); border-radius: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <i data-lucide="zap" style="width: 11px; height: 11px;"></i>
-                        <span>2x Upscale (2K Ultra)</span>
-                    </button>
-                    <button class="vfx-btn" id="pop-dlss-4x" style="font-size: 10px; font-weight: 500; padding: 5px 8px; background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); border-radius: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <i data-lucide="gem" style="width: 11px; height: 11px;"></i>
-                        <span>4x Master (4K Ultra)</span>
-                    </button>
-                `;
-                toolsBar.parentElement.appendChild(pop);
-                refreshLucideIcons(pop);
-                pop.querySelector("#pop-dlss-2x").onclick = () => { pop.remove(); runDlssEnhanceOnImage(img, 2); };
-                pop.querySelector("#pop-dlss-4x").onclick = () => { pop.remove(); runDlssEnhanceOnImage(img, 4); };
-                const closeHandler = (evt) => {
-                    if (!pop.contains(evt.target) && evt.target !== btnDlss1D) {
-                        pop.remove();
-                        document.removeEventListener("pointerdown", closeHandler);
-                    }
-                };
-                setTimeout(() => document.addEventListener("pointerdown", closeHandler), 60);
-            };
-        }
-
         refreshLucideIcons();
     }
 
@@ -12779,15 +12879,6 @@ export function initStudioArchitecture(ctx) {
             btnSaveFrame.onclick = () => captureActiveVideoFrameAsImage();
         }
 
-        const btnDlss2D = toolsBar2D.querySelector("#btn-2d-dlss-frame");
-        if (btnDlss2D) {
-            btnDlss2D.onclick = async () => {
-                const captured = captureActiveVideoFrameAsImage();
-                if (captured) {
-                    await runDlssEnhanceOnImage(captured, 2);
-                }
-            };
-        }
 
         const btnZoomFit2D = toolsBar2D.querySelector("#btn-2d-zoom-fit");
         if (btnZoomFit2D) {
@@ -14216,6 +14307,7 @@ export function initStudioArchitecture(ctx) {
                 }
                 if (k === "detect_yolo") { await runVideoJob2D("detect_all", { engine: "yolo", name: "Dynamic objects (YOLO)" }); return; }
                 if (k === "depth_da3") { await runVideoJob2D("depth", { engine: "da3" }); return; }
+                if (k === "normal_gl") { await runVideoJob2D("normal", { convention: "opengl", name: "Normals (OpenGL)" }); return; }
                 if (k === "depth") { openDepthDialog2D(btn); return; }
                 if (k === "text_mask") {
                     askText(btn, uiText("What to mask (English works best: person, red car, dog)", "Что маскировать (лучше по-английски: person, red car, dog)"), "person",
@@ -17219,17 +17311,6 @@ export function initStudioArchitecture(ctx) {
             hostEl.querySelector("#btn-run-final-comp-canvas").onclick = () => {
                 if (onExecuteCocktail) onExecuteCocktail();
             };
-            const btnCanvasDlss = hostEl.querySelector("#btn-comp-canvas-dlss");
-            if (btnCanvasDlss) {
-                btnCanvasDlss.onclick = () => {
-                    const targetImg = mediaImages1D.find(i => i.id === activeImageId) || mediaImages1D[0];
-                    if (!targetImg) {
-                        showToastNotification(uiText("No image selected to enhance", "Нет изображения для улучшения"), true);
-                        return;
-                    }
-                    runDlssEnhanceOnImage(targetImg, 2);
-                };
-            }
             refreshLucideIcons();
         } else {
             let infiniteCanvas = null;
@@ -21116,6 +21197,8 @@ export function initStudioArchitecture(ctx) {
                             body: JSON.stringify({ mode: act.mode || "dub", config: act.config || {}, start_at_stage: act.start_at_stage || 0,
                                 project_id: (window.currentProject && window.currentProject.id) || "" }) })
                             .then(r => r.json()).then(j => showToastNotification(j.error ? `❌ ${j.error}` : uiText("Dubbing started — progress in the Voice tab", "Дубляж запущен — прогресс во вкладке «Голос»"), !!j.error));
+                    } else if (act.type === "run_user_tool") {
+                        openMyTools({ tool_id: act.tool_id, values: act.values || {} });
                     } else if (act.type === "music_job") {
                         const body = { project_id: currentProject?.id || "", ...(act.params || {}) };
                         fetch("/vfx/music/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -23854,28 +23937,6 @@ export function initStudioArchitecture(ctx) {
             customTabPane.querySelector("#btn-comp-sidebar-exec").onclick = () => {
                 if (onExecuteCocktail) onExecuteCocktail();
             };
-            const btnCompDlss2 = customTabPane.querySelector("#btn-comp-dlss-2x");
-            if (btnCompDlss2) {
-                btnCompDlss2.onclick = () => {
-                    const targetImg = mediaImages1D.find(i => i.id === activeImageId) || mediaImages1D[0];
-                    if (!targetImg) {
-                        showToastNotification(uiText("No master frame available to enhance", "Нет финального кадра для улучшения"), true);
-                        return;
-                    }
-                    runDlssEnhanceOnImage(targetImg, 2);
-                };
-            }
-            const btnCompDlss4 = customTabPane.querySelector("#btn-comp-dlss-4x");
-            if (btnCompDlss4) {
-                btnCompDlss4.onclick = () => {
-                    const targetImg = mediaImages1D.find(i => i.id === activeImageId) || mediaImages1D[0];
-                    if (!targetImg) {
-                        showToastNotification(uiText("No master frame available to enhance", "Нет финального кадра для улучшения"), true);
-                        return;
-                    }
-                    runDlssEnhanceOnImage(targetImg, 4);
-                };
-            }
 
             renderStoryboardPackageContainer(customTabPane.querySelector("#sb-package-composite-mount"), "composite");
         }

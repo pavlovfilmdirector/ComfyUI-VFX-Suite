@@ -24,6 +24,7 @@ Node titles come from the API prompt's "_meta": {"title": ...}.
 
 import copy
 import json
+import time
 import os
 import urllib.error
 import urllib.request
@@ -231,6 +232,20 @@ def run_process(
     except Exception:
         pass
     return {"status": "queued", "process_id": process_id, "mode": mode, "prompt_id": resp.get("prompt_id")}
+
+
+def free_memory(wait_s: float = 3.0) -> None:
+    """ComfyUI's /free: unload every model and drop the executor cache (RAM too), applied by the prompt worker
+    between prompts, so a running prompt is never touched. Use before a big model of another family (LTX-2.3 DubIt
+    after LTX-2.5, Qwen Edit after LTX...): offloading alone keeps the old weights in RAM."""
+    try:
+        from server import PromptServer
+        q = PromptServer.instance.prompt_queue
+        q.set_flag("unload_models", True)
+        q.set_flag("free_memory", True)
+    except Exception:  # noqa: BLE001 - outside ComfyUI
+        return
+    time.sleep(max(0.0, wait_s))
 
 
 def _partner_class_types() -> set:
