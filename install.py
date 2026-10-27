@@ -39,6 +39,12 @@ def say(msg=""):
 
 def find_comfy(arg):
     cands = [arg, os.environ.get("KESHIKI_COMFY_DIR", "")]
+    # a repo linked into custom_nodes (symlink / junction) runs from its real folder: use the saved ComfyUI path
+    try:
+        with open(os.path.join(HERE, "keshiki_local.json"), encoding="utf-8") as f:
+            cands.append(json.load(f).get("comfy_dir", ""))
+    except (OSError, ValueError):
+        pass
     parent = os.path.dirname(HERE)
     if os.path.basename(parent).lower() == "custom_nodes":
         cands.append(os.path.dirname(parent))

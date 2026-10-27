@@ -159,7 +159,8 @@ def run_image_generate(params: Dict[str, Any], timeout_s: float = 900.0) -> Dict
     mode = params.get("mode", "edit")
     instruction = str(params.get("prompt") or "").strip()
     context = str(params.get("context") or "").strip()
-    if not instruction and not context:
+    has_drawings = mode == "edit" and any(d.get("data") for d in (params.get("drawings") or []))
+    if not instruction and not context and not has_drawings:   # drawings (notes, sketch, collage) speak for themselves
         raise ProcessError("Write what to generate")
     seed = int(params.get("seed") or random.randint(1, 2**31 - 1))
     masks = [m for m in (params.get("masks") or []) if m.get("data")]

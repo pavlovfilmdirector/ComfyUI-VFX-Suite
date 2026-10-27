@@ -2,14 +2,14 @@
 Dubbing / voice service
 =======================
 Runs the KESHIKI dubbing engines (``<repo>/dubbing``, from the Video Dubbing Studio) in their own Python
-environment. They need packages that clash with ComfyUI's (VibeVoice wants transformers<5, F5-TTS pins
+environment. They need packages that clash with ComfyUI's (F5-TTS pins
 pydantic), so they never import into this process: each run is a subprocess that prints
 ``STATUS_UPDATE:{json}`` lines, which become job progress here.
 
 Modes
 -----
 - ``dub``        video -> transcription (Whisper) -> translation -> text prep -> voice synthesis
-                 (F5-TTS / VibeVoice / Qwen3-TTS, voice cloned from the original) -> timing + final mix
+                 (F5-TTS, voice cloned from the original) -> timing + final mix
                  (``dubbing_engine.py``, stages 0..4, ``start_at_stage`` resumes)
 - ``voice``      text -> speech in a cloned voice (``direct_tts_engine.py --mode tts``)
 - ``transcribe`` reference audio -> text (``direct_tts_engine.py --mode transcribe``)
@@ -17,7 +17,7 @@ Modes
 
 Machine settings (keshiki_local.json or KESHIKI_* env):
     dubbing_python  python.exe of the dubbing environment (e.g. the studio's python_env)
-    dubbing_models  folder with F5-TTS / Whisper / vibevoice / Qwen / nllb models
+    dubbing_models  folder with F5-TTS / Whisper / Qwen / nllb models
 """
 import json
 import os
@@ -37,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DUB_DIR = os.path.join(BASE_DIR, "dubbing")
 DATA_DIR = os.path.join(BASE_DIR, "output_cache", "dubbing")
 SCRIPTS = {"dub": "dubbing_engine.py", "voice": "direct_tts_engine.py", "transcribe": "direct_tts_engine.py",
-           "narration": "book_narration_engine.py"}
+           "narration": "book_narration_engine.py", "text": "text_processing_engine.py"}
 
 _JOBS: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
@@ -55,7 +55,7 @@ def status() -> Dict[str, Any]:
     py = _python()
     models = local_setting("dubbing_models") or os.path.join(DUB_DIR, "models")
     found = {}
-    for sub in ("F5-TTS", "Whisper", "vibevoice", "Qwen", "nllb"):
+    for sub in ("F5-TTS", "Whisper", "Qwen", "nllb"):
         d = os.path.join(models, sub)
         found[sub] = sorted(os.listdir(d))[:20] if os.path.isdir(d) else []
     return {
@@ -63,7 +63,7 @@ def status() -> Dict[str, Any]:
         "python": py,
         "models_dir": models,
         "models": found,
-        "engines": ["f5tts", "vibevoice", "qwen"],
+        "engines": ["f5tts"],   # Qwen3-TTS: untested, hidden for now; VibeVoice: withdrawn by Microsoft
         "translators": ["ollama", "local"] + (["google", "yandex"] if cloud_services_allowed() else []),
         "allow_cloud": cloud_services_allowed(),
         "hint": "" if (py and os.path.isfile(py)) else
@@ -72,6 +72,8 @@ def status() -> Dict[str, Any]:
 
 
 def defaults(mode: str = "dub") -> Dict[str, Any]:
+    if mode == "text":   # text preparation (ё, numbers, stress) takes its whole config from the caller
+        return {}
     name = {"dub": "default_job_settings.json", "voice": "voice_clone_settings.json",
             "transcribe": "voice_clone_settings.json", "narration": "book_settings.json"}.get(mode, "default_job_settings.json")
     with open(os.path.join(DUB_DIR, "config", name), "r", encoding="utf-8") as f:
