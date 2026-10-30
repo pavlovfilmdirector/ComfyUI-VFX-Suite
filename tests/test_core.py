@@ -211,3 +211,24 @@ def test_every_frontend_vfx_url_has_a_route():
             if not any(p.match(url) for p in pats):
                 missing.add(f"{os.path.basename(js)}: {url}")
     assert not missing, sorted(missing)
+
+
+def test_project_chat_history_persistence(tmp_path, monkeypatch):
+    pm = load("project_manager")
+    monkeypatch.setattr(pm, "PROJECTS_ROOT", str(tmp_path))
+    pid = "test_chat_proj"
+    pm.create_or_open_project(pid, project_id=pid)
+
+    assert pm.get_project_chat_history(pid) == []
+
+    hist = [{"role": "user", "text": "Hello Keshiki"}, {"role": "assistant", "text": "Ready to direct."}]
+    assert pm.save_project_chat_history(pid, hist) is True
+
+    loaded = pm.get_project_chat_history(pid)
+    assert len(loaded) == 2
+    assert loaded[0]["text"] == "Hello Keshiki"
+    assert loaded[1]["text"] == "Ready to direct."
+
+    # Test clear
+    assert pm.clear_project_chat_history(pid) is True
+    assert pm.get_project_chat_history(pid) == []

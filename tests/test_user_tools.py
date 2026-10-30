@@ -78,3 +78,26 @@ def test_import_list_edit_build_delete(ut, tmp_path):
         ut.build_prompt(t, {}, lambda u: str(src))
     ut.delete_tool(t["id"])
     assert all(x["id"] != t["id"] for x in ut.list_tools())
+
+
+def test_passport_with_lora(ut):
+    wf = json.loads(json.dumps(WF))
+    wf["6"] = {
+        "class_type": "LoraLoader",
+        "inputs": {"model": ["9", 0], "clip": ["9", 1], "lora_name": "style_custom.safetensors", "strength_model": 0.8, "strength_clip": 0.8},
+        "_meta": {"title": "Style LoRA"}
+    }
+    d = ut.describe(wf)
+    lora_params = {p["field"]: p for p in d["params"]}
+    assert "lora_name" in lora_params
+    assert lora_params["lora_name"]["type"] == "lora"
+    assert lora_params["lora_name"]["default"] == "style_custom.safetensors"
+
+
+
+def test_import_with_orphan_node_missing_class_type(ut):
+    wf = json.loads(json.dumps(WF))
+    wf['999'] = {'inputs': {'UNKNOWN': 0}, '_meta': {}}
+    t = ut.import_tool(wf, 'Orphan Test')
+    assert t['id']
+    ut.delete_tool(t['id'])

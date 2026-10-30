@@ -1,0 +1,30 @@
+{
+  "id": "preset_portrait_to_speech",
+  "name": "Talking Actor: FLUX.3 → Lip-Sync Speech",
+  "name_ru": "Говорящий персонаж: FLUX.3 → Lip-Sync Речь",
+  "description": "Создает персонажа и сразу оживляет его мимику и речь под аудиофайл.",
+  "stages": [
+    {
+      "id": "stage_1",
+      "title": "FLUX.3 Portrait",
+      "stage_type": "flux_t2i",
+      "workflow": "api/storyboard/flux3_klein_t2i.json",
+      "inputs": {
+        "prompt": "Close-up portrait of a charismatic actor looking into camera, cinematic lighting, ultra detailed"
+      }
+    },
+    {
+      "id": "stage_2",
+      "title": "Lip-Sync Audio-to-Video",
+      "stage_type": "ltx25_a2v",
+      "workflow": "voice/ltx25_a2v.json",
+      "inputs": {
+        "start_image": {
+          "from_stage": "stage_1",
+          "output_key": "image"
+        },
+        "audio": ""
+      }
+    }
+  ]
+}

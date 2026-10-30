@@ -79,25 +79,49 @@ def register_run(run_tag: Optional[str], prompt_id: str) -> None:
 def cancel_run(run_tag: Optional[str] = None, prompt_id: Optional[str] = None) -> Dict[str, Any]:
     """Removes a pending prompt from the queue or interrupts it if it is running."""
     pid = prompt_id or _ACTIVE_RUNS.get(str(run_tag or ""))
-    if not pid:
-        return {"status": "not_found"}
-    with urllib.request.urlopen(f"{COMFY_URL}/queue", timeout=10) as resp:
-        q = json.loads(resp.read().decode("utf-8"))
-    running = [item[1] for item in q.get("queue_running", [])]
-    pending = [item[1] for item in q.get("queue_pending", [])]
-    if pid in pending:
-        _post_json(f"{COMFY_URL}/queue", {"delete": [pid]})
+    try:
+        with urllib.request.urlopen(f"{COMFY_URL}/queue", timeout=5) as resp:
+            q = json.loads(resp.read().decode("utf-8"))
+        running = [item[1] for item in q.get("queue_running", [])]
+        pending = [item[1] for item in q.get("queue_pending", [])]
+    except Exception:
+        running, pending = [], []
+
+    if pid and pid in pending:
+        try:
+            _post_json(f"{COMFY_URL}/queue", {"delete": [pid]})
+        except Exception:
+            pass
         return {"status": "removed_from_queue", "prompt_id": pid}
-    if pid in running:
-        _post_json(f"{COMFY_URL}/interrupt", {"prompt_id": pid})
-        return {"status": "interrupted", "prompt_id": pid}
-    return {"status": "not_running", "prompt_id": pid}
+
+    # Always ensure targeted and global interrupt are fired, and free memory is signaled
+    try:
+        if pid:
+            _post_json(f"{COMFY_URL}/interrupt", {"prompt_id": pid})
+        _post_json(f"{COMFY_URL}/interrupt", {})
+        _post_json(f"{COMFY_URL}/free", {"unload_models": True, "free_memory": True})
+    except Exception:
+        pass
+    return {"status": "interrupted", "prompt_id": pid}
 
 
 def _is_api_prompt(data: Any) -> bool:
-    return isinstance(data, dict) and bool(data) and all(
-        isinstance(v, dict) and "class_type" in v for v in data.values()
-    )
+    if not isinstance(data, dict) or not data:
+        return False
+    if "nodes" in data and "links" in data and isinstance(data["nodes"], list):
+        return False
+    valid = sum(1 for v in data.values() if isinstance(v, dict) and v.get("class_type"))
+    return valid > 0 and valid >= (len(data) // 2)
+
+
+def sanitize_api_prompt(data: Any) -> Dict[str, Any]:
+    """Cleans an API prompt by filtering out non-dict entries or broken nodes missing class_type."""
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k): v for k, v in data.items()
+        if isinstance(v, dict) and v.get("class_type")
+    }
 
 
 def load_template(process_id: str, template: str) -> Dict[str, Any]:
@@ -179,11 +203,23 @@ def run_process(
     pconf = load_processes_config().get("processes", {}).get(process_id, {})
     mode = pconf.get("execution_mode", "local")
 
+    if prompt is not None and isinstance(prompt, dict):
+        if "api_prompt" in prompt and isinstance(prompt["api_prompt"], dict) and _is_api_prompt(prompt["api_prompt"]):
+            prompt = prompt["api_prompt"]
+        elif "prompt" in prompt and isinstance(prompt["prompt"], dict) and _is_api_prompt(prompt["prompt"]):
+            prompt = prompt["prompt"]
+
     if prompt is None:
         if mode == "custom_workflow" and pconf.get("custom_workflow_file") and not template:
             with open(pconf["custom_workflow_file"], "r", encoding="utf-8") as f:
-                prompt = json.load(f)
-            if not _is_api_prompt(prompt):
+                raw_wf = json.load(f)
+            if isinstance(raw_wf, dict) and "api_prompt" in raw_wf and _is_api_prompt(raw_wf["api_prompt"]):
+                prompt = raw_wf["api_prompt"]
+            elif isinstance(raw_wf, dict) and "prompt" in raw_wf and _is_api_prompt(raw_wf["prompt"]):
+                prompt = raw_wf["prompt"]
+            elif _is_api_prompt(raw_wf):
+                prompt = raw_wf
+            else:
                 raise ProcessError("Bound custom workflow is not in API format; re-export it with 'Save (API)'")
         elif template:
             prompt = load_template(process_id, template)
@@ -194,6 +230,16 @@ def run_process(
 
     prompt = inject_params(prompt, params or {})
 
+    # Auto-heal model names, quantized variants and LoRA slashes against installed ComfyUI models
+    try:
+        try:
+            from .workflow_inspector import heal_and_validate_prompt
+        except ImportError:
+            from workflow_inspector import heal_and_validate_prompt
+        prompt, _repairs = heal_and_validate_prompt(prompt)
+    except Exception as heal_err:
+        pass
+
     # VRAM rule: heavy local LLMs (agent "brain") leave the GPU before local diffusion / vision runs.
     if mode != "partner" and process_id != "agent":
         try:
@@ -202,6 +248,7 @@ def run_process(
             except ImportError:  # pragma: no cover
                 from vfx_agent_service import unload_agent_from_vram
             unload_agent_from_vram()
+            apply_adaptive_vram_reserve(float(params.get('reserve_vram_gb', 0)) if params else None)
         except Exception as e:  # never block a run because of eviction
             print(f"[VFX-Suite] VRAM eviction skipped: {e}")
 
@@ -227,11 +274,42 @@ def run_process(
         raise ProcessError(f"Node errors: {json.dumps(resp['node_errors'])[:2000]}")
     register_run(run_tag, resp.get("prompt_id"))
     try:
-        from .progress_tracker import note_label
-        note_label(resp.get("prompt_id"), process_id)
+        from .progress_tracker import note_prompt
+        note_prompt(resp.get("prompt_id"), prompt, process_id)
     except Exception:
         pass
     return {"status": "queued", "process_id": process_id, "mode": mode, "prompt_id": resp.get("prompt_id")}
+
+
+def apply_adaptive_vram_reserve(custom_gb: Optional[float] = None) -> float:
+    """Dynamically sets ComfyUI's EXTRA_RESERVED_VRAM headroom based on GPU memory.
+    Prevents activations from spilling into slow Windows Shared GPU Memory across all workflows.
+    - 24 GB cards (3090 / 4090): 5.0 GB reserve
+    - 16 GB cards (4080 / 4070 Ti Super): 3.0 GB reserve
+    - 12 GB cards (3060 / 4070): 2.0 GB reserve
+    - <=8 GB cards: 1.0 GB reserve
+    """
+    try:
+        import comfy.model_management as mm
+        if custom_gb is not None and custom_gb > 0:
+            target_bytes = int(custom_gb * (1024 ** 3))
+        else:
+            total_mb = getattr(mm, "total_vram", 0)
+            if total_mb >= 22000:
+                target_bytes = int(5.0 * (1024 ** 3))
+            elif total_mb >= 15000:
+                target_bytes = int(3.0 * (1024 ** 3))
+            elif total_mb >= 11000:
+                target_bytes = int(2.0 * (1024 ** 3))
+            else:
+                target_bytes = int(1.0 * (1024 ** 3))
+
+        cur = getattr(mm, "EXTRA_RESERVED_VRAM", 0)
+        if target_bytes > cur:
+            mm.EXTRA_RESERVED_VRAM = target_bytes
+        return mm.EXTRA_RESERVED_VRAM / (1024 ** 3)
+    except Exception:
+        return 0.0
 
 
 def free_memory(wait_s: float = 3.0) -> None:

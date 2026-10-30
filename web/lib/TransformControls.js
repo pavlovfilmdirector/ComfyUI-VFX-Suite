@@ -251,6 +251,7 @@
 
 				}
 
+				this._pointerStart = { x: pointer.x, y: pointer.y };
 				this.dragging = true;
 				_mouseDownEvent.mode = this.mode;
 				this.dispatchEvent( _mouseDownEvent );
@@ -377,9 +378,18 @@
 
 			} else if ( mode === 'scale' ) {
 
-				if ( axis.search( 'XYZ' ) !== - 1 ) {
+				if ( axis === 'XYZ' || ( axis.search( 'XYZ' ) !== - 1 && this.pointStart.length() < 0.25 ) ) {
 
-					let d = this.pointEnd.length() / this.pointStart.length();
+					const startX = this._pointerStart ? this._pointerStart.x : 0;
+					const startY = this._pointerStart ? this._pointerStart.y : 0;
+					const delta = ( ( pointer.x - startX ) + ( pointer.y - startY ) ) * 2.2;
+					const d = Math.max( 0.02, Math.pow( 2.0, delta ) );
+
+					_tempVector2.set( d, d, d );
+
+				} else if ( axis.search( 'XYZ' ) !== - 1 ) {
+
+					let d = this.pointEnd.length() / Math.max( 0.001, this.pointStart.length() );
 					if ( this.pointEnd.dot( this.pointStart ) < 0 ) d *= - 1;
 
 					_tempVector2.set( d, d, d );
@@ -677,6 +687,16 @@
 
 		for ( let i = 0; i < allIntersections.length; i ++ ) {
 
+			if ( ( allIntersections[ i ].object.visible || includeInvisible ) && allIntersections[ i ].object.name === 'XYZ' ) {
+
+				return allIntersections[ i ];
+
+			}
+
+		}
+
+		for ( let i = 0; i < allIntersections.length; i ++ ) {
+
 			if ( allIntersections[ i ].object.visible || includeInvisible ) {
 
 				return allIntersections[ i ];
@@ -854,6 +874,10 @@
 				E: [[ new THREE.Mesh( new THREE.TorusGeometry( 1.25, 0.1, 2, 24 ), matInvisible ) ]],
 				XYZE: [[ new THREE.Mesh( new THREE.SphereGeometry( 0.7, 10, 8 ), matInvisible ) ]]
 			};
+			const matUniformCenter = gizmoMaterial.clone();
+			matUniformCenter.color.set( 0xffffff );
+			matUniformCenter.opacity = 0.85;
+
 			const gizmoScale = {
 				X: [[ new THREE.Mesh( scaleHandleGeometry, matRed ), [ 0.8, 0, 0 ], [ 0, 0, - Math.PI / 2 ]], [ new THREE.Line( lineGeometry, matLineRed ), null, null, [ 0.8, 1, 1 ]]],
 				Y: [[ new THREE.Mesh( scaleHandleGeometry, matGreen ), [ 0, 0.8, 0 ]], [ new THREE.Line( lineGeometry, matLineGreen ), null, [ 0, 0, Math.PI / 2 ], [ 0.8, 1, 1 ]]],
@@ -861,14 +885,16 @@
 				XY: [[ new THREE.Mesh( scaleHandleGeometry, matYellowTransparent ), [ 0.85, 0.85, 0 ], null, [ 2, 2, 0.2 ]], [ new THREE.Line( lineGeometry, matLineYellow ), [ 0.855, 0.98, 0 ], null, [ 0.125, 1, 1 ]], [ new THREE.Line( lineGeometry, matLineYellow ), [ 0.98, 0.855, 0 ], [ 0, 0, Math.PI / 2 ], [ 0.125, 1, 1 ]]],
 				YZ: [[ new THREE.Mesh( scaleHandleGeometry, matCyanTransparent ), [ 0, 0.85, 0.85 ], null, [ 0.2, 2, 2 ]], [ new THREE.Line( lineGeometry, matLineCyan ), [ 0, 0.855, 0.98 ], [ 0, 0, Math.PI / 2 ], [ 0.125, 1, 1 ]], [ new THREE.Line( lineGeometry, matLineCyan ), [ 0, 0.98, 0.855 ], [ 0, - Math.PI / 2, 0 ], [ 0.125, 1, 1 ]]],
 				XZ: [[ new THREE.Mesh( scaleHandleGeometry, matMagentaTransparent ), [ 0.85, 0, 0.85 ], null, [ 2, 0.2, 2 ]], [ new THREE.Line( lineGeometry, matLineMagenta ), [ 0.855, 0, 0.98 ], null, [ 0.125, 1, 1 ]], [ new THREE.Line( lineGeometry, matLineMagenta ), [ 0.98, 0, 0.855 ], [ 0, - Math.PI / 2, 0 ], [ 0.125, 1, 1 ]]],
+				XYZ: [[ new THREE.Mesh( new THREE.BoxGeometry( 0.18, 0.18, 0.18 ), matUniformCenter.clone() ), [ 0, 0, 0 ]]],
 				XYZX: [[ new THREE.Mesh( new THREE.BoxGeometry( 0.125, 0.125, 0.125 ), matWhiteTransparent.clone() ), [ 1.1, 0, 0 ]]],
 				XYZY: [[ new THREE.Mesh( new THREE.BoxGeometry( 0.125, 0.125, 0.125 ), matWhiteTransparent.clone() ), [ 0, 1.1, 0 ]]],
 				XYZZ: [[ new THREE.Mesh( new THREE.BoxGeometry( 0.125, 0.125, 0.125 ), matWhiteTransparent.clone() ), [ 0, 0, 1.1 ]]]
 			};
 			const pickerScale = {
-				X: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.8, 4, 1, false ), matInvisible ), [ 0.5, 0, 0 ], [ 0, 0, - Math.PI / 2 ]]],
-				Y: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.8, 4, 1, false ), matInvisible ), [ 0, 0.5, 0 ]]],
-				Z: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.8, 4, 1, false ), matInvisible ), [ 0, 0, 0.5 ], [ Math.PI / 2, 0, 0 ]]],
+				XYZ: [[ new THREE.Mesh( new THREE.BoxGeometry( 0.30, 0.30, 0.30 ), matInvisible ), [ 0, 0, 0 ]]],
+				X: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.7, 4, 1, false ), matInvisible ), [ 0.55, 0, 0 ], [ 0, 0, - Math.PI / 2 ]]],
+				Y: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.7, 4, 1, false ), matInvisible ), [ 0, 0.55, 0 ]]],
+				Z: [[ new THREE.Mesh( new THREE.CylinderGeometry( 0.2, 0, 0.7, 4, 1, false ), matInvisible ), [ 0, 0, 0.55 ], [ Math.PI / 2, 0, 0 ]]],
 				XY: [[ new THREE.Mesh( scaleHandleGeometry, matInvisible ), [ 0.85, 0.85, 0 ], null, [ 3, 3, 0.2 ]]],
 				YZ: [[ new THREE.Mesh( scaleHandleGeometry, matInvisible ), [ 0, 0.85, 0.85 ], null, [ 0.2, 3, 3 ]]],
 				XZ: [[ new THREE.Mesh( scaleHandleGeometry, matInvisible ), [ 0.85, 0, 0.85 ], null, [ 3, 0.2, 3 ]]],

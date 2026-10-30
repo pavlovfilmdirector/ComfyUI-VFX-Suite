@@ -376,64 +376,81 @@ class CameraTrackerNode:
             raw_pts_glomap = np.array([p.xyz for p in rec.points3D.values()])
             pts_colors = np.array([p.color / 255.0 for p in rec.points3D.values()])
 
-            raw_c = np.array([glomap_poses[f][1] for f in reg_fids])
-            z_cand = np.percentile(raw_pts_glomap[:, 2], 20)
-            ground_pts = raw_pts_glomap[raw_pts_glomap[:, 2] < z_cand]
-            if len(ground_pts) > 50:
-                cam_h_raw = np.abs(raw_c[:, 2].mean() - ground_pts[:, 2].mean())
-                S_metric = float(camera_height_m) / max(cam_h_raw, 1e-3)
+            reg_C_raw = np.array([glomap_poses[f][1] for f in reg_fids])
+            if len(reg_fids) >= 2:
+                px = PchipInterpolator(reg_fids, reg_C_raw[:, 0])
+                py = PchipInterpolator(reg_fids, reg_C_raw[:, 1])
+                pz = PchipInterpolator(reg_fids, reg_C_raw[:, 2])
             else:
-                S_metric = 1.0
-
-            raw_pts = raw_pts_glomap * S_metric
-            reg_C = np.array([glomap_poses[f][1] for f in reg_fids]) * S_metric
-
-            px = PchipInterpolator(reg_fids, reg_C[:, 0])
-            py = PchipInterpolator(reg_fids, reg_C[:, 1])
-            pz = PchipInterpolator(reg_fids, reg_C[:, 2])
+                px = lambda f: reg_C_raw[0, 0]
+                py = lambda f: reg_C_raw[0, 1]
+                pz = lambda f: reg_C_raw[0, 2]
 
             all_C = np.zeros((total_frames, 3))
             all_rot = []
             for fid in range(total_frames):
                 if fid in glomap_poses:
-                    all_C[fid] = glomap_poses[fid][1] * S_metric
+                    all_C[fid] = glomap_poses[fid][1]
                     all_rot.append(glomap_poses[fid][2])
                 else:
-                    all_C[fid] = [px(fid), py(fid), pz(fid)]
+                    all_C[fid] = [float(px(fid)), float(py(fid)), float(pz(fid))]
                     left = [f for f in reg_fids if f < fid]
                     right = [f for f in reg_fids if f > fid]
-                    all_rot.append(glomap_poses[left[-1] if left else right[0]][2])
+                    ref_fid = left[-1] if left else right[0]
+                    all_rot.append(glomap_poses[ref_fid][2])
 
+            # Convert raw COLMAP frame (X-right, Y-down, Z-forward) to Blender/VFX Z-up frame (X-right, Y-forward, Z-up)
             M_w2b = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=float)
             R_conv = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=float)
 
             raw_cams_b = np.array([M_w2b @ all_C[i] for i in range(total_frames)])
             raw_rots_b = [M_w2b @ all_rot[i].as_matrix().T @ R_conv for i in range(total_frames)]
-            raw_pts_b = np.column_stack([raw_pts[:, 0], raw_pts[:, 2], -raw_pts[:, 1]])
+            raw_pts_b = np.column_stack([raw_pts_glomap[:, 0], raw_pts_glomap[:, 2], -raw_pts_glomap[:, 1]])
 
-            z_thresh = np.percentile(raw_pts_b[:, 2], 30)
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(raw_pts_b[raw_pts_b[:, 2] < z_thresh])
-            plane_model, inliers = pcd.segment_plane(distance_threshold=0.10, ransac_n=3, num_iterations=1000)
-            a, b, c, d = plane_model
-            ground_normal = np.array([a, b, c])
-            if ground_normal[2] < 0:
-                ground_normal = -ground_normal
-            ground_normal /= np.linalg.norm(ground_normal)
+            # Estimate camera up vector in Z-up world. For handheld/tripod video, cameras are upright (local +Y is up).
+            avg_cam_up = np.mean([R[:, 1] for R in raw_rots_b], axis=0)
+            norm_up = np.linalg.norm(avg_cam_up)
+            if norm_up > 1e-6:
+                avg_cam_up /= norm_up
+            else:
+                avg_cam_up = np.array([0.0, 0.0, 1.0])
 
-            rot_align, _ = Rotation.align_vectors([[0, 0, 1]], [ground_normal])
+            # In VFX matchmoving, camera gravity (avg_cam_up) is the primary reference for the world vertical axis.
+            # Aligning avg_cam_up strictly to [0, 0, 1] guarantees the camera horizon in 3D is perfectly level (0 deg roll),
+            # preventing noisy point cloud patches or slanted terrain from tilting the camera sideways.
+            rot_align, _ = Rotation.align_vectors([[0, 0, 1]], [avg_cam_up])
             R_align = rot_align.as_matrix()
 
-            cams_rot = (R_align @ raw_cams_b.T).T
-            pts_rot = (R_align @ raw_pts_b.T).T
-            ground_z = np.median((R_align @ raw_pts_b[raw_pts_b[:, 2] < z_thresh][inliers].T).T[:, 2])
+            cams_aligned = (R_align @ raw_cams_b.T).T
+            rots_aligned = [R_align @ R for R in raw_rots_b]
+            pts_aligned = (R_align @ raw_pts_b.T).T
 
-            cam_center = cams_rot[:, :2].mean(axis=0)
+            # Metric scale estimation along true vertical Z axis
+            target_h = float(camera_height_m) if (camera_height_m and float(camera_height_m) > 0) else 1.55
+            cam_z_mean = float(cams_aligned[:, 2].mean())
+            pts_below = pts_aligned[pts_aligned[:, 2] < cam_z_mean]
+
+            if len(pts_below) >= 30:
+                # 20th percentile of points below camera gives robust floor level without outliers
+                floor_est = float(np.percentile(pts_below[:, 2], 20))
+                cam_h_raw = abs(cam_z_mean - floor_est)
+            else:
+                cam_h_raw = target_h
+
+            S_metric = target_h / max(cam_h_raw, 0.05) if cam_h_raw > 0.05 else 1.0
+
+            cams_scaled = cams_aligned * S_metric
+            pts_scaled = pts_aligned * S_metric
+
+            # Place the 3D ground plane (Z = 0.000m) exactly target_h below camera
+            ground_z = cams_scaled[:, 2].mean() - target_h
+
+            cam_center = cams_scaled[:, :2].mean(axis=0)
             T_world = np.array([-cam_center[0], -cam_center[1], -ground_z])
 
-            final_cams = cams_rot + T_world
-            final_pts = pts_rot + T_world
-            final_rots = [R_align @ R for R in raw_rots_b]
+            final_cams = cams_scaled + T_world
+            final_pts = pts_scaled + T_world
+            final_rots = rots_aligned
 
             # Focal length resolution based on mode
             if focal_length_mode == "Fixed / Known Focal":

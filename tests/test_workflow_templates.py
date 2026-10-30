@@ -119,3 +119,61 @@ def test_template_models_installed_here(path):
             if opts and v not in opts and v.replace("/", "\\") not in opts and v.replace("\\", "/") not in opts:
                 missing.append(f"{n['class_type']}.{k} = {v}")
     assert not missing, "models not installed on this machine:\n" + "\n".join(missing)
+
+
+def test_inject_style_lora_inactive_when_empty():
+    from vfx_nodes.server_api import inject_style_lora
+    t2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_t2v.json")
+    with open(t2v_path, encoding="utf-8") as f:
+        wf = json.load(f)
+
+    # Empty string or None -> leaves workflow untouched
+    wf_none = inject_style_lora(dict(wf), None)
+    assert "lora_style" not in wf_none
+    assert wf_none["guider"]["inputs"]["model"] == ["unet", 0]
+
+    wf_empty = inject_style_lora(dict(wf), "")
+    assert "lora_style" not in wf_empty
+    assert wf_empty["guider"]["inputs"]["model"] == ["unet", 0]
+
+
+def test_inject_style_lora_active_t2v():
+    from vfx_nodes.server_api import inject_style_lora
+    t2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_t2v.json")
+    with open(t2v_path, encoding="utf-8") as f:
+        wf = json.load(f)
+
+    wf_mod = inject_style_lora(json.loads(json.dumps(wf)), "cinematic_style.safetensors", strength_model=0.75, strength_clip=0.85)
+    assert "lora_style" in wf_mod
+    lora = wf_mod["lora_style"]
+    assert lora["class_type"] == "LoraLoader"
+    assert lora["inputs"]["lora_name"] == "cinematic_style.safetensors"
+    assert lora["inputs"]["strength_model"] == 0.75
+    assert lora["inputs"]["strength_clip"] == 0.85
+    assert lora["inputs"]["model"] == ["unet", 0]
+    assert lora["inputs"]["clip"] == ["clip", 0]
+
+    # Downstream rewiring
+    assert wf_mod["guider"]["inputs"]["model"] == ["lora_style", 0]
+    assert wf_mod["pos"]["inputs"]["clip"] == ["lora_style", 1]
+    assert wf_mod["neg"]["inputs"]["clip"] == ["lora_style", 1]
+
+
+def test_inject_style_lora_active_i2v():
+    from vfx_nodes.server_api import inject_style_lora
+    i2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_i2v.json")
+    with open(i2v_path, encoding="utf-8") as f:
+        wf = json.load(f)
+
+    wf_mod = inject_style_lora(json.loads(json.dumps(wf)), "anime_look.safetensors", strength_model=0.9, strength_clip=0.9)
+    assert "lora_style" in wf_mod
+    lora = wf_mod["lora_style"]
+    assert lora["class_type"] == "LoraLoader"
+    assert lora["inputs"]["lora_name"] == "anime_look.safetensors"
+    assert lora["inputs"]["model"] == ["unet", 0]
+    assert lora["inputs"]["clip"] == ["clip", 0]
+
+    assert wf_mod["guider"]["inputs"]["model"] == ["lora_style", 0]
+    assert wf_mod["pos"]["inputs"]["clip"] == ["lora_style", 1]
+    assert wf_mod["neg"]["inputs"]["clip"] == ["lora_style", 1]
+

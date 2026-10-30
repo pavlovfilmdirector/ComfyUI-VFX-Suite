@@ -29,9 +29,16 @@ Each layer can carry a short note.
 
 ### Video
 The clip and its layers: masks, depth, pose, generated clips, composites. Layers can be hidden, reordered, faded, and masks viewed in black and white.
+- **Cutout Alpha (`✂ Cutout Alpha`)**: extracts the subject by the selected mask/matte layer into a transparent RGBA video (`.webm`) and PNG sequence, adding it to the Asset Gallery and Video layers.
+- **2D Paint Keyframes & Ghost mode**: brush strokes on a Paint layer automatically create keyframes on the timeline; keyframes can be navigated (`◀` / `▶`), multi-selected, moved, or deleted, and **Ghost (Onion-skinning)** overlays previous and next keyframe drawings for frame-by-frame animation reference.
 
 ### 3D — scene
-Characters with animation (FBX, Mixamo, built-in mannequin skeleton), primitives (box, cylinder, sphere…), cameras and camera moves (orbit, dolly), camera tracking from footage. From 3D you send a pose layer and a render layer (clay characters or the environment) to the Video clip.
+The 3D viewport toolbar is organized into three sequential rows:
+1. **Row 1 — Primitives**: Box, Sphere, Cylinder, Cone, Torus, Plane for rapid set blocking.
+2. **Row 2 — Cameras, Lights & Reference**: Free Camera, Sun Light, Point Light, 3-Point Ground Plane alignment, and a toggleable **3D Cursor** (ON/OFF).
+3. **Row 3 — Characters & 3D-to-2D Passes**: Add Skeleton (mannequin without mesh), Load Animation (FBX / Mixamo with `Hips: ON/LOCK` and `📌 Root to Pivot` baking), Show/Hide Bones, **Pose from 3D (OpenPose)**, and **Render Characters from 3D**.
+- **Monitor Camera Render (`🎬 Render Camera`)**: located in the **Monitor** header to the left of `● Preview ON` — renders the active camera sequence into `layout_render.mp4` and adds it directly to the Asset Gallery (`Baked 3D Layout`).
+- **Actor Cutout Plane**: manual dropzone slot supporting custom videos (`.mp4`, `.webm`, `.mov`) and images (`.png`, `.jpg`, `.webp`) with one-click BiRefNet background removal (`✂️ Remove BG`).
 
 ### Tabs on the left
 Storyboard · Characters · Locations · **Voice (dubbing)** · Video · **3D meshes (TRELLIS.2)** · Deconstruction · Composite · Music · Settings.
@@ -92,11 +99,11 @@ A subject cut by its mask from one source over another background:
 7. **Composite**: subject = step 5, mask = step 6, background = the clean plate from step 2.
 
 ### A character driven by 3D animation
-1. In 3D add a character or a skeleton (orange "person +" button) and load an animation (FBX / Mixamo — retargeted automatically).
-2. Block out the set with primitives (a bench from boxes, a tree from a cylinder and a sphere…) and pick a camera (e.g. orbit).
-3. Send to Video with the 3D panel buttons: **Pose from 3D** (cyan "image" icon) and **Environment render** (green "trees" icon). **Render from 3D** ("box" icon) renders the characters themselves in grey clay — the input for layout-to-render when the character must follow the 3D model's shape.
-4. In Generate: "Set the first frame" → character + environment layer + pose layer + "what the shapes become".
-5. **Generate** → layout-to-render on the environment + second control union-control on the pose (influence 0.8).
+1. In 3D add a character or a skeleton (Row 3 "person +" button) and load an animation (FBX / Mixamo — retargeted automatically).
+2. Block out the set with primitives (Row 1: box, cylinder, sphere…) and pick or animate a camera (Row 2).
+3. Export passes with the 3D panel buttons: **Pose from 3D (OpenPose)** and **Render Characters from 3D**, or click **`🎬 Render Camera`** in the Monitor header to bake the full 3D camera sequence to the Asset Gallery.
+4. In Generate: "Set the first frame" → character + 3D layout/render layer + pose layer + "what the shapes become".
+5. **Generate** → layout-to-render on the 3D layout + second control union-control on the pose (influence 0.8).
 
 ### Dub a video
 **Voice** tab → "Dub a video": the video file (the Video button takes the open clip), languages, translator (a local LLM via Ollama), voice engine (F5-TTS). By default the original speaker's voice is cloned; you can give your own sample. Stages: analysis (Whisper, voice separation) → translation → text preparation → synthesis → timing and final mix. You can resume from any stage. The result is saved to the project's `audio_tts` folder.

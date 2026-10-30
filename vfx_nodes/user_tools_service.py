@@ -21,11 +21,13 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 try:
-    from .process_runner import ProcessError, get_run_status, inject_params, run_process, _is_api_prompt
+    from .process_runner import ProcessError, get_run_status, inject_params, run_process, _is_api_prompt, sanitize_api_prompt
     from .project_manager import get_project_dir
+    from .workflow_converter import convert_ui_workflow_to_api_prompt
 except ImportError:  # pragma: no cover
-    from process_runner import ProcessError, get_run_status, inject_params, run_process, _is_api_prompt
+    from process_runner import ProcessError, get_run_status, inject_params, run_process, _is_api_prompt, sanitize_api_prompt
     from project_manager import get_project_dir
+    from workflow_converter import convert_ui_workflow_to_api_prompt
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS_DIR = os.path.join(BASE_DIR, "user_tools")
@@ -38,7 +40,7 @@ LOADERS = {
     "LoadVideo": ("video", "file"), "VHS_LoadVideo": ("video", "video"), "VHS_LoadVideoFFmpeg": ("video", "video"),
     "LoadAudio": ("audio", "audio"), "VHS_LoadAudioUpload": ("audio", "audio"),
 }
-AUTO_PARAM_INPUTS = ("text", "prompt", "positive", "seed", "noise_seed")
+AUTO_PARAM_INPUTS = ("text", "prompt", "positive", "seed", "noise_seed", "lora_name", "strength_model", "strength_clip")
 
 _JOBS: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
@@ -64,12 +66,26 @@ def _tagged(node, tag):
     return t[len(tag):].strip() if t.upper().startswith(tag) else None
 
 
-def _kind_of(v):
+def _kind_of(v, field: str = ""):
+    if "lora" in field.lower():
+        return "lora"
     return "bool" if isinstance(v, bool) else "int" if isinstance(v, int) else "float" if isinstance(v, float) else "text"
 
 
 def describe(prompt: Dict[str, Any]) -> Dict[str, Any]:
     """Inputs / params / outputs of an API prompt (the automatic passport)."""
+    if isinstance(prompt, dict):
+        if "prompt" in prompt and isinstance(prompt["prompt"], dict) and not ("nodes" in prompt["prompt"]):
+            prompt = prompt["prompt"]
+        elif "workflow" in prompt and isinstance(prompt["workflow"], dict):
+            prompt = prompt["workflow"]
+    if isinstance(prompt, dict) and "nodes" in prompt and "links" in prompt:
+        try:
+            prompt = convert_ui_workflow_to_api_prompt(prompt)
+        except Exception as e:
+            raise ProcessError(f"Could not convert editor workflow to API prompt: {e}")
+
+    prompt = sanitize_api_prompt(prompt)
     if not _is_api_prompt(prompt):
         raise ProcessError("This is not an API-format workflow. In ComfyUI use Workflow → Export (API) / 'Save (API)'.")
     inputs, params, outputs = [], [], []
@@ -95,17 +111,18 @@ def describe(prompt: Dict[str, Any]) -> Dict[str, Any]:
             widgets = [(k, v) for k, v in n.get("inputs", {}).items() if not isinstance(v, list)]
             for k, v in widgets:
                 params.append({"id": f"p{nid}_{k}", "node": nid, "field": k,
-                               "label": label if len(widgets) == 1 else f"{label} · {k}", "type": _kind_of(v), "default": v})
+                               "label": label if len(widgets) == 1 else f"{label} · {k}", "type": _kind_of(v, k), "default": v})
     else:
         for nid, n in sorted(prompt.items(), key=lambda kv: kv[0]):
             for k, v in n.get("inputs", {}).items():
                 if k in AUTO_PARAM_INPUTS and not isinstance(v, list) and n["class_type"] not in LOADERS:
                     params.append({"id": f"p{nid}_{k}", "node": nid, "field": k,
-                                   "label": f"{_title(n) or n['class_type']} · {k}", "type": _kind_of(v), "default": v})
+                                   "label": f"{_title(n) or n['class_type']} · {k}", "type": _kind_of(v, k), "default": v})
     return {"inputs": inputs, "params": params, "outputs": outputs}
 
 
 def _check_nodes(prompt: Dict[str, Any]) -> List[str]:
+    prompt = sanitize_api_prompt(prompt)
     try:
         import nodes  # ComfyUI's registry (in-process)
         known = set(nodes.NODE_CLASS_MAPPINGS)
@@ -147,8 +164,17 @@ def import_tool(workflow: Any, name: str = "", description: str = "", tab: str =
             workflow = json.loads(workflow)
         except ValueError as e:
             raise ProcessError(f"Not JSON: {e}")
+    if isinstance(workflow, dict):
+        if "prompt" in workflow and isinstance(workflow["prompt"], dict) and not ("nodes" in workflow["prompt"]):
+            workflow = workflow["prompt"]
+        elif "workflow" in workflow and isinstance(workflow["workflow"], dict):
+            workflow = workflow["workflow"]
     if isinstance(workflow, dict) and "nodes" in workflow and "links" in workflow:
-        raise ProcessError("This is the editor format. In ComfyUI use Workflow → Export (API) and import that file.")
+        try:
+            workflow = convert_ui_workflow_to_api_prompt(workflow)
+        except Exception as e:
+            raise ProcessError(f"Could not convert editor workflow to API prompt: {e}")
+    workflow = sanitize_api_prompt(workflow)
     passport = describe(workflow)
     missing = _check_nodes(workflow)
     if missing:

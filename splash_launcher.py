@@ -165,7 +165,7 @@ class SplashWindow:
         title_lbl = tk.Label(inner, text="KESHIKI VFX SUITE", font=("Segoe UI", 15, "bold"), fg="#ffffff", bg="#0e0e12")
         title_lbl.pack()
 
-        sub_lbl = tk.Label(inner, text="AI CINEMATIC DIRECTOR & 3D STUDIO", font=("Segoe UI", 8), fg="#71717a", bg="#0e0e12")
+        sub_lbl = tk.Label(inner, text="AI CINEMATIC DIRECTOR & 3D STUDIO · TECH PREVIEW v0.1", font=("Segoe UI", 8), fg="#71717a", bg="#0e0e12")
         sub_lbl.pack(pady=(2, 22))
 
         # Progress bar canvas
@@ -177,7 +177,7 @@ class SplashWindow:
         self.progress_rect = self.progress_canvas.create_rectangle(0, 0, 20, self.canvas_h, fill="#38bdf8", outline="")
 
         # Status text
-        self.status_var = tk.StringVar(value="Запуск локального сервера ComfyUI...")
+        self.status_var = tk.StringVar(value="Starting local ComfyUI server...")
         self.status_lbl = tk.Label(inner, textvariable=self.status_var, font=("Segoe UI", 9), fg="#a1a1aa", bg="#0e0e12")
         self.status_lbl.pack()
 
@@ -212,7 +212,7 @@ class SplashWindow:
     def check_loop(self):
         if is_server_ready():
             self.server_ready = True
-            self.status_var.set("Сервер готов! Открытие Keshiki Studio...")
+            self.status_var.set("Server ready! Launching Keshiki Studio...")
             self.progress_canvas.coords(self.progress_rect, 0, 0, self.canvas_w, self.canvas_h)
             self.root.update()
             time.sleep(0.4)
@@ -220,11 +220,11 @@ class SplashWindow:
         else:
             self.step += 1
             if self.step == 6:
-                self.status_var.set("Инициализация PyTorch 2.6 и CUDA 12.4...")
+                self.status_var.set("Initializing PyTorch 2.6 and CUDA 12.4...")
             elif self.step == 14:
-                self.status_var.set("Загрузка кастомных нод и пайплайнов...")
+                self.status_var.set("Loading custom nodes and VFX pipelines...")
             elif self.step == 26:
-                self.status_var.set(f"Подключение к локальному порту :{PORT}...")
+                self.status_var.set(f"Connecting to local port :{PORT}...")
             self.root.after(800, self.check_loop)
 
     def launch_app_and_exit(self):

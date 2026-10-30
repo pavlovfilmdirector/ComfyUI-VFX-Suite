@@ -1,6 +1,8 @@
-# KESHIKI (景色) VFX Studio
+# KESHIKI (景色) VFX Studio — Technology Preview v0.1
 
 **A local VFX studio inside ComfyUI. Footage in, finished shot out. It runs on open-weights models only.**
+
+> **Release Status:** `v0.1.0-preview` (Technology Preview v0.1)
 
 You load your footage and get masks, depth, pose and the camera track. From there you block the scene in 3D, generate new backgrounds and characters with **LTX-2.5 + IC-LoRAs**, design first frames with **FLUX.3 Klein**, then composite, relight, refine and dub. All of this happens in one browser studio. An AI director answers "how do I…?" and runs the steps for you.
 
@@ -12,16 +14,17 @@ No cloud APIs are used. Every model runs on your own GPU and is tuned for 24 GB 
 
 | Area | What you get |
 |---|---|
-| **Video** | Text masks with SAM 3.1 (`person`, `red car`), click-and-track SAM2, YOLO, CorridorKey, LTX Alpha · depth (Depth Anything V2 / 3, Apple Depth Pro) · DWPose · Canny · lens undistortion · camera tracking (COLMAP + GLOMAP) |
+| **Video & Layers** | Text masks with SAM 3.1 (`person`, `red car`), click-and-track SAM2, YOLO, CorridorKey, LTX Alpha · **Cutout Alpha (`video_cutout`)** to extract RGBA video/sequences · depth (Depth Anything V2 / 3, Apple Depth Pro) · normals (MoGe-2) · DWPose · Canny · lens undistortion · camera tracking (COLMAP + GLOMAP) · keyframe timeline with brush auto-key and **Ghost / Onion-skinning** |
 | **Generation** | LTX-2.5 22B with IC-LoRAs: union-control (pose / depth / edges), layout-to-render, clean-plate, refine-details, restore, upscaler and more. Supports a first-frame guide, two stacked IC-LoRAs, one pass up to 97 frames, and longer clips in overlapping chunks with a smooth cross-fade |
-| **Image** | FLUX.3 Klein: text-to-image, editing with masks and references, pose transfer ("scene + skeleton + character" recipe). Optional Qwen-Image-Edit-2511 |
-| **3D** | Characters with FBX / Mixamo animation (auto retarget) or a built-in mannequin, primitives for set blocking, camera moves, tracked cameras. Pose, clay and environment renders are sent straight to the Video clip as control layers |
+| **Image** | FLUX.3 Klein: text-to-image, editing with masks and references, pose transfer ("scene + skeleton + character" recipe), non-destructive layer & selection transforms. Optional Qwen-Image-Edit-2511 |
+| **3D Scene & Camera** | Structured 3-tier 3D toolbar: Primitives · Cameras, Sun/Point Lights, 3-Point Ground Plane & toggleable 3D Cursor · Skeleton mannequin & FBX/Mixamo animation (with Root Motion & Root-to-Pivot baking), **3D Pose (OpenPose) to 2D**, **3D Character Render Pass to 2D**, manual **Actor Cutout Plane** (custom video/image + BiRefNet background removal), and **Monitor Camera Render (`🎬 Render Camera`)** straight to the Gallery |
 | **Composite** | A subject from one source over another background, with edge erode / feather, colour harmonization and light wrap, then an optional LTX refine pass |
-| **Voice** | Video dubbing: Whisper → local LLM translation (Ollama) → F5-TTS voice clone → timing and mix. Also voice cloning and long-text narration |
-| **3D assets** | TRELLIS.2 image → textured GLB, and texturing an existing mesh |
-| **Agent** | A local LLM through Ollama (Qwen, Gemma). It sees the open clip and its layers, explains each step from the user guide, asks before running heavy jobs and works one step at a time |
+| **Voice & Music** | Video dubbing: Whisper → local LLM translation (Ollama) → F5-TTS voice clone → timing and mix. Voice board (lip-sync with LTX-2.5 / DubIt), long-text voice-over with stress marks, and ACE-Step 1.5 music generation |
+| **3D Assets** | TRELLIS.2 image → textured GLB, and texturing an existing mesh with live progress in both viewport and top header chip, auto-synced to Gallery & 3D Library |
+| **Asset Gallery** | Unified right-aligned Top Gallery with color-coded category borders (Images, Videos, 3D Scenes/Meshes, Audio/Music) and uniform `200×42 px` cards |
+| **Agent & My Tools** | A local LLM through Ollama (Qwen, Gemma) with stage confirmation & action visualization, plus custom ComfyUI API/UI workflow import (**My Tools**) |
 | **AI agents (MCP)** | Any MCP agent can run the studio from a plain task ([docs/MCP.md](docs/MCP.md)) |
-| **LoRA training** | Configs and notes for LTX-2 LoRAs and IC-LoRAs on 24 GB ([docs/LORA_TRAINING.md](docs/LORA_TRAINING.md)) |
+| **LoRA training** | CLI configs and notes for LTX-2 LoRAs and IC-LoRAs on 24 GB ([docs/LORA_TRAINING.md](docs/LORA_TRAINING.md)) |
 
 ## Tested recipes
 
@@ -47,9 +50,15 @@ Weights are not stored in this repository. The installer and the Settings tab sh
 
 Requirements: Windows 10/11, a working ComfyUI, Git, and an NVIDIA GPU (developed on an RTX 3090 Ti, 24 GB; 16 GB is the practical minimum for LTX-2.5). The core model set is about 40 GB. Ollama is optional, for the agent.
 
-```
+Supports two installation approaches:
+1. **Existing ComfyUI Integration**: run `install.bat` targeting your current ComfyUI Python.
+2. **Clean Dedicated Environment (`keshiki_vfx`)**: run in an isolated Python 3.12 + PyTorch 2.6.0+cu124 environment to guarantee zero dependency conflicts with older custom nodes.
+
+See [INSTALL.md](INSTALL.md) for full step-by-step instructions and dependency specifications.
+
+```bash
 cd ComfyUI\custom_nodes
-git clone https://github.com/<your-account>/ComfyUI-VFX-Suite.git
+git clone https://github.com/pavlovfilmdirector/ComfyUI-VFX-Suite.git
 cd ComfyUI-VFX-Suite
 .\install.bat
 .\install.bat --download-models core

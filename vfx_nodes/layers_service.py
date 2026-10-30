@@ -102,8 +102,20 @@ def load_layers(project_id: str, image_id: str) -> Dict[str, Any]:
     path = os.path.join(layers_dir(project_id, image_id), "layers.json")
     if not os.path.isfile(path):
         return {"image_id": image_id, "active_layer_id": "", "layers": []}
-    with open(path, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if content:
+                manifest = json.loads(content)
+            else:
+                manifest = {"image_id": image_id, "active_layer_id": "", "layers": []}
+    except Exception as e:
+        try:
+            decoder = json.JSONDecoder()
+            manifest, _ = decoder.raw_decode(content)
+        except Exception:
+            print(f"[VFX-Suite] Warning: corrupted image layers.json for {project_id}/{image_id}: {e}")
+            manifest = {"image_id": image_id, "active_layer_id": "", "layers": []}
     return _with_urls(project_id, image_id, manifest)
 
 

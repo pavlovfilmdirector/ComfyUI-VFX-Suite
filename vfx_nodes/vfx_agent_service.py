@@ -33,72 +33,144 @@ def _comfy_url() -> str:
     return COMFY_URL
 
 DIRECTOR_CHAT_SYSTEM_PROMPT = """Ты — Главный ИИ-Режиссер и VFX-Супервайзер Keshiki Studio.
-Ты живой, умный, внимательный собеседник, творческий партнер и технический эксперт в кинопроизводстве, режиссуре и спецэффектах.
+Ты живой, умный, внимательный собеседник, творческий партнер и технический эксперт в кинопроизводстве, режиссуре, 3D и спецэффектах.
 
 КРИТИЧЕСКИ ВАЖНО:
 Ты полностью интегрирован в рабочую среду Keshiki Studio и локальный движок ComfyUI.
-Ты УМЕЕШЬ и ИМЕЕШЬ ПРЯМОЙ ДОСТУП к запуску генераций, управлению нодовыми воркфлоу (.json), чтению референсов и рендерингу видео/кадров на GPU.
+Ты УМЕЕШЬ и ИМЕЕШЬ ПРЯМОЙ ДОСТУП к запуску генераций, управлению нодовыми воркфлоу (.json), чтению референсов, рендерингу видео/кадров на GPU, 3D генерации, расстановке сцен и работе со скелетами.
 НИКОГДА, НИ ПРИ КАКИХ ОБСТОЯТЕЛЬСТВАХ не говори пользователю, что ты «всего лишь текстовый ассистент без доступа к файловой системе» или «не можешь запустить процесс».
-Если пользователь передал файл воркфлоу (.json) или референсы — подтверждай запуск («Запускаю процесс...») и активируй параметры!
+Если пользователь просит расставить кубы, сгенерировать 3D модели, настроить облет камеры, добавить скелет или запустить Layout-to-Render — подтверждай действие («Расставляю сцену и запускаю...») и активируй параметры автопилота!
 
-КАТАЛОГ СТУДИЙНЫХ ВОРКФЛОУ (workflows/):
-1. ВИДЕО (LTX-Video 2.5) — папка `workflows/LTX-2.5/`:
-   • `video_ltx2_5_t2v.json` — Генерация видео по тексту (Text-to-Video). Используется для создания видеороликов с нуля.
-   • `video_ltx2_5_i2v.json` — Анимация имеющегося кадра (Image-to-Video).
-   • `video_ltx2_5_flf2v.json` и `LTX-2.5_First & Last Frame to Video.json` — Интерполяция видео от начального к конечному кадру.
-   • `LTX-2.5_Pro_Image_to_Video.json` — Профессиональный Image-to-Video с высокой детализацией.
-   • `LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json` — Двухстадийный рендер из 3D раскадровки.
-   • `LTX-2.5_V2V_TiledFusion_Native_4K_8K.json` — Видео-в-видео (V2V) апскейл до 4K/8K.
-2. ФОТО И СТАТИЧНЫЕ КАДРЫ (FLUX.3 Klein / SDXL):
-   • `FLUX.3_Klein_Text2Image.json` и `flux3_official/flux3_klein_int8_t2i.json` — Генерация фото/кадра по тексту.
-   • `flux3_official/flux3_klein_int8_i2i.json` — Трансформация кадра (Image-to-Image).
-3. МАСТЕР-СХЕМЫ:
-   • `vfx_suite_master_workflow.json`
-   • `master_cinematic_cocktail_workflow.json`
+ПОЛНЫЙ АРСЕНАЛ И ВОЗМОЖНОСТИ СТУДИИ:
 
-РАЗДЕЛЕНИЕ ВИДЕО И ФОТО:
+1. 3D ГЕНЕРАЦИЯ И АССЕТЫ (TRELLIS.2 / Hunyuan3D-Omni):
+   • Генерация PBR GLB 3D мешей из референсных изображений или текстовых описаний.
+   • Движки: `trellis2` (Microsoft TRELLIS.2 — сверхвысокая детализация геометрии и PBR-текстур) и `hunyuan_omni`.
+   • BBox conditioning: нормализация пропорций объектов под габариты сцены.
+   • Бесшовная замена прокси-кубов в 3D сцене на сгенерированные GLB модели с сохранением координат, масштаба и поворота.
+
+2. 3D СЦЕНА, БЛОКАУТ И РАССТАНОВКА (3D Stage Layout):
+   • Установка прокси-объектов (кубы, сферы, плоскости) в трехмерном пространстве сцены (Three.js).
+   • Координаты [X, Y, Z], масштаб [SX, SY, SZ], ориентация в градусах и цветовая маркировка.
+   • Экспорт и сохранение манифеста сцены `layout_manifest.json` и матриц `scene_data.json`.
+
+3. АНИМАЦИЯ КАМЕРЫ И ОБЛЕТЫ (Camera Tracks & Orbit):
+   • Пресеты траектории камеры: `orbit_half` (круговой облет 180° или 360° turntable вокруг сцены или персонажа), `dolly_in` (наезд), `truck_right` (проезд сбоку), `orbit_arc`, `from_view`.
+   • Точная фиксация параметров: FPS (25 кадров/с), число кадров (например, 49 или 87 кадров), фокусное расстояние объектива (28mm, 35mm, 50mm, 85mm) и Look-At матрицы вида камеры для каждого кадра.
+
+4. СКЕЛЕТЫ, ПЕРСОНАЖИ И СЛОИ ПОЗ (UE Mannequin & OpenPose):
+   • Добавление скелета без меша (`builtin:mannequin`) со стандартной иерархией костей Unreal Engine Mannequin:
+     Pelvis, Spine_01..03, Neck, Head, Clavicle, UpperArm, LowerArm, Hand, Thigh, Calf, Foot.
+   • Ретаргетинг анимаций из FBX / Mixamo на скелет манекена в реальном времени.
+   • Переключение отображения костей суставов в сцене.
+   • Проекция 3D позы скелета через камеру шота прямо в 2D слой поз OpenPose (`exportPoseLayerFrom3D`) на таймлинию видео.
+   • Рендеринг 3D геометрии персонажей и пропсов через камеру шота в RGB-слой (`exportRenderLayerFrom3D`).
+
+5. ДВУХСТАДИЙНЫЙ ПАЙПЛАЙН LAYOUT-TO-RENDER (LTX-Video 2.5 IC-LoRA):
+   • Воркфлоу: `workflows/LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json`.
+   • Полный цикл: 3D блокаут сцены -> траектория камеры (облет) -> растеризация плейта лейаута -> диффузия в LTX-2.5 IC-LoRA 22B на GPU с сохранением строгой 3D геометрии и фотореалистичной физики света.
+
+6. КАТАЛОГ СТУДИЙНЫХ ВОРКФЛОУ (workflows/):
+   • ВИДЕО LTX-2.5: `video_ltx2_5_t2v.json`, `video_ltx2_5_i2v.json`, `video_ltx2_5_flf2v.json`, `LTX-2.5_Pro_Image_to_Video.json`, `LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json`, `LTX-2.5_V2V_TiledFusion_Native_4K_8K.json`.
+   • ФОТО FLUX.3: `FLUX.3_Klein_Text2Image.json`, `flux3_official/flux3_klein_int8_t2i.json`, `flux3_official/flux3_klein_int8_i2i.json`.
+   • МАСТЕР-СХЕМЫ: `vfx_suite_master_workflow.json`, `master_cinematic_cocktail_workflow.json`.
+
+7. МУЛЬТИРАКУРСНЫЙ ПАЙПЛАЙН ЛОКАЦИЙ И ПОДГОТОВКА АССЕТОВ ДЛЯ TRELLIS.2:
+   • Мультиракурсная генерация локации (Qwen 2511 + FLUX.3): создание дополнительных ракурсов (3/4, reverse angle, side profile) из одного референса локации для понимания окружения со всех сторон.
+   • Сегментация объектов: выделение элементов через SAM 2 / SAM 3.1 и вырезка через Render Cut в отдельные слои/карточки.
+   • Студийная перегенерация элемента в чистый изолированный ассет (Studio Asset Turnaround): вырезанный из сцены кусок часто обрезан или заттенен; мы прогоняем его через FLUX/Qwen с промптом "Standalone complete object on solid neutral gray background, clean studio lighting, orthographic perspective, no occlusions", чтобы дорисовать скрытые части.
+   • Идеальный меш в TRELLIS.2: чистый студийный ассет подается в TRELLIS.2, генерирует идеальный 3D PBR GLB меш и заменяет соответствующий прокси-куб в Three.js.
+
+8. АУДИО, ГОЛОС, ДУБЛЯЖ И МУЗЫКА (F5-TTS, DubIt, ACE-Step 1.5):
+   • Клонирование голоса и озвучка реплик: синтез речи через F5-TTS по 5-10 секундному референсу с точной передачей тембра и эмоций.
+   • Полный дубляж: распознавание Whisper -> локальный перевод Ollama -> генерация речи F5-TTS с сохранением таймингов.
+   • Липсинк DubIt (LTX-2.3): перегенерация нижней части лица по маске губ для точного совпадения мимики с аудиодорожкой.
+   • Музыка (ACE-Step 1.5 turbo): генерация инструментальных саундтреков, кинематографичного эмбиента или вокальных треков под хронометраж шота (жанр, теги настроения, BPM, тональность, структура [verse]/[chorus]).
+
+9. ПЕРЕНОС ПЕРФОРМАНСА И РЕСКИННИНГ ПЕРСОНАЖА В НОВУЮ 3D-СЦЕНУ (Motion Matchmove & Character Reskinning):
+   • Исходное видео с человеком -> извлечение анимации поз человека через OpenPose (`video_process: pose`).
+   • 3D трекинг камеры оператора через GLOMAP (`video_process: track_camera`) -> получение точной траектории камеры (`shotCamera`).
+   • Создание нового 3D окружения (`setup_3d_layout` + Three.js + TRELLIS.2 меши).
+   • Добавление скелета UE Mannequin и проекция анимации через трекинг-камеру (`exportPoseLayerFrom3D`) в синхронизированный 2D слой OpenPose.
+   • Референс нового персонажа + первый кадр FLUX.3 Klein + видеогенерация LTX-2.5 IC-LoRA Union-Control.
+   • Итог: в совершенно новой 3D сцене новый персонаж по референсу выполняет то же самое движение, а камера повторяет реальное движение оператора!
+
+РАЗДЕЛЕНИЕ ВИДЕО, 3D, ФОТО И АУДИО:
 • Если пользователь просит ВИДЕО (слова: «видео», «ролик», «клип», «анимируй», «оживи», «движение камеры»):
   Всегда запускай процесс видеогенерации LTX-2.5 из папки `workflows/LTX-2.5/`! Не путай с фото.
+• Если пользователь просит 3D И LAYOUT-TO-RENDER (слова: «куб», «3д», «расставь», «облет камеры», «замени кубы», «скелет», «лейаут то рендер»):
+  Запускай расстановку сцены Three.js, генерацию TRELLIS.2 и Layout-to-Render.
 • Если пользователь просит ФОТО, КАДР, ПОРТРЕТ, АРТ:
   Запускай генерацию кадра FLUX.3 (`FLUX.3_Klein_Text2Image.json`).
+• Если пользователь просит МУЗЫКУ, ОЗВУЧКУ, ДУБЛЯЖ ИЛИ САУНДТРЕК (слова: «музыка», «саундтрек», «озвучь», «голос», «дубляж», «песня»):
+  Запускай генерацию музыки ACE-Step 1.5 или процесс озвучки F5-TTS / DubIt!
 
 ПРИНЦИПЫ ОБЩЕНИЯ:
 1. Живой, свободный диалог на русском языке без канцеляризмов, шаблонных заготовок и механических отчетов.
-2. Общайся с пользователем на равных на любые темы — кино, сценарии, режиссура, операторское мастерство, оптика, композиция, свет, драматургия, VFX пайплайны, устройство ComfyUI, модели (FLUX.3 Klein, LTX-Video 2.5, SDXL, WanVideo, SAM 2, Glomap).
+2. Общайся с пользователем на равных на любые темы — кино, сценарии, режиссура, операторское мастерство, 3D сцена, скелеты, оптика, композиция, свет, драматургия, звук, музыка, саунд-дизайн, VFX пайплайны, устройство ComfyUI, модели (FLUX.3 Klein, LTX-Video 2.5, TRELLIS.2, Hunyuan3D, SAM 2/3, F5-TTS, ACE-Step 1.5, Glomap).
 3. Отвечай прямо и содержательно на любые вопросы пользователя.
 4. Веди режиссерский диалог: если концепция сырая или неполная, делись идеями, предлагай визуальные решения.
-5. ВНИМАНИЕ: Если пользователь НЕ просит создать или сгенерировать изображение/видео прямо сейчас, а просто задает вопрос или обсуждает идеи — отвечай обычным профессиональным текстом, НЕ выводи технические блоки **FLUX:** или **LTX:**.
+5. ВНИМАНИЕ: Если пользователь НЕ просит создать или сгенерировать изображение/видео/3D прямо сейчас, а просто задает вопрос или обсуждает идеи — отвечай обычным профессиональным текстом, НЕ выводи технические блоки **FLUX:** или **LTX:**.
 """
 
 DIRECTOR_GENERATION_SYSTEM_PROMPT = """Ты — Главный ИИ-Режиссер и VFX-Супервайзер Keshiki Studio.
-Пользователь ставит задачу создать сцену, кадр или видеоряд.
-Ты управляешь производством: твои решения претворяются в параметры генерации и рабочие процессы в ComfyUI.
-Ты полностью интегрирован с движком ComfyUI и имеешь полный доступ к запуску воркфлоу.
+Пользователь ставит задачу создать сцену, кадр, видеоряд, 3D блокаут или запустить Layout-to-Render.
+Ты управляешь производством: твои решения претворяются в параметры генерации, расстановку сцены, траектории камеры, 3D модели, скелеты персонажей и рабочие процессы в ComfyUI.
+Ты полностью интегрирован с движком ComfyUI и имеешь полный доступ к запуску воркфлоу и студийных экшенов автопилота.
 
-БАЗА СТУДИЙНЫХ ВОРКФЛОУ (workflows/):
+БАЗА СТУДИЙНЫХ ВОРКФЛОУ И ТЕХНОЛОГИЙ:
 1. ВИДЕОГЕНЕРАЦИЯ LTX-VIDEO 2.5 (папка `workflows/LTX-2.5/`):
-   • `video_ltx2_5_t2v.json` — Генерация видео по тексту (Text-to-Video). Основной процесс создания видеороликов с нуля.
+   • `video_ltx2_5_t2v.json` — Генерация видео по тексту (Text-to-Video).
    • `video_ltx2_5_i2v.json` — Анимация имеющегося изображения/кадра (Image-to-Video).
    • `video_ltx2_5_flf2v.json` / `LTX-2.5_First & Last Frame to Video.json` — Интерполяция видео от первого до последнего кадра.
    • `LTX-2.5_Pro_Image_to_Video.json` — Pro I2V рендер высокой четкости.
-   • `LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json` — Двухстадийный рендер из 3D лейаута.
+   • `LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json` — Двухстадийный кинематографический рендер из 3D лейаута.
    • `LTX-2.5_V2V_TiledFusion_Native_4K_8K.json` — V2V апскейл до 4K/8K.
 2. ФОТО / КАДРЫ FLUX.3 KLEIN (папка `workflows/` и `workflows/flux3_official/`):
    • `FLUX.3_Klein_Text2Image.json` и `flux3_official/flux3_klein_int8_t2i.json` — Генерация высокодетализированного кадра по тексту.
    • `flux3_official/flux3_klein_int8_i2i.json` — Image-to-Image редизайн.
+3. 3D МОДЕЛИРОВАНИЕ, СЦЕНА И СКЕЛЕТЫ:
+   • 3D Генерация: TRELLIS.2 (`engine: "trellis2"`) и Hunyuan3D-Omni (`engine: "hunyuan_omni"`) — генерация текстурированных PBR GLB мешей.
+   • Блокаут: установка прокси-кубов в сцене, замена кубов на GLB с наследованием позиции, поворота и масштаба.
+   • Камера: круговой облет (`orbit_half`, 180° / 360°), наезд (`dolly_in`), боковой проезд (`truck_right`).
+   • Скелеты и персонажи: добавление скелета UE Mannequin, ретаргетинг анимаций Mixamo/FBX, проекция 3D позы в 2D слой OpenPose.
+   • Layout-To-Render: запекание 3D раскадровки в видеоплейт и запуск диффузии через LTX IC-LoRA.
+4. МУЛЬТИРАКУРСНАЯ ПОДГОТОВКА ЛОКАЦИЙ И АССЕТОВ (Qwen + FLUX + TRELLIS):
+   • Генерация дополнительных ракурсов локации (Qwen 2511 + FLUX.3 i2i) для кругового понимания сцены.
+   • Вырезка сегментов (SAM 3.1 / Render Cut).
+   • Перегенерация куска в чистый изолированный студийный объект на нейтральном сером фоне ("Standalone asset on solid gray background, complete object, clean studio lighting").
+   • Подача чистого ассета в TRELLIS.2 для идеальной 3D геометрии без артефактов и обрезки краев.
+5. АУДИО, ГОЛОС, ДУБЛЯЖ И МУЗЫКА (F5-TTS, DubIt, ACE-Step 1.5):
+   • Синтез и клон голоса: F5-TTS по 5-10 сек аудиообразцу персонажа.
+   • Мультиязычный дубляж: Whisper -> перевод Ollama -> F5-TTS с вклейкой в тайминг.
+   • Липсинк DubIt (LTX-2.3): перегенерация нижней трети лица по маске губ под аудиодорожку.
+   • Саундтреки и музыка: генератор ACE-Step 1.5 turbo по стилям, тегам, BPM, тональности и хронометражу шота.
+6. ПЕРЕНОС ПЕРФОРМАНСА И РЕСКИННИНГ ПЕРСОНАЖА В НОВУЮ 3D-СЦЕНУ:
+   • Снятие поз человека из видео (`video_process: pose`) + 3D трекинг камеры оператора (`video_process: track_camera` GLOMAP).
+   • Сборка новой 3D сцены в Three.js + добавление трекинг-камеры.
+   • Проекция скелета персонажа через трекинг-камеру (`exportPoseLayerFrom3D`) в согласованный слой OpenPose.
+   • Референс нового персонажа + первый кадр FLUX.3 + LTX-2.5 видеодиффузия (новый персонаж в новой сцене с оригинальным движением и камерой).
 
-СТРОГОЕ ПРАВИЛО РАЗДЕЛЕНИЯ ВИДЕО И ФОТО:
-• Если пользователь пишет «сделай видео...», «сгенерируй видео...», «создай ролик...», «клип...», «анимируй...», «видео линкольна...»:
-  ЭТО СТРОГО ВИДЕО! Ты выбираешь видеопроцесс LTX-2.5 (`workflows/LTX-2.5/video_ltx2_5_t2v.json` или `video_ltx2_5_i2v.json`).
-  В ответе явно напиши, что создаешь именно кинематографическое ВИДЕО LTX-2.5.
+СТРОГОЕ ПРАВИЛО РАЗДЕЛЕНИЯ ВИДЕО, 3D, ФОТО И АУДИО:
+• Если пользователь пишет «сделай видео...», «сгенерируй видео...», «создай ролик...», «клип...», «анимируй...»:
+  ЭТО СТРОГО ВИДЕО LTX-2.5!
+• Если пользователь просит работу с 3D:
+  - Генерация 3D моделей/мешей («сгенерируй 3д», «3д меш», «создай 3д модель», «trellis», «меш»):
+    ЭТО СТРОГО ГЕНЕРАЦИЯ 3D-МЕША (TRELLIS.2 / Hunyuan3D)! Подтверди запуск генерации 3D-меша из прикрепленного референса. НЕ запускай рендер видео и НЕ обещай Layout-to-Render, если пользователь не просил видео!
+  - Расстановка 3D сцены («расставь 3д», «сцена», «кубы», «блокаут»):
+    ЭТО 3D БЛОКАУТ И КАМЕРА.
+  - Рендеринг видео из 3D («лейаут то рендер», «layout to render», «рендер видео из 3д»):
+    ТОЛЬКО если пользователь прямо просит рендеринг видео из 3D сцены!
 • Если пользователь пишет «сделай фото...», «кадр...», «портрет...», «нарисуй...», «арт...»:
-  ЭТО ФОТО/КАДР! Ты выбираешь генератор кадра FLUX.3.
+  ЭТО ФОТО/КАДР FLUX.3.
+• Если пользователь пишет «сгенерируй музыку...», «саундтрек...», «озвучь...», «дубляж...», «голос...»:
+  ЭТО АУДИО И МУЗЫКА (ACE-Step 1.5 / F5-TTS / DubIt)!
 
 ПРИНЦИП ПЕРВООЧЕРЕДНОСТИ РЕФЕРЕНСОВ:
-Если прикреплены референсы пользователей — строй кадр и видеоряд вокруг них в строгом порядке добавления (#1 -> #2 -> ...), считывая описания, объекты и стили.
+Если прикреплены референсы пользователей — строй сцену, 3D объекты и видеоряд вокруг них в строгом порядке добавления (#1 -> #2 -> ...), считывая описания, объекты и стили.
 
 ФОРМАТ ОТВЕТА:
-1. Краткий режиссерский комментарий на живом русском языке (мизансцена, свет, оптика, композиция, движение камеры). Если уместно — задай 1-2 точечных уточняющих вопроса для следующего шота.
+1. Краткий режиссерский комментарий на живом русском языке (мизансцена, свет, оптика, композиция, 3D расстановка, скелеты, движение камеры). Если уместно — задай 1-2 точечных уточняющих вопроса для следующего шота.
 2. В САМОМ КОНЦЕ ответа строго отдельными строками выведи сгенерированные промпты на английском языке:
 **FLUX:** <богатый детальный английский кинематографический промпт без русских слов, описывающий сцену>
 **LTX:** <английский кинематографический промпт динамики камеры и движения>
@@ -128,6 +200,8 @@ def detect_user_intent(message: str) -> dict:
         "отрендер", "отрендери", "отрендерить", "рендер", "отрисуй", "нарисуй",
         "сделай кадр", "сделай шот", "сделай видео", "запусти в comfyui",
         "создай воркфлоу", "собери воркфлоу", "запусти воркфлоу", "сделай раскадровку",
+        "установи", "поставь", "расставь", "замени", "подмени", "добавь скелет",
+        "добавь манекен", "спроецируй", "запеки", "пропиши",
         "run", "start", "execute", "generate", "render", "create shot", "render frame"
     ]
 
@@ -137,6 +211,15 @@ def detect_user_intent(message: str) -> dict:
     # it is an absolute 100% execution command
     if extracted_wf and any(w in msg_lower for w in ["запусти", "запуск", "выполни", "старт", "run", "start", "процесс", "давай"]):
         has_gen_trigger = True
+
+    # 3D, Skeleton & Layout triggers
+    d3_triggers = [
+        "3d", "3д", "куб", "куба", "кубы", "расставь", "сцена", "блокаут", "примитив",
+        "облет", "облёт", "орбит", "orbit", "turntable", "скелет", "манекен", "mannequin",
+        "кости", "openpose", "позу из 3д", "спроецируй позу", "trellis", "hunyuan",
+        "лейаут", "layout", "layout to render", "ic-lora", "ic_lora"
+    ]
+    is_3d = any(d in msg_lower for d in d3_triggers)
 
     # Question and discussion markers
     question_starters = [
@@ -165,9 +248,52 @@ def detect_user_intent(message: str) -> dict:
     ]
     is_video = any(v in msg_lower for v in video_triggers) or ("ltx" in extracted_wf.lower() if extracted_wf else False)
 
+    audio_triggers = [
+        "музык", "саундтрек", "песн", "голос", "озвуч", "озвук", "дубляж", "f5-tts", "f5",
+        "липсинк", "dubit", "ace-step", "трек", "звук", "бит", "темп", "bpm"
+    ]
+    is_audio = any(a in msg_lower for a in audio_triggers)
+
+    visualize_triggers = [
+        "визуализир", "показывай действия", "показывая окна", "открывая окна",
+        "покажи в окне", "открой окно", "с визуализацией", "покажи процесс",
+        "открывай окно", "открывай вкладк", "показывай вкладк", "переключи окно",
+        "покажи что делаешь"
+    ]
+    is_visualize = any(v in msg_lower for v in visualize_triggers)
+
+    stage_confirm_triggers = [
+        "подтверждени", "по этапам", "по шагам", "сделай кусок", "если утвердили",
+        "поэтапн", "утверждением этапов", "просыпался", "продолжения от пользователя",
+        "кусок показал результат", "по шагам с паузой"
+    ]
+    is_stage_confirm = any(s in msg_lower for s in stage_confirm_triggers)
+
+    stage_approved_triggers = [
+        "этап 1 утвержден", "этап 2 утвержден", "этап 3 утвержден",
+        "утверждаю этап", "утвержден, продолжай", "следующий этап",
+        "утверждаю и продолжай", "этап утвержден", "утвердить и продолжить"
+    ]
+    is_stage_approved = any(a in msg_lower for a in stage_approved_triggers)
+
+    perf_transfer_triggers = [
+        "сними анимацию", "анимацию поз", "анимацию людей", "трекинг камер", "проецируем на камеру анимацию скелета",
+        "нововй сцене новый персонаж", "новой сцене новый персонаж", "новый персонаж но камера та же",
+        "движение человека то же", "рескиннинг", "перенос движения", "перенос перформанса", "reskin"
+    ]
+    is_perf_transfer = any(t in msg_lower for t in perf_transfer_triggers)
+    if is_perf_transfer:
+        is_generate = True
+
     return {
         "is_generate": is_generate,
         "is_video": is_video,
+        "is_3d": is_3d,
+        "is_audio": is_audio,
+        "is_visualize": is_visualize,
+        "is_stage_confirm": is_stage_confirm,
+        "is_stage_approved": is_stage_approved,
+        "is_perf_transfer": is_perf_transfer,
         "is_question": is_pure_question or has_question_mark,
         "custom_workflow": extracted_wf
     }
@@ -434,10 +560,12 @@ def unload_agent_from_vram(api_url: str = None, free_comfy: bool = False, preser
     return True
 
 
-def _call_external_llm(provider: str, model_name: str, api_key: str, api_url: str, system_prompt: str, user_text: str, images: list = None, history: list = None, max_tokens: int = 600) -> str:
+def _call_external_llm(provider: str, model_name: str, api_key: str, api_url: str, system_prompt: str, user_text: str, images: list = None, history: list = None, max_tokens: int = 600, context_tokens: int = 80000) -> str:
     """Calls the configured LLM provider (local Ollama / llama.cpp, or cloud Gemini, Claude, OpenAI)."""
     import re
     try:
+        if provider == "mock":
+            return ""
         # Legacy provider names (removed integrations) -> local Ollama
         if provider in ("antigravity", "antigravity_sdk", "google_antigravity", "gemma4_ltx", "gemma4", "ltx_gemma", "gemma4_12b"):
             provider = "ollama"
@@ -494,7 +622,7 @@ def _call_external_llm(provider: str, model_name: str, api_key: str, api_url: st
 
             messages = [{"role": "system", "content": system_prompt}]
             if history:
-                for h in history[-8:]:
+                for h in history[-60:]:
                     r = "user" if h.get("role") == "user" else "assistant"
                     txt = str(h.get("text", "")).strip()
                     if txt:
@@ -550,11 +678,12 @@ def _call_external_llm(provider: str, model_name: str, api_key: str, api_url: st
                 "код", "статус", "nvidia", "comfy", "gpu", "система", "shell", "run"
             ])
 
+            target_ctx = max(int(context_tokens or 80000), 80000) if any(s in target_model.lower() for s in ["qwen38", "qwen3.8", "qwen", "27b"]) else max(int(context_tokens or 32768), 16384)
             payload = {
                 "model": target_model,
                 "messages": messages,
                 "options": {
-                    "num_ctx": 4096,
+                    "num_ctx": target_ctx,
                     "num_predict": max(max_tokens or 600, 1000) if is_micro_model else max(max_tokens or 800, 1024),
                     "temperature": 0.7
                 },
@@ -605,18 +734,28 @@ def _call_external_llm(provider: str, model_name: str, api_key: str, api_url: st
                         out_text = ""
                         if fname == "powershell_exec":
                             p_cmd = str(fargs.get("command", "")).strip()
-                            try:
-                                proc = subprocess.run(["powershell", "-NoProfile", "-Command", p_cmd], capture_output=True, text=True, timeout=25)
-                                out_text = (proc.stdout + "\n" + proc.stderr).strip() or "Success (empty output)"
-                            except Exception as ex_p:
-                                out_text = f"PowerShell error: {ex_p}"
+                            # Safety check: forbid recursive search on drive root (e.g. C:\, D:\) to prevent freezing
+                            if re.search(r"-[Rr]ecurse", p_cmd, re.I) and re.search(r"""(?:['"]?[a-zA-Z]:[\\/]['"]?(?:\s|$|;|,|\)))|(?:\b(?:Get-ChildItem|gci|ls|dir)\b.*[a-zA-Z]:[\\/](?:\s|$))""", p_cmd):
+                                out_text = "Security error: Recursive search targeting drive root is forbidden to prevent system freezes."
+                            else:
+                                try:
+                                    proc = subprocess.run(["powershell", "-NoProfile", "-Command", p_cmd], capture_output=True, text=True, timeout=25)
+                                    out_text = (proc.stdout + "\n" + proc.stderr).strip() or "Success (empty output)"
+                                except Exception as ex_p:
+                                    out_text = f"PowerShell error: {ex_p}"
                         elif fname == "studio_read_file":
                             f_path = str(fargs.get("file_path", "")).strip()
                             m_lines = int(fargs.get("max_lines", 100))
                             try:
-                                with open(f_path, "r", encoding="utf-8") as rf:
-                                    lines = [rf.readline() for _ in range(m_lines)]
-                                out_text = "".join(lines) or "File is empty"
+                                resolved = os.path.abspath(f_path)
+                                norm_path = os.path.normpath(resolved).lower()
+                                allowed = any(k in norm_path for k in ["projects", "comfyui\\input", "comfyui/input", "comfyui\\output", "comfyui/output", "output_cache", "workflows"])
+                                if not allowed:
+                                    out_text = f"Security error: reading files outside projects/ or ComfyUI/input/output is restricted ({f_path})."
+                                else:
+                                    with open(f_path, "r", encoding="utf-8") as rf:
+                                        lines = [rf.readline() for _ in range(m_lines)]
+                                    out_text = "".join(lines) or "File is empty"
                             except Exception as ex_rf:
                                 out_text = f"File read error: {ex_rf}"
                         else:
@@ -917,11 +1056,12 @@ def _extract_prompt_from_text(text: str) -> str:
 def _resolve_go_command(user_message: str, history: list):
     """For a bare "запускай": the last real request of the user and the prompt the agent proposed for it."""
     request, proposed = "", ""
-    for h in reversed(history or []):
+    rev = list(reversed(history or []))
+    for i, h in enumerate(rev):
         role, txt = h.get("role"), str(h.get("text", "")).strip()
         if not txt:
             continue
-        if role != "user" and not proposed:
+        if role != "user" and not proposed and i <= 2:
             proposed = _extract_prompt_from_text(txt)
         if role == "user" and not _is_go_command(txt) and txt.strip() != user_message.strip():
             request = txt
@@ -979,6 +1119,28 @@ def generate_director_plan(
         if prev_request:
             LOGGER.info(f"[Director] go-command «{user_message}» → previous request «{prev_request[:80]}»")
             user_message = prev_request if not _is_go_command(prev_request) else user_message
+            is_prev_3d = any(w in (prev_request or "").lower() for w in ["3д", "3d", "меш", "trellis", "hunyuan"])
+            is_prev_video = any(w in (prev_request or "").lower() for w in ["видео", "video", "ролик", "клип"])
+            if is_prev_3d and not is_prev_video:
+                go_proposed_prompt = ""
+        if not references:
+            for h in reversed(history or []):
+                if h.get("role") == "user" and h.get("refs"):
+                    for idx, ref in enumerate(h["refs"], start=1):
+                        if isinstance(ref, str):
+                            references.append({
+                                "id": f"ref_{idx}",
+                                "title": ref,
+                                "name": ref,
+                                "type": "image",
+                                "path": ref,
+                                "url": ref if (ref.startswith("http") or ref.startswith("/")) else f"/view?filename={ref}&type=output",
+                                "comment": "",
+                                "description": f"Референсный файл: {ref}"
+                            })
+                        elif isinstance(ref, dict):
+                            references.append(ref)
+                    break
     msg_lower = user_message.lower()
 
     # Manual model override hotwords in user text (@heavy, @qwen3.8, @micro, @qwen3.5)
@@ -1126,10 +1288,155 @@ def generate_director_plan(
         intent["is_generate"] = True
     is_generate_request = intent["is_generate"]
     is_video_request = intent["is_video"]
+    is_visualize = intent.get("is_visualize", False)
+    is_stage_confirm = intent.get("is_stage_confirm", False)
+    is_stage_approved = intent.get("is_stage_approved", False)
+    is_perf_transfer = intent.get("is_perf_transfer", False)
+
+    has_complex_intent = any(w in msg_lower for w in [
+        "сложно?", "сможем?", "как лучше", "посмотрим как", "разработать пайплайн",
+        "разработаем пайплайн", "попробуй это сделать", "что думаешь", "как думаешь", "как считаешь",
+        "пайплайн", "на самом деле"
+    ]) or ("?" in msg_lower and any(q in msg_lower for q in ["как", "сможем", "сложно", "лучше", "вариант", "почему"]))
+    if is_perf_transfer and is_stage_confirm and not has_complex_intent:
+        vid_id = (plate_info or {}).get("video_id") or "vid_active"
+        acts = [
+            {"type": "video_job", "kind": "pose", "video_id": vid_id, "params": {}},
+            {"type": "video_job", "kind": "track_camera", "video_id": vid_id, "params": {}}
+        ]
+        stage_wf = {
+            "active": True,
+            "stage_index": 1,
+            "total_stages": 4,
+            "stage_name": "Снятие анимации поз (OpenPose) и 3D трекинг камеры (GLOMAP)",
+            "next_stage_name": "Сборка нового 3D окружения в Three.js",
+            "summary": "Запущено покадровое извлечение движений человека (слой поз OpenPose) и 3D трекинг камеры оператора через GLOMAP.",
+            "awaiting_approval": True,
+            "next_instruction": "Этап 1 утвержден. Переходи к этапу 2: Сборка нового 3D окружения в Three.js. Визуализируй действия в окнах студии.",
+            "rework_instruction": "Переделай этап 1: скорректируй параметры трекинга."
+        }
+        reply = (
+            "🎬 **Запускаю пайплайн переноса перформанса и рескиннинга персонажа!**\n\n"
+            "• **Этап 1:** Запускаю покадровое извлечение поз человека (`OpenPose`) и 3D трекинг камеры через `GLOMAP`.\n"
+            "• По завершении трекинга нажмите **[ ✓ Утвердить и продолжить ]**, чтобы я проснулся и перешел к сборке новой 3D сцены!"
+        )
+        return {
+            "response_ru": reply,
+            "response_short": "🎬 [⚡ QWEN 3.5] Этап 1: Снятие поз OpenPose и 3D трекинг камеры GLOMAP",
+            "provider": provider, "model_name": resolved_model_tag, "model_used": resolved_model_tag,
+            "model_badge": model_badge, "model_tier": model_tier,
+            "flux_prompt": "", "prompt": "", "ltx_prompt": "",
+            "intent": "generation", "stage_workflow": stage_wf, "studio_actions": acts,
+            "camera": {"movement": "tracked", "focal_mm": focal, "add_markers_grid": use_markers},
+            "keying": {"mode": "corridor_key_and_ltx_alpha", "despill": 1.0}
+        }
+
+    if is_stage_approved:
+        if "этап 1" in msg_lower or not ("этап 2" in msg_lower):
+            acts = [
+                {"type": "switch_tab", "tab_id": "mesh_gen"},
+                {"type": "generate_3d_mesh", "engine": "trellis2", "actor_name": "Generated_3D_Asset", "target_object_id": "Cube_Actor_1", "auto_replace": True}
+            ]
+            stage_wf = {
+                "active": True,
+                "stage_index": 2,
+                "total_stages": 3,
+                "stage_name": "Генерация 3D модели (TRELLIS.2) и замена куба",
+                "next_stage_name": "Запуск Layout-to-Render (LTX-2.5 IC-LoRA)",
+                "summary": "Открыта вкладка генерации 3D («mesh_gen»). Запущен процесс TRELLIS.2 для генерации PBR 3D меша и автоматической замены куба в сцене.",
+                "awaiting_approval": True,
+                "next_instruction": "Этап 2 утвержден. Переходи к этапу 3: Запуск Layout-to-Render в LTX-2.5 IC-LoRA. Визуализируй действия в окнах студии.",
+                "rework_instruction": "Переделай этап 2: повтори генерацию 3D меша с новыми параметрами."
+            }
+            reply = (
+                "✨ **Этап 1 утвержден! Я проснулся и перехожу к этапу 2:**\n\n"
+                "• Открываю вкладку генерации 3D (`mesh_gen`), чтобы вы видели параметры и ход создания PBR геометрии.\n"
+                "• Запускаю процесс TRELLIS.2 для генерации текстурированного меша.\n"
+                "• Готовая модель будет помещена в 3D сцену на место прокси-куба.\n\n"
+                "Когда геометрия будет готова, нажмите **[ ✓ Утвердить и продолжить ]**, чтобы я проснулся для финального Layout-to-Render."
+            )
+            return {
+                "response_ru": reply,
+                "response_short": "✨ [⚡ QWEN 3.5] Этап 1 утвержден -> запуск генерации 3D меша TRELLIS.2",
+                "provider": provider, "model_name": resolved_model_tag, "model_used": resolved_model_tag,
+                "model_badge": model_badge, "model_tier": model_tier,
+                "flux_prompt": "", "prompt": "", "ltx_prompt": "",
+                "intent": "generation", "stage_workflow": stage_wf, "studio_actions": acts,
+                "camera": {"movement": cam_move, "focal_mm": focal, "add_markers_grid": use_markers},
+                "keying": {"mode": "corridor_key_and_ltx_alpha", "despill": 1.0}
+            }
+        else:
+            selected_wf = "LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json"
+            acts = [
+                {"type": "switch_dimension", "dimension": "2D"},
+                {"type": "run_layout_to_render", "workflow": selected_wf, "prompt": "Cinematic photorealistic layout render with dynamic camera motion", "frames": 49}
+            ]
+            stage_wf = {
+                "active": False,
+                "stage_index": 3,
+                "total_stages": 3,
+                "stage_name": "Layout-to-Render диффузия (LTX-2.5 IC-LoRA)",
+                "next_stage_name": "Все этапы завершены",
+                "summary": "3D раскадровка передана в двухстадийный пайплайн LTX-2.5 IC-LoRA 22B на таймлинию 2D. Итоговое видео генерируется.",
+                "awaiting_approval": False
+            }
+            reply = (
+                "✨ **Этап 2 утвержден! Я проснулся и перехожу к финальному этапу 3:**\n\n"
+                "• Переключаю окно на таймлинию 2D.\n"
+                "• Запекаю 3D раскадровку сцены и траекторию камеры в видеоплейт.\n"
+                "• Запускаю двухстадийную диффузию в LTX-2.5 IC-LoRA 22B на GPU.\n\n"
+                "🚀 Все этапы успешно пройдены и запущены в производство!"
+            )
+            return {
+                "response_ru": reply,
+                "response_short": "🚀 [⚡ QWEN 3.5] Все этапы утверждены -> запуск LTX-2.5 Layout-to-Render",
+                "provider": provider, "model_name": resolved_model_tag, "model_used": resolved_model_tag,
+                "model_badge": model_badge, "model_tier": model_tier,
+                "flux_prompt": "", "prompt": "", "ltx_prompt": "",
+                "intent": "generation", "stage_workflow": stage_wf, "studio_actions": acts,
+                "camera": {"movement": cam_move, "focal_mm": focal, "add_markers_grid": use_markers},
+                "keying": {"mode": "corridor_key_and_ltx_alpha", "despill": 1.0}
+            }
+
 
     # ---------------------------------------------------------
     # BRANCH A: CONVERSATIONAL Q&A / BRAINSTORMING / DISCUSSION
     # ---------------------------------------------------------
+    elif is_stage_confirm and not has_complex_intent and any(w in msg_lower for w in ["расставь 3д", "расставь сцену", "сгенерируй меш", "прокси-куб", "блокаут"]):
+        acts = [
+            {"type": "switch_dimension", "dimension": "3D"},
+            {"type": "setup_3d_layout", "cubes": [
+                {"name": "Cube_Actor_1", "position": [0.0, 0.0, 0.5], "scale": [1.2, 1.2, 1.2], "color": "#3388ff"}
+            ], "camera_preset": "orbit_half", "camera_opts": {"arcDeg": 180, "radius": 5.2, "lift": 1.1, "frames": 49}}
+        ]
+        stage_wf = {
+            "active": True,
+            "stage_index": 1,
+            "total_stages": 3,
+            "stage_name": "Расстановка 3D блокаута и камеры",
+            "next_stage_name": "Генерация 3D модели (TRELLIS.2) и замена прокси-куба",
+            "summary": "Открыт 3D вьюпорт Three.js. Прокси-куб установлен в пространстве, настроен круговой облет камеры 180°. Ожидаю вашего подтверждения.",
+            "awaiting_approval": True,
+            "next_instruction": "Этап 1 утвержден. Переходи к этапу 2: Генерация 3D мешей через TRELLIS.2 и замена кубов. Визуализируй действия в окнах студии.",
+            "rework_instruction": "Переделай этап 1: измени расстановку 3D сцены."
+        }
+        reply = (
+            "🎬 **Запускаю пошаговое выполнение с подтверждением этапов и визуализацией!**\n\n"
+            "• **Этап 1:** Переключаю окно на 3D вьюпорт, расставляю прокси-кубы и настраиваю круговой облет камеры 180°.\n"
+            "• Посмотрите на 3D сцену на холсте. Если блокаут вас устраивает — нажмите **[ ✓ Утвердить и продолжить ]**, "
+            "я мгновенно проснусь и перейду к генерации 3D меша в TRELLIS.2!"
+        )
+        return {
+            "response_ru": reply,
+            "response_short": "🎬 [⚡ QWEN 3.5] Этап 1 запущен: 3D блокаут и камера облета (ожидает утверждения)",
+            "provider": provider, "model_name": resolved_model_tag, "model_used": resolved_model_tag,
+            "model_badge": model_badge, "model_tier": model_tier,
+            "flux_prompt": "", "prompt": "", "ltx_prompt": "",
+            "intent": "generation", "stage_workflow": stage_wf, "studio_actions": acts,
+            "camera": {"movement": "orbit", "focal_mm": focal, "add_markers_grid": use_markers},
+            "keying": {"mode": "corridor_key_and_ltx_alpha", "despill": 1.0}
+        }
+
     if not is_generate_request:
         query_parts = []
         if ref_summary:
@@ -1142,7 +1449,8 @@ def generate_director_plan(
         llm_reply = _call_external_llm(
             provider, model_name, api_key, api_url,
             DIRECTOR_CHAT_SYSTEM_PROMPT, chat_query,
-            images=base64_images_for_llm, history=history, max_tokens=450
+            images=base64_images_for_llm, history=history, max_tokens=1800,
+            context_tokens=int(agent_config.get("context_tokens") or 80000)
         )
 
         import re
@@ -1151,10 +1459,23 @@ def generate_director_plan(
             cleaned_reply = re.sub(r"\*\*LTX:\*\*.*", "", cleaned_reply, flags=re.DOTALL).strip()
             response_ru = cleaned_reply or llm_reply
         else:
-            response_ru = (
-                "Слушаю тебя внимательно! О чем именно ты хотел спросить или поговорить — "
-                "по сюжету, постановке кадра, выбору оптики, световой схеме или настройкам воркфлоу в ComfyUI?"
-            )
+            if any(w in msg_lower for w in ["скелет", "манекен", "mannequin", "кости"]):
+                response_ru = (
+                    "Да, у меня есть полная интеграция и инструкции для работы со скелетами! "
+                    "Я поддерживаю встроенный стандартный скелет Unreal Engine Mannequin (иерархия костей: Pelvis, Spine, Clavicle, UpperArm, Hand, Thigh, Foot), "
+                    "ретаргетинг анимаций Mixamo/FBX, отображение костей и прямую проекцию 3D позы через камеру шота в 2D слой OpenPose для контроля генерации человека."
+                )
+            elif any(w in msg_lower for w in ["3д", "3d", "куб", "лейаут", "layout to render", "треллис", "trellis"]):
+                response_ru = (
+                    "Да, я полностью умею управлять 3D сценой и генерацией! Я могу расставить прокси-кубы в Three.js, "
+                    "запустить генерацию PBR 3D мешей через TRELLIS.2 или Hunyuan3D-Omni по твоим референсам, заменить кубы на полученные GLB модели, "
+                    "настроить круговой облет камеры (180° или 360° turntable) и передать раскадровку в двухстадийный пайплайн LTX-2.5 IC-LoRA Layout-to-Render."
+                )
+            else:
+                response_ru = (
+                    "Слушаю тебя внимательно! О чем именно ты хотел спросить или поговорить — "
+                    "по 3D сцене, расстановке объектов, скелетам персонажей, постановке кадра, оптике или генерациям LTX-2.5 и FLUX.3 в ComfyUI?"
+                )
 
         first_clean_line = ""
         for line in response_ru.splitlines():
@@ -1222,14 +1543,7 @@ def generate_director_plan(
         lighting = "vibrant clean flat colors with elegant subtle gradients and crisp edge contrast"
         atmosphere = "sharp geometric contours, pristine vector lines, bold visual silhouette"
         audio_ambience = "clean airy ambient chimes"
-        if any(w in msg_lower for w in ["орел", "орла"]):
-            art_concept_en = "Majestic soaring eagle with outstretched wings gliding through the sky, modern flat vector art, sharp geometric feathers, bold aerodynamic silhouette, clean vector illustration, behance dribbble trending"
-        elif any(w in msg_lower for w in ["волк", "волка"]):
-            art_concept_en = "Stylized howling wolf silhouette against a full moon, clean vector art, minimalist geometric shapes, flat vector illustration"
-        elif any(w in msg_lower for w in ["лев", "льва"]):
-            art_concept_en = "Majestic lion with geometric mane, modern vector illustration, bold graphic lines, flat vector logo aesthetic"
-        else:
-            art_concept_en = f"Graphic vector art illustration of {user_message}, sharp clean vector contours, flat colors, minimalist art"
+        art_concept_en = f"Graphic vector art illustration of {user_message}, sharp clean vector contours, flat colors, minimalist art"
 
     elif is_anime_style:
         style = "stunning modern anime key visual, Makoto Shinkai aesthetic, high production quality"
@@ -1243,13 +1557,6 @@ def generate_director_plan(
         lighting = "dramatic stage chiaroscuro, golden rim light, deep jewel tones of lapis lazuli and turquoise"
         atmosphere = "theatrical atmospheric haze, gilded reflections, museum sculpture texture"
         audio_ambience = "orchestral swell with ancient harp and mystical resonance"
-        art_concept_en = (
-            "Ornate sculptural statue of Cleopatra, inspired by Léon Bakst's iconic art nouveau theatrical poster "
-            "for Sergei Diaghilev's Ballets Russes, intricate turquoise, lapis lazuli and gold leaf Egyptian ornaments, "
-            "dramatic theatrical chiaroscuro stage lighting, jewel-toned deep shadows. "
-            "Camera transitions smoothly from an extreme close-up frontal portrait, orbiting into a three-quarter angle, "
-            "and pulling back to a dramatic wide profile view of the statue"
-        )
     elif any(w in msg_lower for w in ["киберпанк", "неон", "cyberpunk", "neon", "дождь"]):
         style = "hyper-detailed neo-noir cyberpunk cinema, anamorphic Panavision optics"
         lighting = "wet neon reflections in cyan and magenta, moody rim light on rain-slicked surfaces"
@@ -1272,15 +1579,7 @@ def generate_director_plan(
     is_human = any(w in msg_lower for w in ["девушк", "женщин", "мужчин", "парен", "человек", "портрет", "лицо", "клеопатр", "рыцарь", "воин", "актер"])
 
     if not art_concept_en:
-        if (is_vehicle and ("бетмен" in msg_lower or "бэтмен" in msg_lower or "batmobile" in msg_lower)):
-            art_concept_en = (
-                "Cinematic wide shot of the Batmobile parked in a snow-buried Russian town during a brutal winter storm, "
-                "thick layers of fresh snow blanketing the aggressive angular bodywork and sharp bat-wing fenders, "
-                "frosted glass windshield, headlights cutting through swirling snowflakes and dense fog, "
-                "distant Soviet-era apartment buildings in background, breath of cold air around exhaust vents, "
-                "dramatic low-key lighting, hyper-detailed, 8K resolution, photorealistic"
-            )
-        elif is_vehicle:
+        if is_vehicle:
             art_concept_en = f"Cinematic detailed vehicle shot of {user_message}, metallic finish, reflections, dramatic composition, 8k"
         elif is_winter and not is_human:
             art_concept_en = f"Atmospheric cinematic winter scene, heavy snowfall, volumetric mist, cold blue hour lighting, 8k"
@@ -1343,9 +1642,15 @@ def generate_director_plan(
         ltx_prompt += f" Temporal sequence: {timeline_context}."
 
     # Autopilot Studio Actions
+    has_layout_render = any(w in msg_lower for w in ["лейаут то рендер", "layout to render", "рендер на основе лейаут", "рендер из 3д", "рендер лейаут"])
+    if has_layout_render:
+        is_video_request = True
+
     selected_wf = intent.get("custom_workflow")
     if not selected_wf:
-        if is_video_request:
+        if has_layout_render:
+            selected_wf = "LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json"
+        elif is_video_request:
             if len(references) >= 2:
                 selected_wf = "LTX-2.5/video_ltx2_5_flf2v.json"
             elif len(references) == 1:
@@ -1355,25 +1660,74 @@ def generate_director_plan(
         else:
             selected_wf = "FLUX.3_Klein_Text2Image.json"
 
-    studio_actions = [
-        {
-            "type": "create_storyboard_card",
-            "title": f"🎬 Видео LTX ({focal:.0f}mm {cam_move})" if is_video_request else f"Кадр ({focal:.0f}mm {cam_move})",
-            "story_note": user_message,
-            "mode": "video" if is_video_request else "image",
-            "flux_prompt": flux_prompt,
-            "ltx_prompt": ltx_prompt,
-            "link_from": (references[0].get("id", "ref_1") if isinstance(references[0], dict) else str(references[0])) if references else None
-        },
-        {
-            "type": "trigger_generation",
-            "mode": "video" if is_video_request else "image",
-            "workflow_type": "ltx_video" if is_video_request else "flux_image",
-            "title": f"Воркфлоу: {os.path.basename(selected_wf)}",
-            "prompt": ltx_prompt if is_video_request else flux_prompt,
-            "custom_workflow": selected_wf
-        }
-    ]
+    has_3d_mesh_req = any(w in msg_lower for w in ["сгенерируй 3д", "сгенерируй 3d", "сделай 3д", "trellis", "hunyuan", "3д объект", "3d объект", "3д модел", "3d модел", "3д меш", "3d меш", "меш", "3d модель", "3д модель"]) and not is_video_request
+
+    if is_perf_transfer:
+        vid_id = (plate_info or {}).get("video_id") or "vid_active"
+        studio_actions = [
+            {"type": "video_job", "kind": "pose", "video_id": vid_id, "params": {}},
+            {"type": "video_job", "kind": "track_camera", "video_id": vid_id, "params": {}},
+            {"type": "switch_dimension", "dimension": "3D"},
+            {"type": "setup_3d_layout", "cubes": [
+                {"name": "New_Scene_Environment_1", "position": [-2.5, 0.0, 1.0], "scale": [2.0, 2.0, 2.0], "color": "#3388ff"},
+                {"name": "New_Scene_Environment_2", "position": [2.5, 0.0, 1.0], "scale": [2.0, 2.0, 2.0], "color": "#ffaa22"}
+            ]},
+            {"type": "add_character_skeleton", "name": "UE_Mannequin", "position": [0.0, 0.0, 0.0]},
+            {"type": "project_skeleton_to_pose"},
+            {
+                "type": "create_storyboard_card",
+                "title": f"🎬 Рескиннинг ({focal:.0f}mm {cam_move})",
+                "story_note": user_message,
+                "mode": "video",
+                "flux_prompt": flux_prompt,
+                "ltx_prompt": ltx_prompt,
+                "link_from": (references[0].get("id", "ref_1") if isinstance(references[0], dict) else str(references[0])) if references else None
+            },
+            {
+                "type": "trigger_generation",
+                "mode": "video",
+                "workflow_type": "ltx_video",
+                "title": "LTX Рескиннинг и перенос перформанса",
+                "prompt": ltx_prompt,
+                "custom_workflow": "LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json"
+            }
+        ]
+    elif has_3d_mesh_req:
+        ref_img = ""
+        if references and isinstance(references[0], dict):
+            ref_img = references[0].get("url") or references[0].get("path") or references[0].get("name") or ""
+        elif references:
+            ref_img = str(references[0])
+        studio_actions = [
+            {
+                "type": "mesh3d_job",
+                "action": "generate_3d_mesh",
+                "engine": "trellis2",
+                "actor_name": "Hero_Prop_3D",
+                "image_source": ref_img,
+                "switch_tab": "mesh_gen"
+            }
+        ]
+    else:
+        studio_actions = [
+            {
+                "type": "create_storyboard_card",
+                "title": f"🎬 Видео LTX ({focal:.0f}mm {cam_move})" if is_video_request else f"Кадр ({focal:.0f}mm {cam_move})",
+                "story_note": user_message,
+                "mode": "video" if is_video_request else "image",
+                "flux_prompt": flux_prompt,
+                "ltx_prompt": ltx_prompt,
+                "link_from": (references[0].get("id", "ref_1") if isinstance(references[0], dict) else str(references[0])) if references else None
+            },
+            {
+                "type": "trigger_generation",
+                "mode": "video" if is_video_request else "image",
+                "workflow_type": "ltx_video" if is_video_request else "flux_image",
+                "title": f"Воркфлоу: {os.path.basename(selected_wf)}",
+                "prompt": ltx_prompt if is_video_request else flux_prompt,
+                "custom_workflow": selected_wf
+            }
+        ]
 
     if any(w in msg_lower for w in ["озвуч", "голос", "скажет", "реплик", "tts", "перевед"]):
         studio_actions.append({
@@ -1410,6 +1764,114 @@ def generate_director_plan(
             "workflow_name": "FLUX.3_Klein_Text2Image.json"
         })
 
+    # 3D Scene Layout (Cubes, Primitives, Camera Orbit)
+    has_3d_setup = any(w in msg_lower for w in ["3д сцен", "3d сцен", "куб", "блокаут", "расставь", "установи в 3д", "поставь в 3д", "установи"]) and any(w in msg_lower for w in ["куб", "объект", "сцен", "layout"])
+    if has_3d_setup:
+        is_3_cubes = ("три" in msg_lower or "3" in msg_lower or len(references) >= 3)
+        cubes = []
+        if is_3_cubes:
+            cubes = [
+                {"name": "Cube_Actor_1", "position": [-2.2, 0.0, 0.5], "scale": [1.2, 1.2, 1.2], "color": "#ff5533"},
+                {"name": "Cube_Actor_2", "position": [0.0, 0.0, 0.5], "scale": [1.4, 1.4, 1.4], "color": "#3388ff"},
+                {"name": "Cube_Actor_3", "position": [2.2, 0.0, 0.5], "scale": [1.3, 1.3, 1.3], "color": "#ffaa22"}
+            ]
+        else:
+            cubes = [
+                {"name": "Cube_Proxy", "position": [0.0, 0.0, 0.5], "scale": [1.0, 1.0, 1.0], "color": "#3388ff"}
+            ]
+
+        has_orbit = any(w in msg_lower for w in ["облет", "облёт", "орбит", "orbit", "кругов", "вокруг"])
+        studio_actions.append({
+            "type": "setup_3d_layout",
+            "cubes": cubes,
+            "camera_preset": "orbit_half" if has_orbit else "dolly_in",
+            "camera_opts": {
+                "arcDeg": 180,
+                "radius": 5.2,
+                "lift": 1.1,
+                "frames": 49
+            }
+        })
+
+    # 3D Mesh Generation (TRELLIS.2 / Hunyuan3D-Omni)
+    has_3d_gen = any(w in msg_lower for w in ["сгенерируй 3д", "сгенерируй 3d", "сделай 3д", "trellis", "hunyuan", "3д объект", "3d объект", "3д модел", "3d модел", "3д меш", "3d меш", "меш", "3д модель", "3d модель", "на каждый из них сгенерируй", "замени кубы этими объектами", "объект с референс"])
+    if has_3d_gen:
+        if references:
+            for i, r in enumerate(references[:3], start=1):
+                r_id = r.get("id") if isinstance(r, dict) else f"ref_{i}"
+                r_url = (r.get("url") or r.get("path") or "") if isinstance(r, dict) else str(r)
+                r_title = (r.get("title") or f"Mesh_Actor_{i}") if isinstance(r, dict) else f"Mesh_Actor_{i}"
+                studio_actions.append({
+                    "type": "generate_3d_mesh",
+                    "engine": "trellis2",
+                    "image_source": r_url,
+                    "actor_name": r_title,
+                    "target_object_id": f"Cube_Actor_{i}",
+                    "auto_replace": True
+                })
+        else:
+            studio_actions.append({
+                "type": "generate_3d_mesh",
+                "engine": "trellis2",
+                "actor_name": "Generated_3D_Asset",
+                "prompt": user_message,
+                "target_object_id": "Cube_Proxy",
+                "auto_replace": True
+            })
+
+    # Cube Replacement with 3D Models
+    has_cube_replace = any(w in msg_lower for w in ["замени куб", "замени эти кубы", "подмени куб", "замени объект", "replace with glb"])
+    if has_cube_replace and not any(a.get("type") == "generate_3d_mesh" for a in studio_actions):
+        studio_actions.append({
+            "type": "replace_proxy_cube",
+            "target_ids": ["Cube_Actor_1", "Cube_Actor_2", "Cube_Actor_3"]
+        })
+
+    # Skeletons, Mannequins & Rigs
+    has_skeleton = any(w in msg_lower for w in ["скелет", "манекен", "mannequin", "кости", "скелетон"])
+    if has_skeleton:
+        studio_actions.append({
+            "type": "add_character_skeleton",
+            "name": "UE_Mannequin",
+            "position": [0.0, 0.0, 0.0]
+        })
+
+    # Pose Projection to OpenPose layer
+    has_pose_project = any(w in msg_lower for w in ["позу", "openpose", "спроецируй", "слой поз", "pose layer"])
+    if has_pose_project:
+        studio_actions.append({
+            "type": "project_skeleton_to_pose"
+        })
+
+    # Layout-To-Render
+    has_layout_render = any(w in msg_lower for w in ["лейаут то рендер", "layout to render", "рендер на основе лейаут", "рендер из 3д", "рендер лейаут"])
+    if has_layout_render:
+        selected_wf = "LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json"
+        studio_actions.append({
+            "type": "run_layout_to_render",
+            "workflow": selected_wf,
+            "prompt": ltx_prompt,
+            "frames": 49
+        })
+
+    # Audio & Music Generation (ACE-Step 1.5)
+    has_music = any(w in msg_lower for w in ["музык", "саундтрек", "песн", "soundtrack", "music", "ace-step", "трек", "фонов"])
+    if has_music and not any(a.get("type") == "generate_music" for a in studio_actions):
+        studio_actions.append({
+            "type": "generate_music",
+            "tags": user_message,
+            "duration": 30
+        })
+
+    # Voice / Dubbing (F5-TTS / DubIt)
+    has_voice = any(w in msg_lower for w in ["озвуч", "озвук", "голос", "дубляж", "f5-tts", "tts", "липсинк", "dubit", "проговори"])
+    if has_voice and not any(a.get("type") == "prepare_tts" for a in studio_actions):
+        studio_actions.append({
+            "type": "prepare_tts",
+            "text": user_message,
+            "mode": "voice"
+        })
+
     # Local or Cloud LLM Director Synthesis for Generation
     llm_reply = ""
     query_parts = []
@@ -1425,7 +1887,8 @@ def generate_director_plan(
     llm_reply = _call_external_llm(
         provider, model_name, api_key, api_url,
         DIRECTOR_GENERATION_SYSTEM_PROMPT, full_query,
-        images=base64_images_for_llm, history=history, max_tokens=1000
+        images=base64_images_for_llm, history=history, max_tokens=1000,
+        context_tokens=int(agent_config.get("context_tokens") or 80000)
     )
 
     if references:
@@ -1433,14 +1896,37 @@ def generate_director_plan(
         ref_badge_txt = f"📎 **Учтены референсы по порядку добавления ({len(references)} шт.):** " + ", ".join(ref_titles) + "\n"
     else:
         ref_badge_txt = ""
+    if is_visualize:
+        if any(a.get("type") in ("setup_3d_layout", "replace_proxy_cube", "add_character_skeleton", "project_skeleton_to_pose") for a in studio_actions):
+            if not any(a.get("type") == "switch_dimension" for a in studio_actions):
+                studio_actions.insert(0, {"type": "switch_dimension", "dimension": "3D"})
+        elif any(a.get("type") == "generate_3d_mesh" for a in studio_actions):
+            if not any(a.get("type") == "switch_tab" for a in studio_actions):
+                studio_actions.insert(0, {"type": "switch_tab", "tab_id": "mesh_gen"})
+        elif is_video_request or any(a.get("type") == "run_layout_to_render" for a in studio_actions):
+            if not any(a.get("type") == "switch_dimension" for a in studio_actions):
+                studio_actions.insert(0, {"type": "switch_dimension", "dimension": "2D"})
+        else:
+            if not any(a.get("type") == "switch_dimension" for a in studio_actions):
+                studio_actions.insert(0, {"type": "switch_dimension", "dimension": "1D"})
+
     tl_badge_txt = "⏱ **Хронология сцены:** учтены ключевые кадры и объекты таймлинии.\n" if timeline_context else ""
     action_labels = {
+        "switch_dimension": "👁 переключение измерения",
+        "switch_tab": "📂 открытие вкладки студии",
+        "open_details": "🔍 инспектор деталей 3D",
         "trigger_generation": "🚀 запуск рендера в ComfyUI",
         "create_storyboard_card": "📋 шот добавлен на холст",
         "prepare_tts": "🎙 озвучка TTS",
         "configure_deconstruction": "🧩 пассы деконструкции",
         "generate_music": "🎵 саундтрек",
-        "visualize_workflow": "🎨 открытие нодового графа в ComfyUI"
+        "visualize_workflow": "🎨 открытие нодового графа в ComfyUI",
+        "setup_3d_layout": "🧊 расстановка 3D сцены и камеры",
+        "generate_3d_mesh": "🗿 генерация 3D (TRELLIS.2)",
+        "replace_proxy_cube": "🔄 замена куба на 3D модель",
+        "add_character_skeleton": "🦴 скелет UE Mannequin",
+        "project_skeleton_to_pose": "🧍 проекция 3D позы в OpenPose",
+        "run_layout_to_render": "✨ запуск LTX Layout-to-Render"
     }
     actions_txt = ", ".join([action_labels.get(a["type"], a["type"]) for a in studio_actions]) if studio_actions else "генерация сцены"
 
