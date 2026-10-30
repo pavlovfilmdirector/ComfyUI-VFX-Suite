@@ -224,6 +224,36 @@ def t_run_user_tool(a):
     return _wait("tool", j["id"])
 
 
+def t_scene_3d_state(a):
+    pid = a.get("project_id") or "sandbox_playground"
+    qs = f"?project_id={_q(pid)}" if pid else ""
+    man = _get("/vfx/layout_manifest" + qs)
+    renders = _get("/vfx/layout_render_info")
+    return {"manifest": man, "baked_renders": renders}
+
+
+def t_list_3d_meshes(a):
+    return _get("/vfx/mesh3d/list")
+
+
+def t_merge_video_layers(a):
+    params = {"layer_ids": a["layer_ids"], "name": a.get("name", f"Merge ({len(a['layer_ids'])})")}
+    if a.get("color"):
+        params["color"] = a["color"]
+    j = _post(f"/vfx/video/{_q(a['project_id'])}/{_q(a['video_id'])}/job", {"kind": "merge_masks", "params": params})
+    if j.get("error") or not a.get("wait", True):
+        return j
+    return _wait("video", j["id"])
+
+
+def t_add_video_layer(a):
+    return _post(f"/vfx/video/{_q(a['project_id'])}/{_q(a['video_id'])}/add_layer", {
+        "type": a.get("type", "mask"),
+        "name": a.get("name", "New Layer"),
+        "color": a.get("color", "#ff3b5c" if a.get("type") == "mask" else "#38bdf8")
+    })
+
+
 def t_run_template(a):
     """Run any API workflow from workflows/api/<process>/<template>.json with '<node title>.<input>' params."""
     return _post("/vfx/process/run", {"process_id": a["process"], "template": a["template"], "params": a.get("params") or {}})
@@ -254,7 +284,7 @@ TOOLS = [
                   "normal (params.convention directx|opengl), canny, pose, "
                   "text_mask (params.text), track_object, corridor_key, ltx_ic_lora (params.lora, prompt, start, end, ref_image), "
                   "ltx_alpha, relight_frame (params.frame, prompt or light_layer), first_frame, fill, render, montage (params.videos=[{url}], overlap), "
-                  "track_camera, undistort, composite. Each result is a new layer.",
+                  "merge_masks (params.layer_ids, name), video_cutout (params.mask_layer_id, name), track_camera, undistort, composite. Each result is a new layer.",
      _schema({"project_id": PID, "video_id": VID, "kind": {"type": S}, "params": {"type": O}, "wait": {"type": B, "default": False}},
              ["project_id", "video_id", "kind"]), t_video_job),
     ("job_status", "Progress / result of a job.", _schema({"job_id": {"type": S}, "family": FAM}, ["job_id"]), t_job_status),
@@ -279,6 +309,16 @@ TOOLS = [
               "tab": {"type": S, "enum": ["image", "video", "voice", "music", "any"]}}, ["workflow_path"]), t_add_user_tool),
     ("run_user_tool", "Run one of the user's tools: values = {input id: project media URL, param id: value}. Results land in the project.",
      _schema({"tool_id": {"type": S}, "project_id": PID, "values": {"type": O}, "wait": {"type": B}}, ["tool_id"]), t_run_user_tool),
+    ("scene_3d_state", "Current 3D scene state: objects in the scene, camera setup, and baked renders.",
+     _schema({"project_id": PID}, []), t_scene_3d_state),
+    ("list_3d_meshes", "List of all generated 3D GLB meshes in the studio library.",
+     _schema({}), t_list_3d_meshes),
+    ("merge_video_layers", "Merge multiple selected mask/matte layers of a video into a single unified mask sequence across all frames.",
+     _schema({"project_id": PID, "video_id": VID, "layer_ids": {"type": A, "items": {"type": S}}, "name": {"type": S}, "color": {"type": S}, "wait": {"type": B, "default": True}},
+             ["project_id", "video_id", "layer_ids"]), t_merge_video_layers),
+    ("add_video_layer", "Add a new blank mask or paint layer to a video.",
+     _schema({"project_id": PID, "video_id": VID, "type": {"type": S, "enum": ["mask", "paint"]}, "name": {"type": S}, "color": {"type": S}},
+             ["project_id", "video_id"]), t_add_video_layer),
     ("run_template", "Advanced: run a raw API workflow template with '<node title>.<input>' params.",
      _schema({"process": {"type": S}, "template": {"type": S}, "params": {"type": O}}, ["process", "template"]), t_run_template),
 ]
@@ -287,8 +327,9 @@ BY_NAME = {t[0]: t for t in TOOLS}
 
 # ---------------------------------------------------------------- MCP stdio (JSON-RPC 2.0, one message per line)
 def _send(msg):
-    sys.stdout.write(json.dumps(msg, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    raw = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+    sys.stdout.buffer.write(raw)
+    sys.stdout.buffer.flush()
 
 
 def handle(msg):
@@ -317,6 +358,8 @@ def handle(msg):
 
 
 def main():
+    if hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         line = line.strip()
         if not line:

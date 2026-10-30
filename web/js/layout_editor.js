@@ -2883,13 +2883,13 @@ app.registerExtension({
                         if (cardReview) cardReview.style.display = "none";
                         if (btnStartRenderSide) btnStartRenderSide.style.display = "none";
                         if (fillProgress) fillProgress.style.width = "0%";
-                        if (lblProgress) lblProgress.innerText = "Рендер: подготовка буфера...";
+                        if (lblProgress) lblProgress.innerText = "Render: preparing buffer...";
                         if (hdrRenderBadge) {
                             hdrRenderBadge.className = "vfx-render-badge-pill";
                             hdrRenderBadge.style.background = "rgba(255, 87, 34, 0.2)";
                             hdrRenderBadge.style.color = "#ff5722";
                             hdrRenderBadge.style.border = "1px solid #ff5722";
-                            hdrRenderBadge.innerText = "⏳ Рендер...";
+                            hdrRenderBadge.innerText = "⏳ Rendering...";
                         }
 
                         // Switch monitor to live 3D view so user sees frames baking in real time
@@ -2985,7 +2985,7 @@ app.registerExtension({
                             const remainingSec = Math.max(0, (totalFrames - (f + 1)) / Math.max(0.1, fps)).toFixed(1);
 
                             if (fillProgress) fillProgress.style.width = `${pct}%`;
-                            if (lblProgress) lblProgress.innerText = `Рендер: кадр ${f + 1} / ${totalFrames} (${pct}%) • ~${remainingSec}s`;
+                            if (lblProgress) lblProgress.innerText = `Render: frame ${f + 1} / ${totalFrames} (${pct}%) • ~${remainingSec}s`;
 
                             // Yield to browser event loop
                             await new Promise(r => setTimeout(r, 0));
@@ -3011,7 +3011,7 @@ app.registerExtension({
 
                         if (renderCancelRequested) {
                             isRenderingSequence = false;
-                            if (lblProgress) lblProgress.innerText = "Рендер отменен пользователем";
+                            if (lblProgress) lblProgress.innerText = "Render cancelled by user";
                             setTimeout(() => {
                                 if (cardProgress) cardProgress.style.display = "none";
                                 if (btnStartRenderSide) btnStartRenderSide.style.display = "block";
@@ -3084,7 +3084,7 @@ app.registerExtension({
                     // Save & Queue Render directly from 3D Viewport
                     const onQueueRender = async () => {
                         if (!isRenderComplete && bakedRenderFrames.length === 0) {
-                            const doRender = confirm("Рендер Layout еще не был выполнен внутри ноды.\nЗапустить быстрый рендер сейчас перед запуском пайплайна?");
+                            const doRender = confirm("Layout render has not been executed yet.\nRun quick render now before launching the pipeline?");
                             if (doRender) {
                                 await startInNodeRender();
                             }
@@ -3527,22 +3527,22 @@ app.registerExtension({
             `;
             bar.innerHTML = `
                 <button id="btn-keshiki-back-to-studio" style="background: #ffffff; color: #09090b; border: none; border-radius: 5px; padding: 5px 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                    🎬 Вернуться в KESHIKI Studio
+                    🎬 Back to KESHIKI Studio
                 </button>
                 <div style="width: 1px; height: 18px; background: rgba(255,255,255,0.15);"></div>
                 <select id="sel-keshiki-bind-proc" style="background: #18181b; color: #e4e4e7; border: 1px solid rgba(255,255,255,0.18); border-radius: 4px; padding: 4px 8px; font-size: 11px;">
-                    <option value="storyboard">Раскадровка (FLUX.1)</option>
-                    <option value="character">Персонажи и LoRA</option>
-                    <option value="location">Локации и Сцены</option>
-                    <option value="tts_stage1">Озвучка и TTS</option>
-                    <option value="video_gen" selected>Первичное Видео (LTX-2.5)</option>
-                    <option value="mesh_gen">Генерация 3D-Меша</option>
-                    <option value="deconstruct">Деконструкция на пассы</option>
-                    <option value="composite">Финальное Сведение</option>
-                    <option value="music">Генерация Музыки</option>
+                    <option value="storyboard">Storyboard (FLUX.1)</option>
+                    <option value="character">Characters & LoRA</option>
+                    <option value="location">Locations & Scenes</option>
+                    <option value="tts_stage1">Voice & TTS</option>
+                    <option value="video_gen" selected>Primary Video (LTX-2.5)</option>
+                    <option value="mesh_gen">3D Mesh Generation</option>
+                    <option value="deconstruct">Pass Deconstruction</option>
+                    <option value="composite">Final Composite</option>
+                    <option value="music">Music Generation</option>
                 </select>
                 <button id="btn-keshiki-bind-active-graph" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 5px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">
-                    📌 Подключить воркфлоу к процессу
+                    📌 Bind Workflow to Process
                 </button>
             `;
             document.body.appendChild(bar);
@@ -3553,7 +3553,7 @@ app.registerExtension({
             bar.querySelector("#btn-keshiki-bind-active-graph").onclick = async () => {
                 const procId = bar.querySelector("#sel-keshiki-bind-proc").value;
                 const btn = bar.querySelector("#btn-keshiki-bind-active-graph");
-                btn.innerText = "⏳ Сохранение...";
+                btn.innerText = "⏳ Saving...";
                 try {
                     const wfData = await window.__keshikiSerializeComfyWorkflow();
                     const res = await fetch("/vfx/settings/bind_workflow", {
@@ -3566,10 +3566,10 @@ app.registerExtension({
                         })
                     });
                     const data = await res.json();
-                    btn.innerText = `✓ Подключено к [${procId}]!`;
-                    setTimeout(() => { btn.innerText = "📌 Подключить воркфлоу к процессу"; }, 2500);
+                    btn.innerText = `✓ Bound to [${procId}]!`;
+                    setTimeout(() => { btn.innerText = "📌 Bind Workflow to Process"; }, 2500);
                 } catch (e) {
-                    btn.innerText = `Ошибка: ${e.message}`;
+                    btn.innerText = `Error: ${e.message}`;
                 }
             };
         }

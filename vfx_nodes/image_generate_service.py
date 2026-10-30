@@ -35,6 +35,10 @@ ROLE_HINTS = {
     "canny": "is an edge map: keep these outlines and composition",
     "pose": "is a pose skeleton: the person takes exactly this pose",
     "reference": "is a reference: take from it what the instruction asks for",
+    "face": ("is the face reference: the person in the marked area gets exactly this person's face - identity, features, "
+             "skin tone, facial hair and hairline - matched to image 1's head angle, lighting and grain"),
+    "character": "is the character reference: keep this person's look, clothing and colours",
+    "style": "is a style reference: take only its colours, light and look, not its content",
     "mask": "is a mask: white marks the area the instruction refers to",
     "annotation": ("is image 1 with hand-drawn notes (arrows, circles, scribbles, written words) from the director: "
                    "apply what the marks ask for to image 1; the result must not contain any of these marks"),
@@ -50,7 +54,7 @@ DRAWING_PROMPTS = {
     "collage": ("Image 1 is a collage: the pasted cut-outs ({name}) must be blended naturally into the scene - match light, "
                 "colour, shadows, perspective and grain so nothing looks pasted."),
 }
-ASPECTS = {"16:9": (1344, 768), "1:1": (1024, 1024), "9:16": (768, 1344), "4:3": (1184, 880), "2.39:1": (1536, 640)}
+ASPECTS = {"16:9": (1344, 768), "1:1": (1024, 1024), "9:16": (768, 1344), "4:3": (1184, 880), "2.39:1": (1536, 640), "21:9": (1536, 640)}
 
 
 def _decode(data_url: str) -> bytes:
@@ -212,6 +216,31 @@ def run_image_generate(params: Dict[str, Any], timeout_s: float = 900.0) -> Dict
         lines.append(f"Scene context: {context}")
     full_prompt = "\n".join(lines)
 
+    # Face (identity) references go to Qwen-Image-Edit-2511: Klein reads a face photo as "a reference" and keeps
+    # the original face; Qwen holds a person's identity much better. engine="flux" / "qwen" overrides.
+    engine = str(params.get("engine") or "").lower() or ("qwen" if any(r.get("role") == "face" for r in refs) else "flux")
+    if engine == "qwen" and mode == "edit" and params.get("source"):
+        q_images = [params["source"]] + [r["data"] for r in refs[:2]]
+        q_lines = [instruction] if instruction else []
+        for i, r in enumerate(refs[:2], start=2):
+            q_lines.append(f"Image {i} {ROLE_HINTS.get(r.get('role', 'reference'), ROLE_HINTS['reference'])}.")
+        if boxes:
+            q_lines.append("Change only: " + "; ".join(b["metadata"]["desc"] for b in boxes) + ". Everything else in image 1 stays exactly the same.")
+        res = run_qwen_edit(q_images, "\n".join(q_lines), seed=seed, size_from=0, megapixels=float(params.get("megapixels") or 1.0),
+                            run_tag=params.get("run_tag"))
+        out_bytes = _decode(res["image"])
+        only_inside = bool(params.get("only_inside_masks")) and bool(mask_arrays)
+        if only_inside:
+            out_bytes = _composite_inside_masks(_decode(orig_source) if orig_source else _decode(params["source"]), out_bytes, mask_arrays)
+        try:   # Qwen is 40 GB: drop it before the next FLUX / LTX run (applied between prompts)
+            from .process_runner import free_memory
+        except ImportError:  # pragma: no cover
+            from process_runner import free_memory
+        free_memory(wait_s=0)
+        return {"image": "data:image/png;base64," + base64.b64encode(out_bytes).decode("ascii"), "prompt_used": "\n".join(q_lines),
+                "seed": seed, "mode": mode, "engine": "qwen-image-edit-2511", "boxes": len(boxes), "references": len(refs[:2]),
+                "only_inside_masks": only_inside, "seconds": res.get("seconds"), "prompt_id": res.get("prompt_id")}
+
     run_params: Dict[str, Any] = {
         "Prompt.value": full_prompt,
         "Sampler.seed": seed,
@@ -219,8 +248,11 @@ def run_image_generate(params: Dict[str, Any], timeout_s: float = 900.0) -> Dict
     }
 
     if mode == "t2i":
-        w, h = ASPECTS.get(str(params.get("aspect") or "16:9"), ASPECTS["16:9"])
-        run_params.update({"Output size.width": w, "Output size.height": h})
+        w = params.get("width")
+        h = params.get("height")
+        if not (w and h):
+            w, h = ASPECTS.get(str(params.get("aspect") or "16:9"), ASPECTS["16:9"])
+        run_params.update({"Output size.width": int(w), "Output size.height": int(h)})
         prompt = load_template(PROCESS_ID, "flux3_klein_t2i")
         source_bytes = None
     else:

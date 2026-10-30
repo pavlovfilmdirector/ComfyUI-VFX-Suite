@@ -73,15 +73,44 @@ def _manifest_path(pid: str, vid: str) -> str:
 def load_manifest(pid: str, vid: str) -> Dict[str, Any]:
     p = _manifest_path(pid, vid)
     if os.path.isfile(p):
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content:
+                    return json.loads(content)
+        except Exception as e:
+            # Auto-heal: attempt raw_decode to ignore trailing garbage/concatenation
+            try:
+                decoder = json.JSONDecoder()
+                obj, _ = decoder.raw_decode(content)
+                save_manifest(pid, vid, obj)
+                return obj
+            except Exception:
+                pass
+            print(f"[VFX-Suite] Warning: corrupted layers.json in {pid}/{vid}: {e}. Falling back to clean state.")
     return {"video_id": vid, "layers": []}
 
 
 def save_manifest(pid: str, vid: str, manifest: Dict[str, Any]) -> None:
-    os.makedirs(video_root(pid, vid), exist_ok=True)
-    with open(_manifest_path(pid, vid), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
+    p = _manifest_path(pid, vid)
+    target_dir = os.path.dirname(p)
+    os.makedirs(target_dir, exist_ok=True)
+    temp_path = f"{p}.tmp_{uuid.uuid4().hex[:6]}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, p)
+    except Exception:
+        # Fallback to direct write if replace fails
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 def _layer_dir(pid: str, vid: str, lid: str) -> str:
@@ -109,6 +138,115 @@ def get_state(pid: str, vid: str) -> Dict[str, Any]:
             stamps = [os.path.getmtime(os.path.join(d, fn)) for fn in os.listdir(d) if fn.endswith(".png")]
             l["updated"] = max(stamps) if stamps else 0
     return {"plate": info, "layers": man["layers"]}
+
+
+def create_blank_video(
+    pid: str,
+    title: str = "Blank Video",
+    width: int = 1280,
+    height: int = 720,
+    fps: float = 24.0,
+    total_frames: int = 25,
+    color: str = "#0c0c0e"
+) -> Dict[str, Any]:
+    """Create a new blank video canvas with a solid color plate, encoded MP4,
+    and an initial paint/sketch layer ready for drawing/keyframing.
+    """
+    total_frames = max(1, min(int(total_frames or 25), 600))
+    width = max(64, min(int(width or 1280), 4096))
+    height = max(64, min(int(height or 720), 4096))
+    fps = max(1.0, min(float(fps or 24.0), 120.0))
+    width = (width // 2) * 2
+    height = (height // 2) * 2
+
+    c = str(color or "").strip().lstrip("#")
+    if len(c) == 6:
+        try:
+            r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+        except ValueError:
+            r, g, b = 12, 12, 14
+    elif len(c) == 3:
+        try:
+            r = int(c[0] * 2, 16)
+            g = int(c[1] * 2, 16)
+            b = int(c[2] * 2, 16)
+        except ValueError:
+            r, g, b = 12, 12, 14
+    else:
+        r, g, b = 12, 12, 14
+    bgr = (b, g, r)
+
+    vid = f"vid_canvas_{int(time.time())}_{uuid.uuid4().hex[:4]}"
+    root = video_root(pid, vid)
+    raw_dir = os.path.join(root, "plate", "raw")
+    undist_dir = os.path.join(root, "plate", "undist")
+    os.makedirs(raw_dir, exist_ok=True)
+    os.makedirs(undist_dir, exist_ok=True)
+
+    frame_img = np.full((height, width, 3), bgr, dtype=np.uint8)
+    ok, jpg_buf = cv2.imencode(".jpg", frame_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    jpg_bytes = jpg_buf.tobytes() if ok else b""
+
+    for idx in range(total_frames):
+        fn = f"frame_{idx:04d}.jpg"
+        with open(os.path.join(raw_dir, fn), "wb") as f:
+            f.write(jpg_bytes)
+        with open(os.path.join(undist_dir, fn), "wb") as f:
+            f.write(jpg_bytes)
+
+    mp4_path = os.path.join(root, f"{vid}.mp4")
+    _encode_mp4([frame_img] * total_frames, mp4_path, fps, width, height)
+
+    nid = node_id_for(vid)
+    root_plate = os.path.join(root, "plate")
+    pps.register_plate_root(nid, root_plate)
+    info = {
+        "node_id": nid,
+        "total_frames": total_frames,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "k1": 0.0,
+        "k2": 0.0,
+        "thickness": 20,
+        "has_raw": True,
+        "has_undist": True,
+        "has_mask": False,
+        "input_path": mp4_path,
+        "invert_mask": False,
+        "mask_engine": "sam2",
+        "keyframes": []
+    }
+    pps.save_info(info, nid)
+
+    paint_layer = {
+        "id": "vl_paint_sketch",
+        "type": "paint",
+        "name": "Набросок / Sketch",
+        "color": "#fbbf24",
+        "opacity": 1.0,
+        "visible": True,
+        "morph": True
+    }
+    save_manifest(pid, vid, {"video_id": vid, "layers": [paint_layer]})
+    os.makedirs(_layer_dir(pid, vid, paint_layer["id"]), exist_ok=True)
+
+    video_url = f"/vfx/project_file/{pid}/video/{vid}/{vid}.mp4"
+    poster_url = f"/vfx/project_file/{pid}/video/{vid}/plate/raw/frame_0000.jpg"
+
+    return {
+        "id": vid,
+        "title": title or "Холст видео",
+        "badge": "CANVAS",
+        "type": "html5",
+        "videoUrl": video_url,
+        "posterUrl": poster_url,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "total_frames": total_frames,
+        "layers": [paint_layer]
+    }
 
 
 def _paint_keys(d: str) -> List[int]:
@@ -190,7 +328,9 @@ def save_layer_frame(pid: str, vid: str, layer_id: str, frame: int, png_bytes: b
 
 
 def paint_key_op(pid: str, vid: str, layer_id: str, frame, op: str) -> Dict[str, Any]:
-    """+Key copies the drawing in effect to this frame; Del removes the key(s) (frame may be a list)."""
+    """+Key copies the drawing in effect to this frame; Del removes the key(s); Move shifts keys (frame may be a list)."""
+    if isinstance(frame, dict) and op == "move":
+        frame = [frame]
     if isinstance(frame, (list, tuple)):
         if op == "del":
             d = _layer_dir(pid, vid, layer_id)
@@ -198,6 +338,30 @@ def paint_key_op(pid: str, vid: str, layer_id: str, frame, op: str) -> Dict[str,
                 fp = os.path.join(d, f"key_{int(f):04d}.png")
                 if os.path.isfile(fp):
                     os.remove(fp)
+            man = load_manifest(pid, vid)
+            lay = next((l for l in man["layers"] if l["id"] == layer_id), None)
+            if lay and lay.get("morph"):
+                bake_paint_morph(pid, vid, layer_id)
+            return get_state(pid, vid)
+        if op == "move":
+            d = _layer_dir(pid, vid, layer_id)
+            pairs = []
+            for item in frame:
+                if isinstance(item, dict) and "from" in item and "to" in item:
+                    pairs.append((int(item["from"]), int(item["to"])))
+                elif isinstance(item, (list, tuple)) and len(item) == 2:
+                    pairs.append((int(item[0]), int(item[1])))
+            data_map = {}
+            for src_f, dst_f in pairs:
+                src_p = os.path.join(d, f"key_{src_f:04d}.png")
+                if os.path.isfile(src_p):
+                    with open(src_p, "rb") as f:
+                        data_map[dst_f] = f.read()
+                    os.remove(src_p)
+            for dst_f, b in data_map.items():
+                dst_p = os.path.join(d, f"key_{dst_f:04d}.png")
+                with open(dst_p, "wb") as f:
+                    f.write(b)
             man = load_manifest(pid, vid)
             lay = next((l for l in man["layers"] if l["id"] == layer_id), None)
             if lay and lay.get("morph"):
@@ -214,12 +378,17 @@ def paint_key_op(pid: str, vid: str, layer_id: str, frame, op: str) -> Dict[str,
     if op == "add":
         src = _paint_key_for(d, frame)
         if not src:
-            raise ProcessError("Nothing drawn on this layer yet")
-        if os.path.abspath(src) != os.path.abspath(target):
-            shutil.copy2(src, target)
-        still = os.path.join(d, "still.png")
-        if os.path.isfile(still) and os.path.abspath(src) == os.path.abspath(still):
-            shutil.move(still, os.path.join(d, "key_0000.png")) if frame != 0 else os.remove(still)
+            info = pps.get_info(node_id_for(vid))
+            w = int(info.get("width") or 1280)
+            h = int(info.get("height") or 720)
+            blank = np.zeros((h, w, 4), dtype=np.uint8)
+            cv2.imwrite(target, blank)
+        else:
+            if os.path.abspath(src) != os.path.abspath(target):
+                shutil.copy2(src, target)
+            still = os.path.join(d, "still.png")
+            if os.path.isfile(still) and os.path.abspath(src) == os.path.abspath(still):
+                shutil.move(still, os.path.join(d, "key_0000.png")) if frame != 0 else os.remove(still)
     elif op == "del":
         if os.path.isfile(target):
             os.remove(target)
@@ -437,6 +606,33 @@ def _add_layer(pid: str, vid: str, ltype: str, name: str, color: str = "", extra
     return layer
 
 
+def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: str) -> Dict[str, Any]:
+    """Copy a layer and its frame images from another video in the project into the target video."""
+    src_man = load_manifest(pid, src_vid)
+    src_layer = next((l for l in src_man.get("layers", []) if l.get("id") == src_lid), None)
+    if not src_layer:
+        raise ProcessError(f"Layer {src_lid} not found in video {src_vid}")
+    target_man = load_manifest(pid, target_vid)
+    ltype = src_layer.get("type", "mask")
+    new_lid = f"vl_{ltype}_{uuid.uuid4().hex[:8]}"
+    new_layer = dict(src_layer)
+    new_layer["id"] = new_lid
+    new_layer["name"] = f"{src_layer.get('name', 'Layer')} (imported)"
+    new_layer["created_at"] = time.time()
+    target_man["layers"].append(new_layer)
+    save_manifest(pid, target_vid, target_man)
+
+    src_dir = _layer_dir(pid, src_vid, src_lid)
+    target_dir = _layer_dir(pid, target_vid, new_lid)
+    os.makedirs(target_dir, exist_ok=True)
+    if os.path.exists(src_dir):
+        for fn in os.listdir(src_dir):
+            sp = os.path.join(src_dir, fn)
+            if os.path.isfile(sp):
+                shutil.copy2(sp, os.path.join(target_dir, fn))
+    return new_layer
+
+
 def frame_path(pid: str, vid: str, lid: str, idx: int) -> Optional[str]:
     if lid in ("plate_raw", "plate_undist"):
         d = pps.get_dirs(node_id_for(vid))
@@ -518,8 +714,8 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
         "detect_all": _job_detect_all, "track_object": _job_track_object,
         "corridor_key": _job_corridor_key, "undistort": _job_undistort, "track_camera": _job_track_camera,
         "ltx_alpha": _job_ltx_ic_lora, "ltx_ic_lora": _job_ltx_ic_lora,
-        "fill": _job_fill, "render": _job_render, "layer_to_video": _job_layer_to_video,
-        "mask_grow": _job_mask_grow, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame, "montage": _job_montage,
+        "fill": _job_fill, "render": _job_render, "video_cutout": _job_video_cutout, "layer_to_video": _job_layer_to_video,
+        "mask_grow": _job_mask_grow, "merge_masks": _job_merge_masks, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame, "montage": _job_montage,
     }.get(kind)
     if not fn:
         raise ProcessError(f"Unknown 2D job '{kind}'")
@@ -559,31 +755,52 @@ OPENPOSE_COLORS = [(255, 0, 0), (255, 85, 0), (255, 170, 0), (255, 255, 0), (170
 def draw_openpose(people, w: int, h: int) -> np.ndarray:
     """people: list of 18 [x, y] in 0..1 (or None). Returns BGRA, lines on transparent (like the pose layers)."""
     import math
-    canvas = np.zeros((h, w, 3), np.uint8)
+    rgba = np.zeros((h, w, 4), np.uint8)
     stick = max(2, int(round(4 * min(w, h) / 512)))
+    min_x, min_y, max_x, max_y = w, h, 0, 0
     for pts in people or []:
         P = [(float(p[0]) * w, float(p[1]) * h) if (p is not None and len(p) >= 2) else None for p in (pts or [])[:18]]
+        P += [None] * (18 - len(P))
+        for p in P:
+            if p is not None:
+                px, py = int(p[0]), int(p[1])
+                min_x = min(min_x, px - stick * 3)
+                min_y = min(min_y, py - stick * 3)
+                max_x = max(max_x, px + stick * 3)
+                max_y = max(max_y, py + stick * 3)
+    if min_x >= max_x or min_y >= max_y:
+        return rgba
+    x0, y0 = max(0, min_x), max(0, min_y)
+    x1, y1 = min(w, max_x), min(h, max_y)
+    if x1 <= x0 or y1 <= y0:
+        return rgba
+    rw, rh = x1 - x0, y1 - y0
+    canvas = np.zeros((rh, rw, 3), np.uint8)
+    for pts in people or []:
+        P = [((float(p[0]) * w) - x0, (float(p[1]) * h) - y0) if (p is not None and len(p) >= 2) else None for p in (pts or [])[:18]]
         P += [None] * (18 - len(P))
         for i, (a, b) in enumerate(OPENPOSE_LIMBS):
             if P[a] is None or P[b] is None:
                 continue
-            (x1, y1), (x2, y2) = P[a], P[b]
-            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-            length = math.hypot(x1 - x2, y1 - y2) / 2
-            angle = math.degrees(math.atan2(y1 - y2, x1 - x2))
+            (x1_l, y1_l), (x2_l, y2_l) = P[a], P[b]
+            mx, my = (x1_l + x2_l) / 2, (y1_l + y2_l) / 2
+            length = math.hypot(x1_l - x2_l, y1_l - y2_l) / 2
+            angle = math.degrees(math.atan2(y1_l - y2_l, x1_l - x2_l))
             poly = cv2.ellipse2Poly((int(mx), int(my)), (int(length), stick), int(angle), 0, 360, 1)
             layer = canvas.copy()
-            r, g, b = OPENPOSE_COLORS[i]
-            cv2.fillConvexPoly(layer, poly, (b, g, r))
+            r, g, b_col = OPENPOSE_COLORS[i]
+            cv2.fillConvexPoly(layer, poly, (b_col, g, r))
             canvas = cv2.addWeighted(canvas, 0.4, layer, 0.6, 0)
         for i, pt in enumerate(P):
             if pt is None:
                 continue
-            r, g, b = OPENPOSE_COLORS[i]
-            cv2.circle(canvas, (int(pt[0]), int(pt[1])), stick, (b, g, r), thickness=-1)
+            r, g, b_col = OPENPOSE_COLORS[i]
+            cv2.circle(canvas, (int(pt[0]), int(pt[1])), stick, (b_col, g, r), thickness=-1)
     m = canvas.max(axis=2)
     a = np.where(m < 12, 0, np.minimum(255, m.astype(np.int32) * 2)).astype(np.uint8)
-    return np.dstack([canvas, a])
+    rgba[y0:y1, x0:x1, :3] = canvas
+    rgba[y0:y1, x0:x1, 3] = a
+    return rgba
 
 
 def pose_layer_from_3d(pid: str, vid: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -595,18 +812,23 @@ def pose_layer_from_3d(pid: str, vid: str, data: Dict[str, Any]) -> Dict[str, An
     # plate size if the frames are extracted, else the size of the tracked camera the studio sent
     w = int(info.get("width") or data.get("width") or 1920)
     h = int(info.get("height") or data.get("height") or 1080)
+    if max(w, h) > 1920:
+        scale = 1920.0 / float(max(w, h))
+        w = max(2, int(round(w * scale)) & ~1)
+        h = max(2, int(round(h * scale)) & ~1)
     frames = data.get("frames") or []
     lid = _safe(str(data.get("layer_id") or ""))
     man = load_manifest(pid, vid)
     layer = next((l for l in man["layers"] if l.get("id") == lid), None) if lid else None
     if layer is None:
-        layer = _add_layer(pid, vid, "pose", str(data.get("name") or "Pose from 3D"), extra={"transparentBg": True, "source": "3d"})
+        layer = _add_layer(pid, vid, "pose", str(data.get("name") or "Pose from 3D"), extra={"transparentBg": True, "source": "3d", "frames": len(frames)})
     out_dir = _layer_dir(pid, vid, layer["id"])
+    png_params = [int(cv2.IMWRITE_PNG_COMPRESSION), 1]
     kps = {}
     for fr in frames:
         idx = int(fr.get("frame", 0))
         people = fr.get("people") or []
-        cv2.imwrite(os.path.join(out_dir, f"frame_{idx:04d}.png"), draw_openpose(people, w, h))
+        cv2.imwrite(os.path.join(out_dir, f"frame_{idx:04d}.png"), draw_openpose(people, w, h), png_params)
         kps[idx] = people
     # keep the keypoints too: editable later, and usable as a control signal without re-detection
     kp_path = os.path.join(out_dir, "keypoints_3d.json")
@@ -619,6 +841,16 @@ def pose_layer_from_3d(pid: str, vid: str, data: Dict[str, Any]) -> Dict[str, An
     old.update(kps)
     with open(kp_path, "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in sorted(old.items())}, f)
+    try:
+        man_upd = load_manifest(pid, vid)
+        for lay in man_upd.get("layers", []):
+            if lay.get("id") == layer["id"]:
+                lay["frames"] = max(int(lay.get("frames") or 0), len(frames))
+                lay["visible"] = True
+                layer = lay
+        save_manifest(pid, vid, man_upd)
+    except Exception:
+        pass
     return {"layer": layer, "frames": len(frames), "size": [w, h]}
 
 
@@ -923,7 +1155,9 @@ def save_layer_frames(pid: str, vid: str, data: Dict[str, Any]) -> Dict[str, Any
         ltype = str(data.get("type") or "rgb")
         layer = _add_layer(pid, vid, ltype, str(data.get("name") or "3D render"), extra={"source": "3d"})
     out_dir = _layer_dir(pid, vid, layer["id"])
+    png_params = [int(cv2.IMWRITE_PNG_COMPRESSION), 1]
     n = 0
+    max_f = 0
     for fr in data.get("frames") or []:
         raw = str(fr.get("data") or "")
         if "," in raw:
@@ -931,8 +1165,20 @@ def save_layer_frames(pid: str, vid: str, data: Dict[str, Any]) -> Dict[str, Any
         img = cv2.imdecode(np.frombuffer(base64.b64decode(raw), np.uint8), cv2.IMREAD_UNCHANGED)
         if img is None:
             continue
-        cv2.imwrite(os.path.join(out_dir, f"frame_{int(fr.get('frame', 0)):04d}.png"), img)
+        f_idx = int(fr.get("frame", 0))
+        max_f = max(max_f, f_idx + 1)
+        cv2.imwrite(os.path.join(out_dir, f"frame_{f_idx:04d}.png"), img, png_params)
         n += 1
+    try:
+        man_upd = load_manifest(pid, vid)
+        for lay in man_upd.get("layers", []):
+            if lay.get("id") == layer["id"]:
+                lay["frames"] = max(int(lay.get("frames") or 0), max_f, n)
+                lay["visible"] = True
+                layer = lay
+        save_manifest(pid, vid, man_upd)
+    except Exception:
+        pass
     return {"layer": layer, "frames": n}
 
 
@@ -1082,6 +1328,8 @@ def _depth_exclude_subject(job_id, pid, vid, out_dir, mask_id, grow=12):
         d = cv2.imread(fp, cv2.IMREAD_GRAYSCALE)
         if d is None:
             continue
+        if d.ndim > 2:
+            d = d[:, :, 0]
         h, w = d.shape
         a, _ = _layer_alpha(pid, vid, mlayer, i, h, w)
         if a is None or (a > 0.5).sum() == 0:
@@ -1100,7 +1348,7 @@ def _depth_exclude_subject(job_id, pid, vid, out_dir, mask_id, grow=12):
         f = np.where(ms, cv2.GaussianBlur(f, (0, 0), 3), f)
         fill = cv2.resize(f, (w, h), interpolation=cv2.INTER_CUBIC)
         soft = cv2.GaussianBlur(m, (0, 0), grow / 2.0).astype(np.float32) / 255.0
-        out = d.astype(np.float32) * (1 - soft) + fill.astype(np.float32) * soft
+        out = np.squeeze(d.astype(np.float32) * (1 - soft) + fill.astype(np.float32) * soft)
         cv2.imwrite(fp, np.clip(out, 0, 255).astype(np.uint8))
         if n % 8 == 0:
             _job_update(job_id, message=f"Removing the subject from depth: {n + 1}/{len(files)}", progress=90 + int(9 * n / max(1, len(files))))
@@ -1277,6 +1525,8 @@ def _layer_alpha(pid, vid, layer, idx, h, w):
         return None, None
     if img.shape[:2] != (h, w):
         img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+    if img.ndim == 3 and img.shape[2] == 1:
+        img = img[:, :, 0]
     if img.ndim == 2:
         a = img.astype(np.float32) / 255.0
         rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -1317,11 +1567,13 @@ def _job_fill(job_id, kind, pid, vid, p):
     if probe is not None:
         probe["inverted"] = bool(src.get("inverted")) ^ invert
         probe["type"] = "mask"
-    for i in range(total):
+    f0 = max(0, int(p.get("start", 0) or 0))
+    f1 = min(total - 1, int(p.get("end", total - 1)))
+    for i in range(f0, f1 + 1):
         if _cancelled(job_id):
             raise ProcessError("Stopped")
         if i % 10 == 0:
-            _job_update(job_id, message=f"Fill: frame {i + 1}/{total}", progress=int(100 * i / max(1, total)))
+            _job_update(job_id, message=f"Fill: frame {i + 1}/{f1 + 1}", progress=int(100 * (i - f0) / max(1, f1 - f0 + 1)))
         if probe is None:
             a = np.ones((h, w), np.float32)
         else:
@@ -1465,6 +1717,134 @@ def _job_composite(job_id, kind, pid, vid, p):
     return {"layer": layer, "frames": written}
 
 
+
+def _job_video_cutout(job_id, kind, pid, vid, p):
+    """Cuts out the plate using a mask layer into RGBA PNG sequence + transparent WebM VP9."""
+    import subprocess
+    info = _require_plate(vid)
+    total, w, h = int(info["total_frames"]), int(info["width"]), int(info["height"])
+    fps = float(info.get("fps") or 24) or 24
+    man = load_manifest(pid, vid)
+
+    mask_lid = p.get("mask_layer_id")
+    mask_layer = next((l for l in man.get("layers", []) if l.get("id") == mask_lid), None)
+    if not mask_layer:
+        mask_layer = next((l for l in man.get("layers", []) if l.get("type") in ("mask", "matte") and l.get("visible", True)), None)
+    if not mask_layer:
+        mask_layer = next((l for l in man.get("layers", []) if l.get("type") in ("mask", "matte")), None)
+    if not mask_layer:
+        raise ProcessError("No mask layer selected for cutout")
+
+    src_dir = _source_frames_dir(vid)
+    f0 = max(0, int(p.get("start", 0) or 0))
+    f1 = min(total - 1, int(p.get("end", total - 1)))
+    stem = _safe(p.get("name") or f"cutout_{mask_layer.get('name', 'mask')}")
+
+    # 1. Output directory for PNG sequence with alpha
+    seq_dir = os.path.join(get_project_dir(pid), "sequences", stem)
+    os.makedirs(seq_dir, exist_ok=True)
+
+    # 2. Add an alpha layer to the current video so it's directly visible and usable in layers
+    cutout_layer = _add_layer(pid, vid, "alpha", f"Cutout ({stem})", extra={"process": "video_cutout", "derived_from": mask_layer["id"]})
+    layer_dir = _layer_dir(pid, vid, cutout_layer["id"])
+    os.makedirs(layer_dir, exist_ok=True)
+
+    png_params = [int(cv2.IMWRITE_PNG_COMPRESSION), 1]
+    n_frames = 0
+    for idx in range(f0, f1 + 1):
+        if _cancelled(job_id):
+            raise ProcessError("Stopped")
+        if idx % 5 == 0:
+            _job_update(job_id, message=f"Cutout: frame {idx + 1}/{f1 + 1}", progress=int(80 * (idx - f0) / max(1, f1 - f0 + 1)))
+
+        # Load plate frame
+        b_path = os.path.join(src_dir, f"frame_{idx:04d}.jpg")
+        if not os.path.exists(b_path):
+            b_path = os.path.join(src_dir, f"frame_{idx:04d}.png")
+        base = cv2.imread(b_path, cv2.IMREAD_COLOR) if os.path.exists(b_path) else np.zeros((h, w, 3), np.uint8)
+        if base.shape[:2] != (h, w):
+            base = cv2.resize(base, (w, h))
+
+        # Load mask alpha
+        a, _rgb_layer = _layer_alpha(pid, vid, mask_layer, idx, h, w)
+        if a is None:
+            a = np.zeros((h, w), np.float32)
+
+        # Build RGBA frame (OpenCV BGR + A)
+        rgba = np.zeros((h, w, 4), np.uint8)
+        rgba[..., :3] = base
+        rgba[..., 3] = np.clip(a * 255.0, 0, 255).astype(np.uint8)
+
+        # Save once with fast PNG compression and copy to layer directory
+        fn = f"frame_{idx:04d}.png"
+        seq_fp = os.path.join(seq_dir, fn)
+        lay_fp = os.path.join(layer_dir, fn)
+        cv2.imwrite(seq_fp, rgba, png_params)
+        shutil.copy2(seq_fp, lay_fp)
+        n_frames += 1
+
+    # Update frame count in manifest
+    man_upd = load_manifest(pid, vid)
+    for lay in man_upd.get("layers", []):
+        if lay.get("id") == cutout_layer["id"]:
+            lay["frames"] = n_frames
+    save_manifest(pid, vid, man_upd)
+
+    # 3. Encode WebM with VP9 alpha for native real-time browser & 3D playback
+    _job_update(job_id, message="Encoding transparent WebM (VP9 with alpha)...", progress=85)
+    webm_stem = f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}"
+    out_webm_folder = os.path.join(get_project_dir(pid), "source_video")
+    os.makedirs(out_webm_folder, exist_ok=True)
+    out_webm_path = os.path.join(out_webm_folder, f"{webm_stem}.webm")
+    webm_url = f"/vfx/project_file/{pid}/source_video/{webm_stem}.webm"
+    seq_pattern = f"/vfx/project_file/{pid}/sequences/{stem}/frame_{{f}}.png"
+
+    exe = None
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        exe = shutil.which("ffmpeg")
+
+    if exe and n_frames > 0:
+        scale_args = ["-vf", "scale=1920:-2"] if w > 1920 else []
+        cmd = [
+            exe, "-y", "-loglevel", "error",
+            "-framerate", str(fps),
+            "-start_number", str(f0),
+            "-i", os.path.join(seq_dir, "frame_%04d.png"),
+            *scale_args,
+            "-c:v", "libvpx-vp9",
+            "-pix_fmt", "yuva420p",
+            "-deadline", "realtime",
+            "-cpu-used", "8",
+            "-row-mt", "1",
+            "-b:v", "6M",
+            "-auto-alt-ref", "0",
+            out_webm_path
+        ]
+        try:
+            subprocess.run(cmd, check=True, timeout=180)
+        except Exception as e:
+            print("WebM encoding fallback error:", e)
+
+    final_url = webm_url if os.path.exists(out_webm_path) else ""
+
+    return {
+        "video": {
+            "url": final_url,
+            "seqPattern": seq_pattern,
+            "frames": n_frames,
+            "fps": fps,
+            "width": w,
+            "height": h,
+            "hasAlpha": True,
+            "layer": cutout_layer["name"],
+            "seqDir": seq_dir
+        }
+    }
+
+
 def _job_render(job_id, kind, pid, vid, p):
     """Flattens the plate + all visible layers (order, opacity, inversion) into a new video."""
     info = _require_plate(vid)
@@ -1575,12 +1955,15 @@ def _job_layer_to_video(job_id, kind, pid, vid, p):
         raise ProcessError("Layer not found")
     as_matte = layer.get("type") in MASK_LIKE
 
+    f0 = max(0, int(p.get("start", 0) or 0))
+    f1 = min(total - 1, int(p.get("end", total - 1)))
+
     def frames():
-        for i in range(total):
+        for i in range(f0, f1 + 1):
             if _cancelled(job_id):
                 raise ProcessError("Stopped")
             if i % 10 == 0:
-                _job_update(job_id, message=f"Export: frame {i + 1}/{total}", progress=int(100 * i / max(1, total)))
+                _job_update(job_id, message=f"Export: frame {i + 1}/{f1 + 1}", progress=int(100 * (i - f0) / max(1, f1 - f0 + 1)))
             a, rgb = _layer_alpha(pid, vid, layer, i, h, w)
             if a is None:
                 yield np.zeros((h, w, 3), np.uint8)
@@ -1639,6 +2022,64 @@ def _job_mask_grow(job_id, kind, pid, vid, p):
     layer["grow"] = {"px": px, "feather": feather}
     save_manifest(pid, vid, man)
     return {"layer": layer, "frames": len(files)}
+
+
+def _job_merge_masks(job_id, kind, pid, vid, p):
+    """Merges multiple selected mask/matte/paint layers into a single unified mask sequence."""
+    _require_plate(vid)
+    man = load_manifest(pid, vid)
+    layer_ids = p.get("layer_ids") or []
+    layers = [l for l in man.get("layers", []) if l["id"] in layer_ids]
+    if len(layers) < 2:
+        layers = [l for l in man.get("layers", []) if l.get("type") in ("mask", "matte", "paint") and l.get("visible") is not False]
+    if len(layers) < 2:
+        raise ProcessError("At least 2 layers are required to merge")
+
+    info = pps.get_info(node_id_for(vid))
+    total = int(info.get("total_frames") or 1)
+    w = int(info.get("width") or 1280)
+    h = int(info.get("height") or 720)
+
+    color = p.get("color") or layers[0].get("color") or "#4ade80"
+    name = p.get("name") or f"Merge ({len(layers)})"
+    new_layer = _add_layer(pid, vid, "mask", name, color, extra={"frames": total})
+    new_id = new_layer["id"]
+    out_dir = _layer_dir(pid, vid, new_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    _job_update(job_id, progress=5, message=f"Merging {len(layers)} layers across {total} frames…")
+
+    color_bgr = _bgr(color)
+    for idx in range(total):
+        if _cancelled(job_id):
+            raise ProcessError("Stopped")
+
+        merged_a = np.zeros((h, w), np.float32)
+        for lyr in layers:
+            a, _ = _layer_alpha(pid, vid, lyr, idx, h, w)
+            if a is not None:
+                merged_a = np.maximum(merged_a, a)
+
+        alpha_u8 = (np.clip(merged_a, 0.0, 1.0) * 255.0).astype(np.uint8)
+        img_bgra = np.zeros((h, w, 4), dtype=np.uint8)
+        img_bgra[..., 0] = color_bgr[0]
+        img_bgra[..., 1] = color_bgr[1]
+        img_bgra[..., 2] = color_bgr[2]
+        img_bgra[..., 3] = alpha_u8
+
+        cv2.imwrite(os.path.join(out_dir, f"frame_{idx:04d}.png"), img_bgra)
+
+        if idx % 10 == 0 or idx == total - 1:
+            _job_update(job_id, progress=int(5 + 90 * (idx + 1) / total), message=f"Merged frame {idx + 1}/{total}")
+
+    if p.get("hide_sources", True):
+        man = load_manifest(pid, vid)
+        for lyr in man.get("layers", []):
+            if lyr["id"] in [l["id"] for l in layers]:
+                lyr["visible"] = False
+        save_manifest(pid, vid, man)
+
+    return {"layer": new_layer, "layer_id": new_id, "frames": total}
 
 
 def _release_inprocess_gpu():
@@ -1712,6 +2153,7 @@ IC_LORA_INFO = [
     ("union-control", "Union control", "Union control", "Управление по depth/pose/canny-видео (LTX-2.3, экспериментально на 2.5)", "rgb", "control"),
     ("motion-track", "Motion track", "Motion track", "Управление движением по треку (LTX-2.3, экспериментально)", "rgb", "control"),
     ("hdr", "HDR (2.3)", "HDR (2.3)", "HDR IC-LoRA от LTX-2.3 (экспериментально)", "rgb", ""),
+    ("dubit", "Липсинк DubIt (аудио + видео)", "DubIt Lip-Sync (audio + video)", "Синхронизация движения губ персонажа под аудиодорожку речи (LTX-2.3)", "rgb", "audio"),
 ]
 
 
@@ -1747,21 +2189,129 @@ def list_ic_loras():
     return out
 
 
+def resolve_ic_lora_file(lora_name: str) -> str:
+    """Resolves an alias (e.g. 'clean-plate', 'layout-to-render') or relative path to the exact filename in ComfyUI."""
+    if not lora_name:
+        return ""
+    lora_str = str(lora_name).strip()
+    try:
+        import folder_paths
+        available = folder_paths.get_filename_list("loras")
+    except Exception:
+        available = []
+
+    # 1. Direct exact match
+    norm = lora_str.replace("/", "\\")
+    norm_fwd = lora_str.replace("\\", "/")
+    for a in available:
+        if a == lora_str or a == norm or a == norm_fwd:
+            return a
+
+    # 2. If it is a known preset in LTX_IC_LORAS
+    if lora_str in LTX_IC_LORAS:
+        known = LTX_IC_LORAS[lora_str][0]
+        for a in available:
+            if a.replace("/", "\\").lower() == known.replace("/", "\\").lower() or os.path.basename(a).lower() == os.path.basename(known).lower():
+                return a
+        return known
+
+    # 3. Match by basename (e.g. "ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors")
+    base = os.path.basename(norm_fwd).lower()
+    for a in available:
+        if os.path.basename(a).lower() == base:
+            return a
+
+    # 4. Keyword match (e.g. "clean-plate", "clean_plate", "layout_to_render", "alpha_gen")
+    clean_key = lora_str.lower().replace("_", "-")
+    matches_25 = [a for a in available if clean_key in a.lower() and "2.5" in a]
+    if matches_25:
+        return matches_25[0]
+    matches = [a for a in available if clean_key in a.lower()]
+    if matches:
+        return matches[0]
+
+    # 5. Check via list_ic_loras()
+    for item in list_ic_loras():
+        if item.get("key") == clean_key or clean_key in str(item.get("file", "")).lower():
+            return item["file"]
+
+    # 6. Hardcoded default fallback paths
+    DEFAULTS = {
+        "clean-plate": r"LTX-2.5\ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors",
+        "clean_plate": r"LTX-2.5\ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors",
+        "layout-to-render": r"LTX-2.5\ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+        "layout_to_render": r"LTX-2.5\ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+        "refine-details": r"LTX-2.5\ltx-2.5-22b-ic-lora-refine-details-1.0.safetensors",
+        "refine_details": r"LTX-2.5\ltx-2.5-22b-ic-lora-refine-details-1.0.safetensors",
+        "alpha": r"LTX-2.5\ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+        "alpha-gen": r"LTX-2.5\ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+        "alpha_gen": r"LTX-2.5\ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+        "restore": r"LTX-2.5\ltx-2.5-22b-ic-lora-restore-1.0.safetensors",
+        "deblur": r"LTX-2.5\ltx-2.5-22b-ic-lora-deblur-0.9.safetensors",
+        "decompression": r"LTX-2.5\ltx-2.5-22b-ic-lora-decompression-0.9.safetensors",
+        "colorization": r"LTX-2.5\ltx-2.5-22b-ic-lora-colorization-0.9.safetensors",
+        "day-to-night": r"LTX-2.5\ltx-2.5-22b-ic-lora-day-to-night-0.9.safetensors",
+        "union-control": r"LTX-2.3\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+    }
+    for k, v in DEFAULTS.items():
+        if k in clean_key:
+            return v
+
+    return lora_str
+
+
 def _ref_image_to_input(url: str, dst_name: str) -> str:
-    """Copies a project image (project URL, /view URL, data URL or absolute path) into ComfyUI/input."""
+    """Copies a project image (project URL, /view URL, data URL or absolute path) into ComfyUI/input.
+    Guarantees the target file is a verified raster image that PIL Image.open can read."""
     import base64
+    import io
+    from PIL import Image
     import folder_paths
     dst = os.path.join(folder_paths.get_input_directory(), dst_name)
+
     if url.startswith("data:"):
-        with open(dst, "wb") as f:
-            f.write(base64.b64decode(url.split(",", 1)[1]))
-    else:
-        src = resolve_media_path(url)
+        if "data:image/svg" in url:
+            # SVG concept card placeholder - cannot be parsed by PIL as a raster image
+            img = Image.new("RGB", (1280, 720), (20, 20, 25))
+            img.save(dst, "PNG")
+            return dst_name
+        try:
+            b64_part = url.split(",", 1)[1] if "," in url else url
+            raw = base64.b64decode(b64_part)
+            img = Image.open(io.BytesIO(raw))
+            img.verify()
+            img = Image.open(io.BytesIO(raw)).convert("RGB")
+            if img.width >= 16 and img.height >= 16:
+                img.save(dst, "PNG")
+                return dst_name
+        except Exception:
+            pass
+        # Fallback for failed/corrupt data URI
+        img = Image.new("RGB", (1280, 720), (20, 20, 25))
+        img.save(dst, "PNG")
+        return dst_name
+
+    src = resolve_media_path(url)
+    if not os.path.exists(src) or os.path.getsize(src) < 100:
+        # Fallback to black canvas if missing on disk
+        img = Image.new("RGB", (1280, 720), (20, 20, 25))
+        img.save(dst, "PNG")
+        return dst_name
+
+    try:
+        pil_img = Image.open(src)
+        pil_img.verify()
+        pil_img = Image.open(src).convert("RGB")
+        pil_img.save(dst, "PNG")
+        return dst_name
+    except Exception:
         img = cv2.imread(src, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ProcessError("Cannot read the reference image")
-        cv2.imwrite(dst, img)
-    return dst_name
+        if img is not None:
+            cv2.imwrite(dst, img)
+            return dst_name
+        img = Image.new("RGB", (1280, 720), (20, 20, 25))
+        img.save(dst, "PNG")
+        return dst_name
 
 
 def _add_second_ic_lora(prompt: dict, lora2: str, clip2: str, strength: float = 1.0, attention: float = 1.0) -> str:
@@ -1851,6 +2401,7 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     keep_out_size = p.get("output") == "upscale"
     if not lora:
         raise ProcessError("No IC-LoRA chosen")
+    lora = resolve_ic_lora_file(lora)
     chunk = int(p.get("chunk", 33))
     chunk = max(9, ((chunk - 1) // 8) * 8 + 1)
     _span = min(total, int(p.get("end", total - 1)) + 1) - max(0, int(p.get("start", 0) or 0))
@@ -1873,6 +2424,8 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     if needs == "ref_sheet" and not ref_name:
         raise ProcessError("This mode needs a reference sheet image (press + and pick one)")
     src_layer = p.get("source_layer")
+    if "clean-plate" in str(lora).lower():
+        src_layer = None  # clean-plate always operates on the footage plate
     for old in os.listdir(os.path.dirname(_layer_dir(pid, vid, "x"))) if os.path.isdir(os.path.dirname(_layer_dir(pid, vid, "x"))) else []:
         if old.startswith(("_tmp_vjob_", "_tmp2_vjob_")):
             shutil.rmtree(os.path.join(os.path.dirname(_layer_dir(pid, vid, "x")), old), ignore_errors=True)
@@ -1893,7 +2446,14 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
         src_dir, frames, src_layer = tmp_src, made, "__sheet__"
     elif src_layer:  # use a layer (layout, mask, paint…) as the input video: RGBA over black, held frames filled in
         if not os.path.isdir(_layer_dir(pid, vid, _safe(src_layer))):
-            raise ProcessError("Source layer not found")
+            st_layers = (get_state(pid, vid) or {}).get("layers", [])
+            matched = next((l for l in st_layers if l.get("id") == src_layer or l.get("name") == src_layer), None)
+            if not matched and any(m in str(src_layer).lower() for m in ("mask", "matte", "player", "person")):
+                matched = next((l for l in reversed(st_layers) if l.get("type") in ("mask", "matte")), None)
+            if matched and os.path.isdir(_layer_dir(pid, vid, _safe(matched["id"]))):
+                src_layer = matched["id"]
+            else:
+                raise ProcessError(f"Source layer '{src_layer}' not found")
         tmp_src = _layer_dir(pid, vid, "_tmp_" + job_id)
         os.makedirs(tmp_src, exist_ok=True)
         made = []
@@ -1915,6 +2475,8 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
         src_dir, frames = tmp_src, made
     # Optional second IC-LoRA with its own control layer (e.g. layout-to-render on a 3D render + pose)
     lora2 = str(p.get("lora2") or "")
+    if lora2:
+        lora2 = resolve_ic_lora_file(lora2)
     src2_dir = None
     if lora2:
         src2 = p.get("source_layer2")

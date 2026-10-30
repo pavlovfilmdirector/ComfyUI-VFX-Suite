@@ -1,6 +1,6 @@
 // Keshiki (景色) 3D VFX Studio — Autonomous Cinema & Generative AI Studio
 // Dual Viewport, 6DoF Cinema Camera Navigation, 3-Point Snapping, Keyframing & Baking
-import { initStudioArchitecture } from "/vfx/studio/studio_tabs_controller.js";
+import { initStudioArchitecture } from "/vfx/studio/studio_tabs_controller.js?v=2.5.9";
 import { projectObject3DBBoxToPlateCrop } from "/vfx/studio/modules/ue5_viewport_utils.js";
 
 export async function initStandaloneLayoutStudio() {
@@ -13,6 +13,33 @@ export async function initStandaloneLayoutStudio() {
             if (p.translateInterface && p.language === "ru") return ruStr || enStr;
         } catch (_) {}
         return enStr;
+    }
+
+    function tipText(enStr, ruStr) {
+        if (typeof window !== "undefined" && typeof window.__vfxTipText === "function") {
+            return window.__vfxTipText(enStr, ruStr);
+        }
+        try {
+            const p = JSON.parse(localStorage.getItem("vfx_studio_prefs") || "{}");
+            if (p.translateTooltips && p.language === "ru") return ruStr || enStr;
+        } catch (_) {}
+        return enStr || ruStr;
+    }
+
+    function tipAttr(titleEn, titleRu, descEn = "", descRu = "", apiOrShortcut = "") {
+        const safe = (s) => String(s || "").replace(/"/g, "&quot;");
+        return `data-tip-t-en="${safe(titleEn)}" data-tip-t-ru="${safe(titleRu || titleEn)}" data-tip-d-en="${safe(descEn)}" data-tip-d-ru="${safe(descRu)}" data-tip-api="${safe(apiOrShortcut)}"`;
+    }
+
+    function setTip(el, titleEn, titleRu, descEn = "", descRu = "") {
+        if (!el) return;
+        el.setAttribute("data-tip-t-en", titleEn || "");
+        el.setAttribute("data-tip-t-ru", titleRu || titleEn || "");
+        if (descEn || descRu) {
+            el.setAttribute("data-tip-d-en", descEn || "");
+            el.setAttribute("data-tip-d-ru", descRu || descEn || "");
+        }
+        el.removeAttribute("title");
     }
 
     const THREE = window.THREE;
@@ -80,13 +107,13 @@ export async function initStandaloneLayoutStudio() {
     let sceneData = [];
 
     // Camera Aspect Ratio state (default 16:9, updated by scene_data)
-    let plateWidth = 1920;
-    let plateHeight = 1080;
+    let plateWidth = 1280;
+    let plateHeight = 720;
     let plateAspect = 16.0 / 9.0;
 
     function setProjectResolution(w, h) {
-        const width = Math.max(128, Math.min(8192, parseInt(w, 10) || 1920));
-        const height = Math.max(128, Math.min(8192, parseInt(h, 10) || 1080));
+        const width = Math.max(128, Math.min(8192, parseInt(w, 10) || 1280));
+        const height = Math.max(128, Math.min(8192, parseInt(h, 10) || 720));
         plateWidth = width;
         plateHeight = height;
         plateAspect = plateWidth / plateHeight;
@@ -103,6 +130,10 @@ export async function initStandaloneLayoutStudio() {
             window.currentProject.width = plateWidth;
             window.currentProject.height = plateHeight;
             window.currentProject.aspect_ratio = (plateAspect).toFixed(2);
+        }
+        if (typeof shotCamera !== "undefined" && shotCamera) {
+            shotCamera.aspect = plateAspect;
+            shotCamera.updateProjectionMatrix();
         }
         return { width: plateWidth, height: plateHeight, aspect: plateAspect };
     }
@@ -129,35 +160,32 @@ export async function initStandaloneLayoutStudio() {
     header.className = "vfx-modal-header";
     header.innerHTML = `
         <div class="vfx-header-group" style="display: flex; align-items: center; gap: 10px;">
-            <div id="vfx-hdr-logo-wrapper" style="display: flex; align-items: center; gap: 8px; padding-right: 12px; border-right: 1px solid rgba(255,255,255,0.08); height: 24px; cursor: pointer;" title="Keshiki Logo — Click to switch style (Bonsai / Branches / Stars)">
+            <div id="vfx-hdr-logo-wrapper" style="display: flex; align-items: center; gap: 8px; padding-right: 12px; border-right: 1px solid rgba(255,255,255,0.08); height: 24px; cursor: pointer;" ${tipAttr("Keshiki Logo — Click to switch style (Bonsai / Branches / Stars)", "Логотип Keshiki — нажмите для смены стиля (Бонсай / Ветви / Звёзды)")}>
                 <img id="hdr-keshiki-logo-icon" src="/vfx/studio/keshiki_mark.png" alt="Keshiki Logo" style="height: 22px; width: auto; object-fit: contain; filter: drop-shadow(0 0 6px rgba(255,255,255,0.25)); transition: transform 0.15s ease;" />
                 <span class="vfx-header-title" style="font-weight: 600; font-size: 11.5px; letter-spacing: 0.02em; color: #fff;">
-                    KESHIKI <span style="font-size: 9px; font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.38); font-weight: 400;">v4.2</span>
+                    KESHIKI
                 </span>
+                <span class="vfx-badge-tech-preview" style="font-size: 9px; padding: 1.5px 6px; border-radius: 3px; background: rgba(56, 189, 248, 0.14); border: 1px solid rgba(56, 189, 248, 0.42); color: #38bdf8; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Tech Preview v0.1</span>
             </div>
             <span style="font-size: 10px; color: rgba(255,255,255,0.45); font-family: 'JetBrains Mono', monospace;" id="hdr-scene-status">Keshiki & ComfyUI</span>
             <span class="vfx-render-badge-pill vfx-badge-draft" id="hdr-render-badge" style="font-size: 9.5px; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.65); border: 1px solid rgba(255,255,255,0.08);">Draft</span>
         </div>
         <div class="vfx-header-group" style="display: flex; align-items: center; gap: 6px;">
-            <button class="vfx-btn" id="btn-switch-comfyui-mode" style="padding: 3px 9px; font-size: 10.5px; cursor: pointer; background: rgba(59, 130, 246, 0.14); border: 1px solid rgba(59, 130, 246, 0.45); color: #93c5fd; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;" title="${uiText('Switch to standard ComfyUI node mode and bind custom workflows', 'Переключиться в обычный нодовый режим ComfyUI и привязать кастомный воркфлоу к процессу')}">
+            <button class="vfx-btn" id="btn-switch-comfyui-mode" style="padding: 3px 9px; font-size: 10.5px; cursor: pointer; background: rgba(59, 130, 246, 0.14); border: 1px solid rgba(59, 130, 246, 0.45); color: #93c5fd; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;" ${tipAttr('Switch to standard ComfyUI node mode and bind custom workflows', 'Переключиться в обычный нодовый режим ComfyUI и привязать кастомный воркфлоу к процессу')}>
                 <i data-lucide="workflow" style="width: 12px; height: 12px;"></i><span>⇄ ComfyUI</span>
             </button>
-            <div style="width: 1px; height: 14px; background: rgba(255,255,255,0.08); margin: 0 2px;"></div>
-            <button class="vfx-btn vfx-btn-stitch-white" id="btn-master-cocktail" style="padding: 3px 10px; font-size: 10.5px; cursor: pointer;">
-                <i data-lucide="sparkles" style="width: 12px; height: 12px; stroke-width: 2;"></i><span>Run Pipeline</span>
-            </button>
-            <div style="width: 1px; height: 14px; background: rgba(255,255,255,0.08); margin: 0 2px;"></div>
-            <div id="vfx-progress-chip" style="display: none; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid #334155; border-radius: 4px; cursor: pointer; font-size: 10px; color: #e4e4e7; position: relative;" title="${uiText('Generation progress — click for preview', 'Прогресс генерации — клик для превью')}">
-                <div style="width: 90px; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;"><div id="vfx-progress-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #a78bfa, #22d3ee); transition: width 0.4s;"></div></div>
-                <span id="vfx-progress-text" style="white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis;"></span>
+            <div id="vfx-progress-chip" style="display: none; align-items: center; gap: 8px; padding: 2px 9px; border: 1px solid rgba(56, 189, 248, 0.45); background: rgba(15, 23, 42, 0.9); border-radius: 5px; cursor: pointer; font-size: 10px; color: #e4e4e7; position: relative; box-shadow: 0 0 12px rgba(56, 189, 248, 0.18);" ${tipAttr('Generation progress — click for details', 'Прогресс генерации — клик для подробностей')}>
+                <div style="width: 100px; height: 5px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;"><div id="vfx-progress-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc); border-radius: 999px; transition: width 0.35s ease;"></div></div>
+                <span id="vfx-progress-text" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; color: #38bdf8; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;"></span>
             </div>
-            <button class="vfx-btn" id="btn-stop-all-jobs" style="padding: 3px 6px; display: inline-flex; align-items: center; gap: 4px; color: #fca5a5;" title="${uiText('Stop the running generation and clear the queue', 'Остановить текущую генерацию и очистить очередь')}">
-                <i data-lucide="square" style="width: 11px; height: 11px; fill: currentColor;"></i>
+            <button class="vfx-btn" id="btn-stop-all-jobs" style="display: none; padding: 3px 8px; font-size: 10px; font-weight: 600; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.45); color: #fca5a5; border-radius: 4px; cursor: pointer;" ${tipAttr('Stop running generation and clear queue', 'Остановить текущую генерацию и очистить очередь')}>
+                <i data-lucide="square" style="width: 10px; height: 10px; fill: currentColor;"></i>
+                <span>${uiText("Stop", "Стоп")}</span>
             </button>
-            <button class="vfx-btn" id="btn-restart-server" style="padding: 3px 6px; display: inline-flex; align-items: center; gap: 4px;" title="${uiText('Restart ComfyUI server (applies code changes). Running jobs will be interrupted.', 'Перезапустить сервер ComfyUI (применить изменения кода). Запущенные задачи прервутся.')}">
+            <button class="vfx-btn" id="btn-restart-server" style="padding: 3px 6px; display: inline-flex; align-items: center; gap: 4px;" ${tipAttr('Restart ComfyUI server (applies code changes). Running jobs will be interrupted.', 'Перезапустить сервер ComfyUI (применить изменения кода). Запущенные задачи прервутся.')}>
                 <i data-lucide="rotate-cw" style="width: 12px; height: 12px;"></i><span id="lbl-restart-server" style="font-size: 10px; display: none;"></span>
             </button>
-            <button class="vfx-btn" id="btn-fullscreen-toggle" style="padding: 3px 6px;" title="Fullscreen">
+            <button class="vfx-btn" id="btn-fullscreen-toggle" style="padding: 3px 6px;" ${tipAttr("Fullscreen", "Во весь экран")}>
                 <i data-lucide="maximize-2" style="width: 12px; height: 12px;"></i>
             </button>
         </div>
@@ -198,17 +226,17 @@ export async function initStandaloneLayoutStudio() {
     leftPaneOverlay.innerHTML = `
         <div class="vfx-viewport-badge-left" id="vfx-viewport-badge-title">🌐 3D PERSPECTIVE (Orbit / FlyCam)</div>
         <div id="vfx-viewport-axis-widget" style="position: absolute; bottom: 60px; right: 16px; width: 78px; height: 78px; z-index: 15; pointer-events: auto; user-select: none;">
-            <canvas id="vfx-axis-compass-canvas" width="78" height="78" style="display: block; cursor: pointer;" title="${uiText('3D Orientation Compass (Click axes to align view)', '3D-компас ориентации (Нажмите на ось для перехода к виду)')}"></canvas>
+            <canvas id="vfx-axis-compass-canvas" width="78" height="78" style="display: block; cursor: pointer;" ${tipAttr('3D Orientation Compass (Click axes to align view)', '3D-компас ориентации (Нажмите на ось для перехода к виду)')}></canvas>
         </div>
         <div class="vfx-3pt-picker-bar" id="vfx-3pt-picker-bar" style="display: none;">
             <div class="vfx-3pt-status" id="vfx-3pt-status">🎯 Click 3 points in Point Cloud (0 / 3)</div>
             <div class="vfx-3pt-actions" id="vfx-3pt-actions" style="display: none; gap: 4px;">
-                <button class="vfx-btn vfx-btn-primary" id="btn-3pt-confirm" title="Create permanent Reference Plane in scene">📐 Create Plane</button>
-                <button class="vfx-btn" id="btn-3pt-flip" title="Flip plane normal (180°)">🔄 Flip Normal</button>
-                <button class="vfx-btn" id="btn-3pt-align-grid" title="Align Scene Ground Grid to this Plane">🎯 Align Grid</button>
-                <button class="vfx-btn" id="btn-3pt-repick" title="Clear points and pick again">↺ Re-pick</button>
+                <button class="vfx-btn vfx-btn-primary" id="btn-3pt-confirm" ${tipAttr("Create permanent Reference Plane in scene", "Создать опорную плоскость в сцене")}>📐 Create Plane</button>
+                <button class="vfx-btn" id="btn-3pt-flip" ${tipAttr("Flip plane normal (180°)", "Развернуть нормаль плоскости (180°)")}>🔄 Flip Normal</button>
+                <button class="vfx-btn" id="btn-3pt-align-grid" ${tipAttr("Align Scene Ground Grid to this Plane", "Выровнять сетку пола по этой плоскости")}>🎯 Align Grid</button>
+                <button class="vfx-btn" id="btn-3pt-repick" ${tipAttr("Clear points and pick again", "Сбросить точки и выбрать заново")}>↺ Re-pick</button>
             </div>
-            <button class="vfx-btn" id="btn-3pt-cancel" style="padding: 2px 8px; font-size: 11px;" title="Exit 3-Point tool (Esc)">✕ Close</button>
+            <button class="vfx-btn" id="btn-3pt-cancel" style="padding: 2px 8px; font-size: 11px;" ${tipAttr("Exit 3-Point tool (Esc)", "Выйти из инструмента 3 точек (Esc)")}>✕ Close</button>
         </div>
         <div class="vfx-viewport-overlay">
             <div class="vfx-overlay-badge" id="hud-status">Mode: Select | Space: World | Left: 3D Perspective</div>
@@ -221,7 +249,7 @@ export async function initStandaloneLayoutStudio() {
     const splitterV = document.createElement("div");
     splitterV.className = "vfx-splitter-v";
     splitterV.id = "splitter-studio-v";
-    splitterV.title = "Drag horizontally to resize 3D viewport";
+    setTip(splitterV, "Drag horizontally to resize 3D viewport", "Потяните по горизонтали для изменения ширины 3D-вьюпорта");
     workspace.appendChild(splitterV);
 
     // Right Column (Controls Top + Camera Monitor Bottom)
@@ -284,7 +312,111 @@ export async function initStandaloneLayoutStudio() {
             <div class="vfx-section-content" id="body-outliner" style="display: flex; flex-direction: column; overflow: hidden; padding: 0; min-height: 48px; flex: none;">
                 <div class="vfx-outliner-list" id="outliner-list" style="flex: 1; overflow-y: auto; max-height: none !important;"></div>
             </div>
-            <div class="vfx-splitter-h" id="splitter-outliner-h" title="Drag to resize Outliner" style="height: 5px; flex: none; cursor: ns-resize; background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(0,0,0,0.4); margin-bottom: 4px;"></div>
+            <div class="vfx-splitter-h" id="splitter-outliner-h" ${tipAttr("Drag to resize Outliner", "Потяните для изменения высоты списка объектов (Outliner)")} style="height: 5px; flex: none; cursor: ns-resize; background: rgba(255,255,255,0.06); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(0,0,0,0.4); margin-bottom: 4px;"></div>
+
+            <!-- Selected Object Transform Inspector (Directly under Scene Outliner) -->
+            <div class="vfx-sidebar-header" id="hdr-inspector" style="cursor: pointer; flex: none;">
+                <span style="display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden;">
+                    <span class="vfx-collapse-arrow">▼</span>
+                    <i data-lucide="move-3d" style="width:11px; height:11px; color:#38bdf8; flex-shrink:0;"></i>
+                    <span>${uiText("Transform", "Трансформация")}</span>
+                    <span id="inspector-target" style="font-size: 9.5px; color: #38bdf8; font-weight: 500; max-width: 95px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">• ${uiText("None", "Нет")}</span>
+                </span>
+                <div style="display:flex; gap:3px; align-items:center; flex-shrink:0;">
+                    <button class="vfx-btn" id="btn-sidebar-snap-floor" ${tipAttr("Snap Bottom to Floor (Z=0)", "Поставить на пол (Z=0)")} style="padding:1px 5px; font-size:9px;">Z=0</button>
+                    <button class="vfx-btn" id="btn-duplicate-obj" ${tipAttr("Duplicate Object (Ctrl+D)", "Дублировать объект (Ctrl+D)")} style="padding:1px 5px; font-size:9px;">Dup</button>
+                    <button class="vfx-btn" id="btn-reset-xform" ${tipAttr("Reset All Transform", "Сбросить все координаты")} style="padding:1px 5px; font-size:9px;">↺</button>
+                </div>
+            </div>
+            <div class="vfx-section-content" id="body-inspector" style="padding: 6px 8px; display: flex; flex-direction: column; gap: 5px; flex: none;">
+                <div class="ue-transform-grouped-card" id="transform-inspector">
+                    <!-- Location -->
+                    <div class="ue5-xf-row">
+                        <div class="ue5-xf-label-pill" ${tipAttr("Location (X, Y, Z)", "Координаты положения (X, Y, Z)")}>
+                            <span>${uiText("Location", "Позиция")}</span>
+                        </div>
+                        <div class="ue5-xf-inputs">
+                            <div class="ue-striped-input-wrap ue5-input x" ${tipAttr('Location X (drag to scrub)', 'Позиция X (перетащите для изменения)')}>
+                                <span class="ue5-input-bar x"></span>
+                                <input type="number" step="0.05" class="ue-vec-inp" id="num-pos-x" value="0.00" />
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input y" ${tipAttr('Location Y (drag to scrub)', 'Позиция Y (перетащите для изменения)')}>
+                                <span class="ue5-input-bar y"></span>
+                                <input type="number" step="0.05" class="ue-vec-inp" id="num-pos-y" value="0.00" />
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input z" ${tipAttr('Location Z (drag to scrub)', 'Позиция Z (перетащите для изменения)')}>
+                                <span class="ue5-input-bar z"></span>
+                                <input type="number" step="0.05" class="ue-vec-inp" id="num-pos-z" value="0.00" />
+                            </div>
+                        </div>
+                        <button class="vfx-btn ue5-reset-btn" id="btn-sidebar-reset-pos" ${tipAttr("Reset Location to 0", "Сбросить позицию в 0")}>↺</button>
+                    </div>
+
+                    <!-- Rotation -->
+                    <div class="ue5-xf-row">
+                        <div class="ue5-xf-label-pill" ${tipAttr("Rotation (Roll, Pitch, Yaw)", "Углы поворота (°)")}>
+                            <span>${uiText("Rotation", "Вращение")}</span>
+                        </div>
+                        <div class="ue5-xf-inputs">
+                            <div class="ue-striped-input-wrap ue5-input x" ${tipAttr('Rotation X (drag to scrub)', 'Вращение X (перетащите для изменения)')}>
+                                <span class="ue5-input-bar x"></span>
+                                <input type="number" step="1.0" class="ue-vec-inp" id="num-rot-x" value="0.0" />
+                                <span class="ue-unit-suffix">°</span>
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input y" ${tipAttr('Rotation Y (drag to scrub)', 'Вращение Y (перетащите для изменения)')}>
+                                <span class="ue5-input-bar y"></span>
+                                <input type="number" step="1.0" class="ue-vec-inp" id="num-rot-y" value="0.0" />
+                                <span class="ue-unit-suffix">°</span>
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input z" ${tipAttr('Rotation Z (drag to scrub)', 'Вращение Z (перетащите для изменения)')}>
+                                <span class="ue5-input-bar z"></span>
+                                <input type="number" step="1.0" class="ue-vec-inp" id="num-rot-z" value="0.0" />
+                                <span class="ue-unit-suffix">°</span>
+                            </div>
+                        </div>
+                        <button class="vfx-btn ue5-reset-btn" id="btn-sidebar-reset-rot" ${tipAttr("Reset Rotation to 0°", "Сбросить поворот в 0°")}>↺</button>
+                    </div>
+
+                    <!-- Scale -->
+                    <div class="ue5-xf-row">
+                        <div class="ue5-xf-scale-col">
+                            <div class="ue5-xf-label-pill ue5-scale-pill" ${tipAttr("Scale (X, Y, Z)", "Масштаб объекта (X, Y, Z)")}>
+                                <span>${uiText("Scale", "Масштаб")}</span>
+                            </div>
+                            <button class="vfx-btn ue-btn-lock-scale active" id="btn-sidebar-lock-scale" ${tipAttr("Lock Proportional Scaling", "Связать пропорции масштаба")}>
+                                <i data-lucide="lock" style="width:10px; height:10px;"></i>
+                            </button>
+                        </div>
+                        <div class="ue5-xf-inputs">
+                            <div class="ue-striped-input-wrap ue5-input x" ${tipAttr('Scale X (drag to scrub)', 'Масштаб X (перетащите для изменения)')}>
+                                <span class="ue5-input-bar x"></span>
+                                <input type="number" step="0.05" min="0.01" class="ue-vec-inp" id="num-scale-x" value="1.00" />
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input y" ${tipAttr('Scale Y (drag to scrub)', 'Масштаб Y (перетащите для изменения)')}>
+                                <span class="ue5-input-bar y"></span>
+                                <input type="number" step="0.05" min="0.01" class="ue-vec-inp" id="num-scale-y" value="1.00" />
+                            </div>
+                            <div class="ue-striped-input-wrap ue5-input z" ${tipAttr('Scale Z (drag to scrub)', 'Масштаб Z (перетащите для изменения)')}>
+                                <span class="ue5-input-bar z"></span>
+                                <input type="number" step="0.05" min="0.01" class="ue-vec-inp" id="num-scale-z" value="1.00" />
+                            </div>
+                        </div>
+                        <button class="vfx-btn ue5-reset-btn" id="btn-sidebar-reset-scale" ${tipAttr("Reset Scale to 1.0", "Сбросить масштаб в 1.0")}>↺</button>
+                    </div>
+                </div>
+
+                <!-- Quick Pivot & Copy/Paste Row -->
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 1px;">
+                    <span style="font-size: 9.5px; color: rgba(255,255,255,0.5);">${uiText("Pivot:", "Пивот:")}</span>
+                    <div style="display: flex; gap: 3px; flex: 1;">
+                        <button class="vfx-btn btn-sidebar-pivot" data-pivot="bottom" style="flex:1; padding:2px 4px; font-size:9px;" ${tipAttr("Snap Pivot to Bottom", "Пивот в основание (Bottom)")}>${uiText("Bottom", "Низ")}</button>
+                        <button class="vfx-btn btn-sidebar-pivot" data-pivot="center" style="flex:1; padding:2px 4px; font-size:9px;" ${tipAttr("Snap Pivot to Center", "Пивот в центр (Center)")}>${uiText("Center", "Центр")}</button>
+                        <button class="vfx-btn btn-sidebar-pivot" data-pivot="top" style="flex:1; padding:2px 4px; font-size:9px;" ${tipAttr("Snap Pivot to Top", "Пивот в верхнюю грань (Top)")}>${uiText("Top", "Верх")}</button>
+                    </div>
+                    <button class="vfx-btn" id="btn-copy-xform" style="padding: 2px 5px; font-size: 9px;" ${tipAttr("Copy Transforms (Ctrl+C)", "Копировать трансформацию (Ctrl+C)")}>Copy</button>
+                    <button class="vfx-btn" id="btn-paste-xform" style="padding: 2px 5px; font-size: 9px;" ${tipAttr("Paste Transforms (Ctrl+V)", "Вставить трансформацию (Ctrl+V)")}>Paste</button>
+                </div>
+            </div>
 
             <!-- Viewport Camera Views (Top, Bottom, Front, Back, Left, Right, Ortho/Persp) -->
             <div class="vfx-sidebar-header" id="hdr-views" style="cursor: pointer; flex: none;">
@@ -293,31 +425,31 @@ export async function initStandaloneLayoutStudio() {
             </div>
             <div class="vfx-section-content" id="body-views" style="padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; flex: none;">
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">
-                    <button class="vfx-btn" id="btn-view-top" title="${uiText('Top View (Num 7)', 'Вид сверху (Сверху, Num 7)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-top" ${tipAttr('Top View (Num 7)', 'Вид сверху (Сверху, Num 7)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Top", "Верх")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-front" title="${uiText('Front View (Num 1)', 'Вид спереди (Спереди, Num 1)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-front" ${tipAttr('Front View (Num 1)', 'Вид спереди (Спереди, Num 1)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Front", "Перед")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-right" title="${uiText('Right View (Num 3)', 'Вид справа (Справа, Num 3)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-right" ${tipAttr('Right View (Num 3)', 'Вид справа (Справа, Num 3)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Right", "Право")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-bottom" title="${uiText('Bottom View (Ctrl+Num 7)', 'Вид снизу (Снизу, Ctrl+Num 7)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-bottom" ${tipAttr('Bottom View (Ctrl+Num 7)', 'Вид снизу (Снизу, Ctrl+Num 7)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Bottom", "Низ")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-back" title="${uiText('Back View / Reverse (Ctrl+Num 1)', 'Вид сзади / Обратка (Ctrl+Num 1)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-back" ${tipAttr('Back View / Reverse (Ctrl+Num 1)', 'Вид сзади / Обратка (Ctrl+Num 1)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Back", "Зад")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-left" title="${uiText('Left View (Ctrl+Num 3)', 'Вид слева (Слева, Ctrl+Num 3)')}" style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
+                    <button class="vfx-btn" id="btn-view-left" ${tipAttr('Left View (Ctrl+Num 3)', 'Вид слева (Слева, Ctrl+Num 3)')} style="padding: 3px 2px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 2px;">
                         <span>${uiText("Left", "Лево")}</span>
                     </button>
                 </div>
                 <div style="display: flex; gap: 4px; margin-top: 2px;">
-                    <button class="vfx-btn" id="btn-toggle-ortho" title="${uiText('Toggle Perspective / Orthographic View (Num 5)', 'Переключить Перспектива / Ортографический вид (Num 5)')}" style="flex: 1; padding: 3px 6px; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">
+                    <button class="vfx-btn" id="btn-toggle-ortho" ${tipAttr('Toggle Perspective / Orthographic View (Num 5)', 'Переключить Перспектива / Ортографический вид (Num 5)')} style="flex: 1; padding: 3px 6px; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">
                         <i data-lucide="box" style="width: 11px; height: 11px;"></i>
                         <span id="lbl-toggle-ortho-text">${uiText("Persp", "Перспектива")}</span>
                     </button>
-                    <button class="vfx-btn" id="btn-view-focus" title="${uiText('Frame / Focus Selected Object (F)', 'Фокус на выделенном объекте (F)')}" style="padding: 3px 7px; font-size: 10px; display: flex; align-items: center; gap: 3px;">
+                    <button class="vfx-btn" id="btn-view-focus" ${tipAttr('Frame / Focus Selected Object (F)', 'Фокус на выделенном объекте (F)')} style="padding: 3px 7px; font-size: 10px; display: flex; align-items: center; gap: 3px;">
                         <i data-lucide="focus" style="width: 11px; height: 11px;"></i>
                         <span>F</span>
                     </button>
@@ -332,7 +464,7 @@ export async function initStandaloneLayoutStudio() {
                     <span>${uiText("3D Cursor", "3D-Курсор")}</span>
                 </span>
                 <button class="vfx-btn ue-btn-cursor-origin" id="sidebar-btn-cursor-origin-quick"
-                    title="${uiText('Reset 3D Cursor to Origin (Shift+C)', 'Сбросить 3D-курсор в центр мира (0, 0, 0) (Shift+C)')}"
+                    ${tipAttr('Reset 3D Cursor to Origin (Shift+C)', 'Сбросить 3D-курсор в центр мира (0, 0, 0) (Shift+C)')}
                     style="padding:1px 5px; font-size:9px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.8); border-radius:3px; cursor:pointer;">
                     (0,0,0)
                 </button>
@@ -344,37 +476,55 @@ export async function initStandaloneLayoutStudio() {
                         <span style="font-size:9.5px; color:rgba(255,255,255,0.5);">${uiText("Cursor Coordinates (Shift+RMB):", "Координаты курсора (Shift+ПКМ):")}</span>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:4px;">
-                        <div class="ue-striped-input-wrap ue5-input x" title="${uiText('Cursor X (drag to scrub)', 'Позиция 3D-курсора X (перетащите для изменения)')}">
+                        <div class="ue-striped-input-wrap ue5-input x" ${tipAttr('Cursor X (drag to scrub)', 'Позиция 3D-курсора X (перетащите для изменения)')}>
                             <span class="ue5-input-bar x"></span>
                             <input type="number" step="0.1" class="ue-vec-inp ue-cursor-inp-x" data-vec="cursor" data-axis="x" id="sidebar-cursor-x" value="0.00" />
                         </div>
-                        <div class="ue-striped-input-wrap ue5-input y" title="${uiText('Cursor Y (drag to scrub)', 'Позиция 3D-курсора Y (перетащите для изменения)')}">
+                        <div class="ue-striped-input-wrap ue5-input y" ${tipAttr('Cursor Y (drag to scrub)', 'Позиция 3D-курсора Y (перетащите для изменения)')}>
                             <span class="ue5-input-bar y"></span>
                             <input type="number" step="0.1" class="ue-vec-inp ue-cursor-inp-y" data-vec="cursor" data-axis="y" id="sidebar-cursor-y" value="0.00" />
                         </div>
-                        <div class="ue-striped-input-wrap ue5-input z" title="${uiText('Cursor Z (drag to scrub)', 'Позиция 3D-курсора Z (перетащите для изменения)')}">
+                        <div class="ue-striped-input-wrap ue5-input z" ${tipAttr('Cursor Z (drag to scrub)', 'Позиция 3D-курсора Z (перетащите для изменения)')}>
                             <span class="ue5-input-bar z"></span>
                             <input type="number" step="0.1" class="ue-vec-inp ue-cursor-inp-z" data-vec="cursor" data-axis="z" id="sidebar-cursor-z" value="0.00" />
                         </div>
                     </div>
                 </div>
 
+                <!-- Cursor Scale & Thickness -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:2px;">
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:9.5px; color:rgba(255,255,255,0.5);">${uiText("Scale:", "Масштаб:")}</span>
+                            <input type="number" step="0.05" min="0.05" max="5.0" class="ue-vec-inp ue-cursor-inp-scale" data-vec="cursor" data-axis="scale" id="sidebar-cursor-scale" value="1.00" style="width:46px; text-align:right; font-size:9.5px; padding:1px 4px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.12); border-radius:3px; color:#e4e4e7;" ${tipAttr('3D Cursor Scale', 'Масштаб 3D-курсора')} />
+                        </div>
+                        <input type="range" min="0.1" max="3.0" step="0.05" class="ue-cursor-slider-scale" id="sidebar-cursor-scale-slider" value="1.00" style="width:100%; accent-color:#f43f5e; height:4px; cursor:pointer;" ${tipAttr('3D Cursor Scale', 'Масштаб 3D-курсора')} />
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:9.5px; color:rgba(255,255,255,0.5);">${uiText("Thickness:", "Толщина:")}</span>
+                            <input type="number" step="0.1" min="0.1" max="5.0" class="ue-vec-inp ue-cursor-inp-thickness" data-vec="cursor" data-axis="thickness" id="sidebar-cursor-thickness" value="1.00" style="width:46px; text-align:right; font-size:9.5px; padding:1px 4px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.12); border-radius:3px; color:#e4e4e7;" ${tipAttr('3D Cursor Line Thickness', 'Толщина линий 3D-курсора')} />
+                        </div>
+                        <input type="range" min="0.2" max="4.0" step="0.05" class="ue-cursor-slider-thickness" id="sidebar-cursor-thickness-slider" value="1.00" style="width:100%; accent-color:#38bdf8; height:4px; cursor:pointer;" ${tipAttr('3D Cursor Line Thickness', 'Толщина линий 3D-курсора')} />
+                    </div>
+                </div>
+
                 <!-- Cursor Actions: Cursor -> Sel, Sel -> Cursor, (0,0,0) -->
                 <div style="display:grid; grid-template-columns: 1fr 1fr 50px; gap:4px; margin-top:2px;">
                     <button class="vfx-btn ue-btn-cursor-to-sel" id="sidebar-btn-cursor-to-sel"
-                        title="${uiText('Snap 3D Cursor to Selected Object (Shift+S)', 'Переместить 3D-курсор к выбранному объекту (Shift+S)')}"
+                        ${tipAttr('Snap 3D Cursor to Selected Object (Shift+S)', 'Переместить 3D-курсор к выбранному объекту (Shift+S)')}
                         style="padding:4px 6px; font-size:10px; display:flex; align-items:center; justify-content:center; gap:4px; background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.35); color:#f43f5e; border-radius:3px; cursor:pointer;">
                         <i data-lucide="target" style="width:11px; height:11px;"></i>
                         <span>${uiText("Cursor → Sel", "Курсор к объекту")}</span>
                     </button>
                     <button class="vfx-btn ue-btn-sel-to-cursor" id="sidebar-btn-sel-to-cursor"
-                        title="${uiText('Snap Selected Object to 3D Cursor', 'Переместить выбранный объект к 3D-курсору')}"
+                        ${tipAttr('Snap Selected Object to 3D Cursor', 'Переместить выбранный объект к 3D-курсору')}
                         style="padding:4px 6px; font-size:10px; display:flex; align-items:center; justify-content:center; gap:4px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#38bdf8; border-radius:3px; cursor:pointer;">
                         <i data-lucide="move" style="width:11px; height:11px;"></i>
                         <span>${uiText("Sel → Cursor", "Объект к курсору")}</span>
                     </button>
                     <button class="vfx-btn ue-btn-cursor-origin" id="sidebar-btn-cursor-origin"
-                        title="${uiText('Reset 3D Cursor to Origin (Shift+C)', 'Сбросить 3D-курсор в центр мира (0, 0, 0) (Shift+C)')}"
+                        ${tipAttr('Reset 3D Cursor to Origin (Shift+C)', 'Сбросить 3D-курсор в центр мира (0, 0, 0) (Shift+C)')}
                         style="padding:4px 6px; font-size:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.85); border-radius:3px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
                         (0,0,0)
                     </button>
@@ -385,32 +535,123 @@ export async function initStandaloneLayoutStudio() {
             <div class="vfx-sidebar-header" id="hdr-tools">
                 <span><span class="vfx-collapse-arrow">▼</span>${uiText("🛠️ Tools & Primitives", "🛠️ Инструменты и Примитивы")}</span>
             </div>
-            <div class="vfx-section-content" id="body-tools" style="padding: 6px 10px;">
-                <div style="display: flex; align-items: center; gap: 4px; padding: 4px; background: rgba(255,255,255,0.02); border-radius: 4px; border: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap;">
-                    <button class="vfx-btn" id="btn-add-cube" title="${uiText('Add Box', 'Добавить куб')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-sphere" title="${uiText('Add Sphere', 'Добавить сферу')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="circle" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-cylinder" title="${uiText('Add Cylinder', 'Добавить цилиндр')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="cylinder" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-cone" title="${uiText('Add Cone', 'Добавить конус')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="cone" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-torus" title="${uiText('Add Torus', 'Добавить тор')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="disc" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-plane" title="${uiText('Add Floor Plane', 'Добавить плоскость')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="square" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-camera" title="${uiText('Add Free 3D Camera', 'Добавить 3D-камеру')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#00f0ff;"><i data-lucide="camera" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-import-mesh" title="${uiText('Import 3D Model (GLB/GLTF/OBJ)', 'Импорт 3D-модели (GLB/GLTF/OBJ)')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="folder-up" style="width:13px; height:13px;"></i></button>
-                    <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
-                    <button class="vfx-btn" id="btn-import-anim" title="${uiText('Character animation (FBX/GLB: Mixamo, UE) for the selected character — retargeted automatically', 'Анимация персонажа (FBX/GLB: Mixamo, UE) для выбранного персонажа — ретаргет автоматически')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="person-standing" style="width:13px; height:13px;"></i></button>
-                    <input type="file" id="file-anim-input" accept=".fbx,.glb,.gltf" style="display:none;" />
-                    <select id="sel-anim-clip" class="vfx-interp-select" title="${uiText('Animation clip from the file', 'Клип анимации из файла')}" style="display:none; max-width:140px; height:24px; font-size:10px; padding:0 4px;"></select>
-                    <button class="vfx-btn" id="btn-pose-from-3d" title="${uiText('Characters -> 2D pose layer (OpenPose) on the tracked video, through the shot camera', 'Персонажи -> 2D-слой позы (OpenPose) на трекнутом видео, через камеру шота')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-render-from-3d" title="${uiText('Characters rendered through the shot camera -> RGB layer on the tracked video (input for layout-to-render)', 'Рендер персонажей через камеру шота -> RGB-слой на трекнутом видео (вход для layout-to-render)')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-render-env-from-3d" title="${uiText('Environment only (primitives, own colours, no characters) through the shot camera -> RGB layer (input for layout-to-render + pose)', 'Только окружение (примитивы в своих цветах, без персонажей) через камеру шота -> RGB-слой (вход для layout-to-render + поза)')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#4ade80;"><i data-lucide="trees" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-add-skeleton" title="${uiText('Add a skeleton without a mesh (UE mannequin bones) — animations from Mixamo / UE are retargeted onto it', 'Добавить скелет без меша (кости манекена UE) — на него ретаргетятся анимации Mixamo / UE')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="user-plus" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-toggle-bones" title="${uiText('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
-                    <div style="width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 2px;"></div>
-                    <button class="vfx-btn" id="btn-add-markers" title="${uiText('Add 3D Calibration Markers Grid (51x51x10 spheres)', 'Добавить сетку 3D-маркеров (51x51x10 сфер)')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="grid" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-tool-3pt-plane" title="${uiText('Pick 3 points in Point Cloud to create aligned Reference Plane', 'Выбрать 3 точки в облаке для построения плоскости')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="crosshair" style="width:13px; height:13px;"></i></button>
-                    <button class="vfx-btn" id="btn-tool-3d-cursor" title="${uiText('3D Cursor (Blender Shift+RMB) • Click to activate cursor tool or Shift+RMB to place cursor anywhere in 3D', '3D-курсор (Blender Shift+ПКМ) • Кликните для активации инструмента или Shift+ПКМ для размещения')}" style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f43f5e;"><i data-lucide="target" style="width:13px; height:13px;"></i></button>
+            <div class="vfx-section-content" id="body-tools" style="padding: 6px 10px; display: flex; flex-direction: column; gap: 6px;">
+                <!-- Camera & Scene Quick Actions (moved from top 3D bar) -->
+                <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                    <button class="vfx-btn" id="btn-sidebar-3d-orbit-cam" ${tipAttr('Toggle Orbit / Shot Camera (C)', 'Переключить свободную Орбиту / Камеру шота (C)')} style="height: 24px; padding: 0 7px; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.12); color: #ffffff; border-radius: 4px;">
+                        <i data-lucide="video" style="width:11px; height:11px;"></i><span>${uiText("Orbit ⇄ Cam", "Орбита ⇄ Камера")}</span>
+                    </button>
+                    <div style="position: relative; display: inline-flex; align-items: center;">
+                        <button class="vfx-btn" id="btn-sidebar-3d-add-cam" ${tipAttr('Add Default Animated 3D Camera', 'Добавить дефолтную анимированную 3D-камеру')} style="height: 24px; padding: 0 7px; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 4px;">
+                            <i data-lucide="camera" style="width:11px; height:11px;"></i><span>${uiText("+ Default Cam ▾", "+ Дефолт Камера ▾")}</span>
+                        </button>
+                        <div id="menu-sidebar-3d-cam-presets" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #141418; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px; z-index: 1000; box-shadow: 0 8px 24px rgba(0,0,0,0.85); min-width: 175px; flex-direction: column; gap: 2px;">
+                            <button class="vfx-btn btn-sidebar-cam-preset" data-preset="dolly_in" style="width:100%; text-align:left; padding:5px 8px; font-size:10px; border:none; background:transparent; display:flex; align-items:center; gap:6px;">🎬 <span>${uiText("Dolly In (Push)", "Наезд камеры")}</span></button>
+                            <button class="vfx-btn btn-sidebar-cam-preset" data-preset="truck_right" style="width:100%; text-align:left; padding:5px 8px; font-size:10px; border:none; background:transparent; display:flex; align-items:center; gap:6px;">↔️ <span>${uiText("Truck Left ➔ Right", "Проезд вправо")}</span></button>
+                            <button class="vfx-btn btn-sidebar-cam-preset" data-preset="orbit_arc" style="width:100%; text-align:left; padding:5px 8px; font-size:10px; border:none; background:transparent; display:flex; align-items:center; gap:6px;">🔄 <span>${uiText("Orbit Arc (72°)", "Облет дугой (72°)")}</span></button>
+                            <button class="vfx-btn btn-sidebar-cam-preset" data-preset="orbit_half" style="width:100%; text-align:left; padding:5px 8px; font-size:10px; border:none; background:transparent; display:flex; align-items:center; gap:6px;">🌓 <span>${uiText("Half Orbit (180°)", "Полуоблет (180°)")}</span></button>
+                            <button class="vfx-btn btn-sidebar-cam-preset" data-preset="from_view" style="width:100%; text-align:left; padding:5px 8px; font-size:10px; border:none; background:transparent; display:flex; align-items:center; gap:6px;">👁️ <span>${uiText("From Current View", "С текущего ракурса")}</span></button>
+                        </div>
+                    </div>
+                    <button class="vfx-btn" id="btn-sidebar-3d-keyframe-cam" ${tipAttr('Record current camera transform as a keyframe at current frame', 'Зафиксировать текущее положение камеры в текущем кадре таймлинии')} style="height: 24px; padding: 0 7px; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.15); color: #ffffff; border-radius: 4px;">
+                        <i data-lucide="key" style="width:11px; height:11px; color:#f59e0b;"></i><span>${uiText("Keyframe Cam", "Ключ Камеры")}</span>
+                    </button>
+                    <button class="vfx-btn" id="btn-sidebar-3d-save-scene" ${tipAttr('Save 3D Scene / Level Snapshot', 'Сохранить 3D-сцену / слепок уровня')} style="height: 24px; padding: 0 7px; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; background: rgba(245, 158, 11, 0.08); border: 1px dashed rgba(245, 158, 11, 0.45); color: #fde68a; border-radius: 4px;">
+                        <i data-lucide="bookmark" style="width:11px; height:11px; color:#fbbf24;"></i><span>${uiText("+ Save 3D", "+ Сохр. 3D")}</span>
+                    </button>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px; padding: 4px; background: rgba(255,255,255,0.02); border-radius: 4px; border: 1px solid rgba(255,255,255,0.06); box-sizing: border-box;">
+                    <!-- Layer 1: Primitives -->
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <button class="vfx-btn" id="btn-add-cube" ${tipAttr('Add Box', 'Добавить куб')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-sphere" ${tipAttr('Add Sphere', 'Добавить сферу')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="circle" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-cylinder" ${tipAttr('Add Cylinder', 'Добавить цилиндр')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="cylinder" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-cone" ${tipAttr('Add Cone', 'Добавить конус')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="cone" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-torus" ${tipAttr('Add Torus', 'Добавить тор')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="disc" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-plane" ${tipAttr('Add Floor Plane', 'Добавить плоскость')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center;"><i data-lucide="square" style="width:13px; height:13px;"></i></button>
+                    </div>
+
+                    <!-- Layer 2: Camera, Sun, Point Light, 3-Point Plane, 3D Cursor -->
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <button class="vfx-btn" id="btn-add-camera" ${tipAttr('Add Free 3D Camera', 'Добавить 3D-камеру')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#00f0ff;"><i data-lucide="camera" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-sun-light" ${tipAttr('Add Sun Light (Intensity, Color, Hard/Soft Angle)', 'Добавить Солнце (Сила, Цвет, Угол: жёсткий/мягкий свет)')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#fbbf24;"><i data-lucide="sun" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-add-point-light" ${tipAttr('Add Light Source (Point ⇄ Area)', 'Добавить источник света (Точечный Point ⇄ Площадной Area)')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#fde047;"><i data-lucide="lightbulb" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-tool-3pt-plane" ${tipAttr('Pick 3 points in Point Cloud to create aligned Reference Plane', 'Выбрать 3 точки в облаке для построения плоскости')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#38bdf8;"><i data-lucide="crosshair" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-tool-3d-cursor" ${tipAttr('3D Cursor (Toggle ON/OFF) • Shift+RMB to place in 3D', '3D-курсор (Вкл/Выкл) • Shift+ПКМ для размещения в 3D')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f43f5e;"><i data-lucide="target" style="width:13px; height:13px;"></i></button>
+                    </div>
+
+                    <!-- Layer 3: Character & Animation Pipeline in sequential order -->
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <button class="vfx-btn" id="btn-add-skeleton" ${tipAttr('Add a skeleton without a mesh (UE mannequin bones) — animations from Mixamo / UE are retargeted onto it', 'Добавить скелет без меша (кости манекена UE) — на него ретаргетятся анимации Mixamo / UE')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="user-plus" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-import-anim" ${tipAttr('Character animation (FBX/GLB: Mixamo, UE) for the selected character — retargeted automatically', 'Анимация персонажа (FBX/GLB: Mixamo, UE) для выбранного персонажа — ретаргет автоматически')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="person-standing" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-toggle-bones" ${tipAttr('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Characters -> 2D pose layer (OpenPose) on the tracked video, through the shot camera', 'Персонажи на 2D-слой позы (OpenPose) на трекнутом видео через камеру шота')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Characters rendered through the shot camera -> RGB layer on the tracked video', 'Рендер персонажей через камеру шота -> RGB-слой на видео')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+
+                        <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
+                        <input type="file" id="file-anim-input" accept=".fbx,.glb,.gltf" style="display:none;" />
+                        <select id="sel-anim-clip" class="vfx-interp-select" ${tipAttr('Animation clip from the file', 'Клип анимации из файла')} style="display:none; max-width:140px; height:24px; font-size:10px; padding:0 4px;"></select>
+                        <button class="vfx-btn" id="btn-toggle-hips-motion" ${tipAttr('Toggle Hips Translation / Root Motion', 'Вкл/выкл перемещение таза (Root Motion)')} style="display:none; height:24px; font-size:10px; padding:0 6px; color:#f59e0b;">Hips: ON</button>
+                        <button class="vfx-btn" id="btn-bake-root-motion" ${tipAttr('Bake Hips translation into Object Pivot keyframes', 'Запечь смещение таза в пивот объекта')} style="display:none; height:24px; font-size:10px; padding:0 6px; color:#38bdf8;">📌 Root to Pivot</button>
+                    </div>
+                </div>
+                <!-- Quick Object Color Bar (Always visible under Primitives in 3D Tools) -->
+                <div id="tools-obj-color-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 5px; padding: 4px 6px; background: rgba(255,255,255,0.025); border-radius: 4px; border: 1px solid rgba(255,255,255,0.07); flex-wrap: wrap;">
+                    <span style="font-size: 10px; color: rgba(255,255,255,0.65); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                        🎨 <span>${uiText("Object Color:", "Цвет объекта:")}</span>
+                    </span>
+                    <div style="display: flex; align-items: center; gap: 3px; flex-wrap: wrap;">
+                        <input type="color" id="sidebar-color-picker" value="#cccccc" style="width: 22px; height: 20px; border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; background: none; cursor: pointer; padding: 0;" ${tipAttr('Choose Selected Object Color', 'Выбрать цвет выделенного 3D-объекта')} />
+                        <button class="vfx-btn" id="sidebar-swatch-clay" ${tipAttr("Clay (#cccccc)", "Глина (#cccccc)")} style="padding: 1px 5px; height: 18px; font-size: 9.5px; background: #cccccc; color: #111; font-weight: 600; border: none; border-radius: 3px;">Clay</button>
+                        <button class="vfx-btn sidebar-quick-color-swatch" data-col="#ffffff" ${tipAttr("White (#ffffff)", "Белый (#ffffff)")} style="width: 16px; height: 18px; padding: 0; background: #ffffff; border: 1px solid rgba(0,0,0,0.3); border-radius: 3px;"></button>
+                        <button class="vfx-btn" id="sidebar-swatch-red" ${tipAttr("Red (#e53935)", "Красный (#e53935)")} style="width: 16px; height: 18px; padding: 0; background: #e53935; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn sidebar-quick-color-swatch" data-col="#fb8c00" ${tipAttr("Orange (#fb8c00)", "Оранжевый (#fb8c00)")} style="width: 16px; height: 18px; padding: 0; background: #fb8c00; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn" id="sidebar-swatch-gold" ${tipAttr("Gold (#fdd835)", "Золотой (#fdd835)")} style="width: 16px; height: 18px; padding: 0; background: #fdd835; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn" id="sidebar-swatch-green" ${tipAttr("Green (#43a047)", "Зелёный (#43a047)")} style="width: 16px; height: 18px; padding: 0; background: #43a047; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn sidebar-quick-color-swatch" data-col="#00acc1" ${tipAttr("Cyan (#00acc1)", "Бирюзовый (#00acc1)")} style="width: 16px; height: 18px; padding: 0; background: #00acc1; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn" id="sidebar-swatch-blue" ${tipAttr("Blue (#1e88e5)", "Синий (#1e88e5)")} style="width: 16px; height: 18px; padding: 0; background: #1e88e5; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn sidebar-quick-color-swatch" data-col="#8e24aa" ${tipAttr("Purple (#8e24aa)", "Фиолетовый (#8e24aa)")} style="width: 16px; height: 18px; padding: 0; background: #8e24aa; border: none; border-radius: 3px;"></button>
+                        <button class="vfx-btn sidebar-quick-color-swatch" data-col="#374151" ${tipAttr("Dark Slate (#374151)", "Тёмно-серый (#374151)")} style="width: 16px; height: 18px; padding: 0; background: #374151; border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;"></button>
+                    </div>
+                </div>
+                <!-- Dedicated Light Source Controls (shown in #body-tools when Sun / Point / Area light is selected) -->
+                <div id="sidebar-light-inspector" style="display: none; flex-direction: column; gap: 5px; margin-top: 6px; padding: 6px 8px; background: rgba(251, 191, 36, 0.05); border: 1px solid rgba(251, 191, 36, 0.28); border-radius: 4px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: #fbbf24; font-weight: 600;">
+                        <span>☀️ ${uiText("Light Source", "Источник света")}</span>
+                        <div style="display: flex; gap: 3px;">
+                            <button class="vfx-btn sidebar-light-mode-btn" data-lmode="sun" style="padding: 1px 6px; font-size: 9.5px;">☀️ Sun</button>
+                            <button class="vfx-btn sidebar-light-mode-btn" data-lmode="point" style="padding: 1px 6px; font-size: 9.5px;">💡 Point</button>
+                            <button class="vfx-btn sidebar-light-mode-btn" data-lmode="area" style="padding: 1px 6px; font-size: 9.5px;">▭ Area</button>
+                        </div>
+                    </div>
+                    <div class="vfx-transform-row">
+                        <span class="vfx-transform-label">${uiText("Intensity:", "Сила:")}</span>
+                        <input type="range" id="sidebar-light-intensity-slider" min="0" max="15" step="0.1" value="2.5" style="flex: 1; accent-color: #fbbf24; cursor: pointer;" />
+                        <input type="number" id="sidebar-light-intensity-num" min="0" max="50" step="0.1" value="2.5" class="vfx-num-input" style="width: 48px;" />
+                    </div>
+                    <div class="vfx-transform-row">
+                        <span class="vfx-transform-label" ${tipAttr('0° = Hard crisp shadows, 45° = Soft diffused light', '0° = Жёсткий свет (чёткие тени), 45° = Мягкий рассеянный свет')}>${uiText("Angle (°):", "Угол (°):")}</span>
+                        <input type="range" id="sidebar-light-angle-slider" min="0" max="45" step="1" value="8" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" />
+                        <input type="number" id="sidebar-light-angle-num" min="0" max="45" step="1" value="8" class="vfx-num-input" style="width: 48px;" />
+                    </div>
+                    <div id="sidebar-light-range-row" class="vfx-transform-row" style="display: none;">
+                        <span class="vfx-transform-label">${uiText("Range (m):", "Дальность:")}</span>
+                        <input type="range" id="sidebar-light-range-slider" min="1" max="60" step="0.5" value="20" style="flex: 1; accent-color: #fde047; cursor: pointer;" />
+                        <input type="number" id="sidebar-light-range-num" min="1" max="120" step="0.5" value="20" class="vfx-num-input" style="width: 48px;" />
+                    </div>
+                    <div id="sidebar-light-area-row" class="vfx-transform-row" style="display: none;">
+                        <span class="vfx-transform-label">${uiText("Area W×H:", "Размер W×H:")}</span>
+                        <div class="vfx-num-input-group">
+                            <span class="vfx-axis-tag vfx-axis-x">W</span>
+                            <input type="number" id="sidebar-light-area-w" min="0.2" max="15" step="0.1" value="2.0" class="vfx-num-input" />
+                            <span class="vfx-axis-tag vfx-axis-y">H</span>
+                            <input type="number" id="sidebar-light-area-h" min="0.2" max="15" step="0.1" value="1.2" class="vfx-num-input" />
+                        </div>
+                    </div>
                 </div>
                 <!-- Hidden legacy proxy elements for hotkeys and left dock shortcuts -->
                 <div style="display: none !important;" aria-hidden="true">
+                    <button id="btn-import-mesh" style="display: none !important;"></button>
                     <button id="btn-tool-select" style="display: none !important;"></button>
                     <button id="btn-tool-translate" style="display: none !important;"></button>
                     <button id="btn-tool-rotate" style="display: none !important;"></button>
@@ -420,82 +661,36 @@ export async function initStandaloneLayoutStudio() {
                 </div>
             </div>
 
-            <!-- 3. Transform Inspector -->
-            <div class="vfx-sidebar-header" id="hdr-inspector">
-                <span><span class="vfx-collapse-arrow">▼</span>📐 Transform Inspector</span>
-                <span id="inspector-target" style="font-size: 11px; color: rgba(255,255,255,0.7);">None</span>
-            </div>
-            <div class="vfx-section-content" id="body-inspector">
-                <div class="vfx-transform-section" id="transform-inspector">
-                    <div style="display: flex; gap: 4px; margin-bottom: 6px;">
-                        <button class="vfx-btn" id="btn-duplicate-obj" style="flex: 1; font-size: 11px; padding: 3px 6px;" title="Duplicate Object (Ctrl+D)">📋 Duplicate</button>
-                        <button class="vfx-btn" id="btn-copy-xform" style="flex: 1; font-size: 11px; padding: 3px 6px;" title="Copy Transforms (Ctrl+C)">Copy Xform</button>
-                        <button class="vfx-btn" id="btn-paste-xform" style="flex: 1; font-size: 11px; padding: 3px 6px;" title="Paste Transforms (Ctrl+V)">Paste Xform</button>
-                        <button class="vfx-btn" id="btn-reset-xform" style="font-size: 11px; padding: 3px 6px;" title="Reset to Origin">↺ Reset</button>
-                    </div>
-                    <div class="vfx-transform-row">
-                        <span class="vfx-transform-label">Pos (m):</span>
-                        <div class="vfx-num-input-group">
-                            <span class="vfx-axis-tag vfx-axis-x">X</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-pos-x" value="0.00" />
-                            <span class="vfx-axis-tag vfx-axis-y">Y</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-pos-y" value="0.00" />
-                            <span class="vfx-axis-tag vfx-axis-z">Z</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-pos-z" value="0.00" />
-                        </div>
-                    </div>
-                    <div class="vfx-transform-row">
-                        <span class="vfx-transform-label">Rot (°):</span>
-                        <div class="vfx-num-input-group">
-                            <span class="vfx-axis-tag vfx-axis-x">X</span>
-                            <input type="number" step="1.0" class="vfx-num-input" id="num-rot-x" value="0.0" />
-                            <span class="vfx-axis-tag vfx-axis-y">Y</span>
-                            <input type="number" step="1.0" class="vfx-num-input" id="num-rot-y" value="0.0" />
-                            <span class="vfx-axis-tag vfx-axis-z">Z</span>
-                            <input type="number" step="1.0" class="vfx-num-input" id="num-rot-z" value="0.0" />
-                        </div>
-                    </div>
-                    <div class="vfx-transform-row">
-                        <span class="vfx-transform-label">Scale:</span>
-                        <div class="vfx-num-input-group">
-                            <span class="vfx-axis-tag vfx-axis-x">X</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-scale-x" value="1.00" />
-                            <span class="vfx-axis-tag vfx-axis-y">Y</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-scale-y" value="1.00" />
-                            <span class="vfx-axis-tag vfx-axis-z">Z</span>
-                            <input type="number" step="0.05" class="vfx-num-input" id="num-scale-z" value="1.00" />
-                        </div>
-                    </div>
-                    <div class="vfx-transform-row" style="margin-top: 4px;">
-                        <span class="vfx-transform-label">Obj Color:</span>
-                        <input type="color" id="sidebar-color-picker" value="#cccccc" style="width: 22px; height: 22px; border: 1px solid #444; border-radius: 4px; background: none; cursor: pointer; padding: 0;" title="Selected Object Color" />
-                        <button class="vfx-btn" id="sidebar-swatch-clay" style="padding: 2px 6px; font-size: 10px; background: #cccccc; color: #111;">Clay</button>
-                        <button class="vfx-btn" id="sidebar-swatch-red" style="padding: 2px 7px; background: #e53935; border: none;"></button>
-                        <button class="vfx-btn" id="sidebar-swatch-green" style="padding: 2px 7px; background: #43a047; border: none;"></button>
-                        <button class="vfx-btn" id="sidebar-swatch-blue" style="padding: 2px 7px; background: #1e88e5; border: none;"></button>
-                        <button class="vfx-btn" id="sidebar-swatch-gold" style="padding: 2px 7px; background: #fdd835; border: none;"></button>
-                    </div>
-                </div>
-            </div>
+
 
             <!-- 4. Environment & Stage -->
             <div class="vfx-sidebar-header" id="hdr-env">
                 <span style="display:flex; align-items:center; gap:5px;"><span class="vfx-collapse-arrow">▼</span><i data-lucide="sliders" style="width:11px; height:11px;"></i><span>Environment & Stage</span></span>
             </div>
             <div class="vfx-section-content" id="body-env" style="padding: 6px 10px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10.5px;" ${tipAttr("Viewport exposure (tone mapping). Double-click to reset", "Экспозиция вьюпорта (tone mapping). Двойной клик — сброс")}>
+                    <span style="color: rgba(255,255,255,0.5);">${uiText("Exposure", "Экспозиция")}</span>
+                    <input type="range" id="slider-viewport-exposure" min="0.2" max="2.5" step="0.05" value="1.0" style="flex: 1; accent-color:#fbbf24;" />
+                    <span id="lbl-viewport-exposure" style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #fff; min-width: 30px; text-align: right;">1.00</span>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10.5px;" ${tipAttr("Built-in studio light. Auto-dims when you add your own Sun/Point/Area lights. Double-click to reset", "Встроенный студийный свет. Автоматически приглушается, когда в сцене есть свои источники. Двойной клик — сброс")}>
+                    <span style="color: rgba(255,255,255,0.5);">${uiText("Studio Fill", "Студ. заливка")}</span>
+                    <input type="range" id="slider-studio-fill" min="0" max="2" step="0.05" value="1.0" style="flex: 1; accent-color:#38bdf8;" />
+                    <span id="lbl-studio-fill" style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #fff; min-width: 30px; text-align: right;">1.00</span>
+                </div>
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 10.5px; color: rgba(255,255,255,0.5);">Stage Color</span>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <input type="color" id="env-bg-color-picker" value="#0a0a0d" style="width: 20px; height: 20px; border: 1px solid rgba(255,255,255,0.12); border-radius: 3px; background: none; cursor: pointer; padding: 0;" />
-                        <button class="vfx-env-swatch" id="env-swatch-dark" style="background: #0a0a0d;" title="Cinema Dark"></button>
-                        <button class="vfx-env-swatch" id="env-swatch-slate" style="background: #141416;" title="Carbon Studio"></button>
-                        <button class="vfx-env-swatch" id="env-swatch-gray" style="background: #222226;" title="Neutral Zinc"></button>
+                        <button class="vfx-env-swatch" id="env-swatch-dark" style="background: #0a0a0d;" ${tipAttr("Cinema Dark", "Тёмный кинозал")}></button>
+                        <button class="vfx-env-swatch" id="env-swatch-slate" style="background: #141416;" ${tipAttr("Carbon Studio", "Карбоновая студия")}></button>
+                        <button class="vfx-env-swatch" id="env-swatch-gray" style="background: #222226;" ${tipAttr("Neutral Zinc", "Нейтральный серый")}></button>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10.5px;">
                     <span style="color: rgba(255,255,255,0.5);">Ground Grid</span>
                     <div style="display: flex; align-items: center; gap: 5px;">
-                        <input type="color" id="grid-color-picker" value="#4f80ff" title="${uiText('Grid Color', 'Цвет сетки')}" style="width: 20px; height: 20px; border: 1px solid rgba(255,255,255,0.12); border-radius: 3px; background: none; cursor: pointer; padding: 0;" />
+                        <input type="color" id="grid-color-picker" value="#4f80ff" ${tipAttr('Grid Color', 'Цвет сетки')} style="width: 20px; height: 20px; border: 1px solid rgba(255,255,255,0.12); border-radius: 3px; background: none; cursor: pointer; padding: 0;" />
                         <button class="vfx-btn" id="btn-toggle-grid" style="font-size: 10px; padding: 2px 7px;">Grid: Visible</button>
                     </div>
                 </div>
@@ -516,7 +711,7 @@ export async function initStandaloneLayoutStudio() {
             <div class="vfx-sidebar-header" id="hdr-actor">
                 <span style="display:flex; align-items:center; gap:5px;"><span class="vfx-collapse-arrow">▼</span><i data-lucide="user-check" style="width:11px; height:11px;"></i><span>Actor Cutout Plane</span></span>
             </div>
-            <div class="vfx-section-content" id="body-actor" style="padding: 6px 10px; display: flex; flex-direction: column; gap: 5px;">
+            <div class="vfx-section-content" id="body-actor" style="padding: 6px 10px; display: flex; flex-direction: column; gap: 6px;">
                 <div class="vfx-panel-row" style="display: flex; align-items: center; justify-content: space-between;">
                     <button class="vfx-btn" id="btn-toggle-actor" style="font-size: 10px; padding: 2px 8px;">Actor: OFF</button>
                     <div style="display: flex; align-items: center; gap: 4px; font-size: 10px; color: rgba(255,255,255,0.5);">
@@ -526,53 +721,38 @@ export async function initStandaloneLayoutStudio() {
                         <input type="range" id="slider-actor-alpha" min="0.1" max="1.0" step="0.05" value="0.85" style="width: 44px; accent-color:#ffffff;" />
                     </div>
                 </div>
+                <!-- Custom Actor Media Dropzone / Slot (Manual Addition Only) -->
+                <div id="actor-cutout-dropzone" style="border: 1px dashed rgba(255,255,255,0.22); border-radius: 6px; padding: 7px 6px; text-align: center; background: rgba(0,0,0,0.25); cursor: pointer; transition: border-color 0.15s, background-color 0.15s; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <input type="file" id="input-actor-cutout" accept="image/*,video/*,.mp4,.webm,.mov,.png,.jpg,.jpeg,.webp" style="display: none;" />
+                    <div id="actor-cutout-empty" style="display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none;">
+                        <i data-lucide="video" style="width: 18px; height: 18px; color: rgba(255,255,255,0.4);"></i>
+                        <span style="font-size: 10px; color: rgba(255,255,255,0.6);">${uiText('Drop Video or Image here', 'Перетащите видео или изображение сюда')}</span>
+                        <span style="font-size: 9px; color: rgba(255,255,255,0.35);">${uiText('or click to browse file', 'или кликните для выбора')}</span>
+                    </div>
+                    <div id="actor-cutout-preview-box" style="display: none; width: 100%; align-items: center; gap: 8px;">
+                        <div style="width: 44px; height: 44px; border-radius: 4px; overflow: hidden; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 10px 10px; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; display: flex; align-items: center; justify-content: center; position: relative;">
+                            <img id="actor-cutout-thumb" src="" alt="Actor" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;" />
+                            <video id="actor-cutout-thumb-video" src="" muted playsinline autoplay loop style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;"></video>
+                        </div>
+                        <div style="flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px;">
+                            <div style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
+                                <span id="actor-cutout-badge" style="display: none; font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 3px; font-family: monospace;"></span>
+                                <span id="actor-cutout-label" style="font-size: 10px; color: #fff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+                                <button class="vfx-btn" id="btn-actor-rembg" ${tipAttr('Remove background with BiRefNet AI', 'Удалить фон через BiRefNet')} style="font-size: 9.5px; padding: 1px 6px; color: #38bdf8;">✂️ ${uiText('Remove BG', 'Удалить фон')}</button>
+                                <button class="vfx-btn" id="btn-actor-reset" ${tipAttr('Remove custom video / image from plane', 'Удалить видео / изображение с плейна')} style="font-size: 9.5px; padding: 1px 6px; color: #f87171;">✕</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- 6. Render Pipeline -->
-            <div class="vfx-sidebar-header" id="hdr-render">
-                <span style="display:flex; align-items:center; gap:5px;"><span class="vfx-collapse-arrow">▼</span><i data-lucide="layers" style="width:11px; height:11px;"></i><span>Bake & IC-LoRA Pass</span></span>
-            </div>
-            <div class="vfx-section-content" id="body-render" style="padding: 6px 10px; display: flex; flex-direction: column; gap: 5px;">
-                <div style="display: flex; gap: 6px; align-items: center;">
-                    <span style="font-size: 10.5px; color: rgba(255,255,255,0.5); width: 34px;">Pass</span>
-                    <select class="vfx-interp-select" id="sidebar-render-pass" style="flex: 1;">
-                        <option value="shaded">Shaded / Layout (Markers)</option>
-                        <option value="depth">3D Z-Depth Map (16-bit)</option>
-                        <option value="wireframe">Canny / Contours (Wireframe)</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                    <span style="font-size: 10.5px; color: rgba(255,255,255,0.5); width: 34px;">LoRA</span>
-                    <select class="vfx-interp-select" id="sidebar-iclora-model" style="flex: 1;">
-                        <option value="union">Union Control (Depth/Pose/Canny)</option>
-                        <option value="camctrl_markers">IC-LoRA Markers (Markers_3)</option>
-                        <option value="layout">Layout-to-Render (LTX 2.5)</option>
-                        <option value="motion_track">Motion Track Control</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                    <span style="font-size: 10.5px; color: rgba(255,255,255,0.5); width: 34px;">Res</span>
-                    <select class="vfx-interp-select" id="sidebar-render-res" style="flex: 1;">
-                        <option value="1.0">Native Plate Size</option>
-                        <option value="0.5">Half (0.5x - ref0.5)</option>
-                        <option value="720p">720p HD</option>
-                    </select>
-                    <button class="vfx-btn vfx-btn-primary" id="btn-start-layout-render-side" style="padding: 3px 9px; font-size:10px;">Bake</button>
-                </div>
-                <div id="render-progress-card" style="display: none; flex-direction: column; gap: 4px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 5px 8px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #ffffff;">
-                        <span id="render-progress-label">Baking frames...</span>
-                        <button class="vfx-btn" id="btn-cancel-render" style="padding: 1px 6px; font-size: 9px;">Cancel</button>
-                    </div>
-                    <div class="vfx-render-progress-track" style="height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
-                        <div class="vfx-render-progress-fill" id="render-progress-fill" style="width: 0%; height: 100%; background: #ffffff;"></div>
-                    </div>
-                </div>
-            </div>
+
         </div>
 
         <!-- Horizontal Splitter -->
-        <div class="vfx-splitter-h" id="splitter-studio-h" title="${uiText('Drag vertically to resize monitor', 'Потяните по вертикали для изменения размера монитора')}"></div>
+        <div class="vfx-splitter-h" id="splitter-studio-h" ${tipAttr('Drag vertically to resize monitor', 'Потяните по вертикали для изменения размера монитора')}></div>
 
         <!-- Bottom Half: Monitor -->
         <div class="vfx-camera-monitor-pane" id="pane-cam-monitor">
@@ -583,8 +763,8 @@ export async function initStandaloneLayoutStudio() {
                 </span>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <div class="vfx-monitor-pill-group">
-                        <button class="vfx-monitor-pill-btn vfx-pill-active" id="btn-mon-preview-toggle" title="${uiText('Toggle real-time 3D camera preview', 'Вкл/выкл трансляцию камеры')}">● Preview ON</button>
-                        <button class="vfx-monitor-pill-btn" id="btn-mon-mode-baked" title="Show baked render pass">Baked View</button>
+                        <button class="vfx-monitor-pill-btn" id="btn-mon-render-camera" ${tipAttr('Render 3D camera sequence and add result to Gallery', 'Отрендерить секвенцию 3D-камеры и добавить результат в галерею')} style="color: #38bdf8;">🎬 ${uiText('Render Camera', 'Рендер камеры')}</button>
+                        <button class="vfx-monitor-pill-btn vfx-pill-active" id="btn-mon-preview-toggle" ${tipAttr('Toggle real-time 3D camera preview', 'Вкл/выкл трансляцию камеры')}>● Preview ON</button>
                     </div>
                     <span class="vfx-monitor-badge" id="monitor-aspect-badge">16:9 • FILM GATE</span>
                 </div>
@@ -592,8 +772,7 @@ export async function initStandaloneLayoutStudio() {
             <div class="vfx-monitor-frame-container" id="monitor-frame-box">
                 <div class="vfx-film-gate-box" id="film-gate-box">
                     <canvas id="monitor-3d-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; z-index: 1;"></canvas>
-                    <img id="baked-plate-underlay" class="vfx-plate-compare-layer" style="display: none; opacity: 0; z-index: 2;" />
-                    <img id="baked-render-preview-img" class="vfx-baked-render-layer" style="display: none; z-index: 3;" />
+
                     <img id="monitor-empty-watermark" src="/vfx/studio/keshiki_watermark_full.png" class="vfx-empty-watermark-card-logo" style="z-index: 0;" />
                     <div class="vfx-gate-corner vfx-corner-tl" style="z-index: 4;"></div>
                     <div class="vfx-gate-corner vfx-corner-tr" style="z-index: 4;"></div>
@@ -601,16 +780,18 @@ export async function initStandaloneLayoutStudio() {
                     <div class="vfx-gate-corner vfx-corner-br" style="z-index: 4;"></div>
                     <div class="vfx-gate-safe" style="z-index: 4;"></div>
                     <div class="vfx-gate-crosshair" style="z-index: 4;"></div>
+                    <div id="render-progress-card" style="display: none; position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 10; background: rgba(9, 10, 16, 0.88); border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 6px 10px; flex-direction: column; gap: 4px; pointer-events: none;">
+                        <div id="render-progress-label" style="font-size: 10px; font-weight: 600; color: #38bdf8; font-family: monospace;">Rendering...</div>
+                        <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;">
+                            <div id="render-progress-fill" style="width: 0%; height: 100%; background: #38bdf8; transition: width 0.08s linear;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="vfx-monitor-footer-bar">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span>Safe Area: 90%</span>
-                    <div id="monitor-compare-wrap" style="display: none; align-items: center; gap: 4px; margin-left: 8px;">
-                        <span style="color: rgba(255,255,255,0.5);">Blend:</span>
-                        <input type="range" id="slider-baked-blend" min="0" max="1" step="0.05" value="0" style="width: 50px; accent-color:#ffffff;" />
-                        <span id="lbl-baked-blend" style="color: #ffffff; min-width: 26px;">0%</span>
-                    </div>
+
                 </div>
                 <span id="monitor-lens-info">Focal: 35mm • Sensor: 36×24mm</span>
             </div>
@@ -629,28 +810,28 @@ export async function initStandaloneLayoutStudio() {
         </div>
         <div class="vfx-timeline-controls">
             <div class="vfx-key-group" style="overflow-x: auto; max-width: 65%;">
-                <button class="vfx-btn" id="btn-first-frame" title="First Frame (|◀)" style="padding: 2px 6px;">|◀</button>
-                <button class="vfx-btn" id="btn-prev-key" title="Previous Keyframe ([)" style="padding: 2px 7px;">⏮ Key</button>
-                <button class="vfx-btn" id="btn-prev-frame" title="Step -1 Frame (←)" style="padding: 2px 7px;">⏴</button>
-                <button class="vfx-btn" id="btn-play-pause" title="Play / Pause (Space)" style="min-width: 64px; background:#ffffff; color:#09090b; border-color:#ffffff; font-weight:600;">▶ Play</button>
-                <button class="vfx-btn" id="btn-next-frame" title="Step +1 Frame (→)" style="padding: 2px 7px;">⏵</button>
-                <button class="vfx-btn" id="btn-next-key" title="Next Keyframe (])" style="padding: 2px 7px;">Key ⏭</button>
-                <button class="vfx-btn" id="btn-last-frame" title="Last Frame (▶|)" style="padding: 2px 6px;">▶|</button>
+                <button class="vfx-btn" id="btn-first-frame" ${tipAttr("First Frame (|◀)", "Первый кадр (|◀)")} style="padding: 2px 6px;">|◀</button>
+                <button class="vfx-btn" id="btn-prev-key" ${tipAttr("Previous Keyframe ([)", "Предыдущий ключевой кадр ([)")} style="padding: 2px 7px;">⏮ Key</button>
+                <button class="vfx-btn" id="btn-prev-frame" ${tipAttr("Step -1 Frame (←)", "На 1 кадр назад (←)")} style="padding: 2px 7px;">⏴</button>
+                <button class="vfx-btn" id="btn-play-pause" ${tipAttr("Play / Pause (Space)", "Воспроизведение / Пауза (Пробел)")} style="min-width: 64px; background:#ffffff; color:#09090b; border-color:#ffffff; font-weight:600;">▶ Play</button>
+                <button class="vfx-btn" id="btn-next-frame" ${tipAttr("Step +1 Frame (→)", "На 1 кадр вперёд (→)")} style="padding: 2px 7px;">⏵</button>
+                <button class="vfx-btn" id="btn-next-key" ${tipAttr("Next Keyframe (])", "Следующий ключевой кадр (])")} style="padding: 2px 7px;">Key ⏭</button>
+                <button class="vfx-btn" id="btn-last-frame" ${tipAttr("Last Frame (▶|)", "Последний кадр (▶|)")} style="padding: 2px 6px;">▶|</button>
                 <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: rgba(255,255,255,0.75); margin-left: 6px; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px;" id="hud-frame-wrap">
                     <span>Frame:</span>
                     <input type="number" id="inp-current-frame" min="0" max="${totalFrames - 1}" value="${currentFrame}"
-                        title="${uiText('Set current frame manually (Enter)', 'Вбить текущий кадр вручную (Enter)')}"
+                        ${tipAttr('Set current frame manually (Enter)', 'Вбить текущий кадр вручную (Enter)')}
                         style="width: 46px; background: #0c0c10; color: #00f0ff; border: 1px solid rgba(0,240,255,0.35); border-radius: 3px; padding: 1px 4px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; text-align: center; outline: none;" />
                     <span id="hud-frame-label">/ ${String(totalFrames).padStart(3, '0')}</span>
                 </span>
                 <div id="vfx-timeline-active-context-bar" style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;"></div>
             </div>
             <div class="vfx-key-group">
-                <button class="vfx-btn" id="btn-context-key" title="${uiText('Bind character, location, storyboard or action to frame (K)', 'Привязать персонажа, локацию, раскадровку или действие к кадру (K)')}" style="padding: 2px 8px; font-weight: 500; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25);">🔗 + Key Context (K)</button>
-                <button class="vfx-btn" id="btn-set-key" style="padding: 2px 7px;" title="${uiText('Add 3D Transform Keyframe', 'Ключ 3D трансформации')}">+ 3D Key</button>
-                <button class="vfx-btn" id="btn-del-key" style="padding: 2px 7px;" title="${uiText('Delete keys on current frame or selected keys (Del)', 'Удалить ключи на текущем кадре или все выделенные ключи (Del)')}">- Del Key</button>
-                <button class="vfx-btn" id="btn-del-all-keys" style="padding: 2px 7px; color:#f87171; border-color:rgba(239,68,68,0.35);" title="${uiText('Delete ALL keys for selected object or camera', 'Удалить ВСЕ ключи выбранного объекта или камеры')}">${uiText('🗑 All Keys', '🗑 Все ключи')}</button>
-                <button class="vfx-btn" id="btn-timeline-script" title="${uiText('Compile chronological prompt script for LTX-Video and AI Director', 'Скомпилировать хронологический скрипт промптов для LTX-Video и ИИ-Режиссера')}" style="padding: 2px 8px; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18);">📜 Script / Prompt</button>
+                <button class="vfx-btn" id="btn-context-key" ${tipAttr('Bind character, location, storyboard or action to frame (K)', 'Привязать персонажа, локацию, раскадровку или действие к кадру (K)')} style="padding: 2px 8px; font-weight: 500; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25);">🔗 + Key Context (K)</button>
+                <button class="vfx-btn" id="btn-set-key" style="padding: 2px 7px;" ${tipAttr('Add 3D Transform Keyframe', 'Ключ 3D трансформации')}>+ 3D Key</button>
+                <button class="vfx-btn" id="btn-del-key" style="padding: 2px 7px;" ${tipAttr('Delete keys on current frame or selected keys (Del)', 'Удалить ключи на текущем кадре или все выделенные ключи (Del)')}>- Del Key</button>
+                <button class="vfx-btn" id="btn-del-all-keys" style="padding: 2px 7px; color:#f87171; border-color:rgba(239,68,68,0.35);" ${tipAttr('Delete ALL keys for selected object or camera', 'Удалить ВСЕ ключи выбранного объекта или камеры')}>${uiText('🗑 All Keys', '🗑 Все ключи')}</button>
+                <button class="vfx-btn" id="btn-timeline-script" ${tipAttr('Compile chronological prompt script for LTX-Video and AI Director', 'Скомпилировать хронологический скрипт промптов для LTX-Video и ИИ-Режиссера')} style="padding: 2px 8px; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18);">📜 Script / Prompt</button>
                 <select class="vfx-interp-select" id="sel-interp">
                     <option value="bezier">Bezier</option>
                     <option value="linear">Linear</option>
@@ -667,52 +848,74 @@ export async function initStandaloneLayoutStudio() {
     statusBar.id = "vfx-studio-status-bar";
     statusBar.innerHTML = `
         <div class="vfx-status-bar-group">
-            <div class="vfx-status-pill" id="st-pill-engine" title="ComfyUI & Keshiki Backend Engine Status">
+            <div class="vfx-status-pill" id="st-pill-engine" ${tipAttr("ComfyUI & Keshiki Backend Engine Status", "Статус движка ComfyUI и бэкенда Keshiki")}>
                 <span class="vfx-status-dot-green"></span>
                 <span style="font-weight: 600; color: #ffffff;">KESHIKI CORE</span>
                 <span style="color: rgba(255,255,255,0.4);">READY</span>
             </div>
             <div class="vfx-status-sep"></div>
-            <div class="vfx-status-pill" id="st-pill-mode" title="Active Workspace Dimension">
+            <div class="vfx-status-pill" id="st-pill-mode" ${tipAttr("Active Workspace Dimension", "Активный режим рабочего пространства (1D / 2D / 3D)")}>
                 <i data-lucide="box" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-mode-label" style="font-weight: 500; color: #ffffff;">3D Perspective</span>
             </div>
-            <div class="vfx-status-pill" id="st-pill-fps" style="cursor: pointer;" title="Project Frame Rate & Duration Settings (Click to configure)">
+            <div class="vfx-status-pill" id="st-pill-fps" style="cursor: pointer;" ${tipAttr("Project Frame Rate & Duration Settings (Click to configure)", "Частота кадров (FPS) и длительность проекта (нажмите для настройки)")}>
                 <i data-lucide="gauge" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-fps-label" style="font-weight: 500; color: #ffffff;">24.0 FPS</span>
             </div>
-            <div class="vfx-status-pill" id="st-pill-cam" title="Shot Camera & Projection Settings">
+            <div class="vfx-status-pill" id="st-pill-cam" ${tipAttr("Shot Camera & Projection Settings", "Камера шота и параметры проекции")}>
                 <i data-lucide="camera" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-cam-label">ShotCam: 35mm</span>
             </div>
-            <div class="vfx-status-pill" id="st-pill-project" title="Current Active Project Sequence">
+            <div class="vfx-status-pill" id="st-pill-project" ${tipAttr("Current Active Project Sequence", "Текущий активный проект")}>
                 <i data-lucide="folder" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-project-label">Cyberpunk_Rooftop_Seq04</span>
             </div>
         </div>
 
-        <div class="vfx-status-bar-group" style="flex: 1; justify-content: center; overflow: hidden; padding: 0 12px;">
-            <div id="st-hint-text" style="display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.45); font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <i data-lucide="info" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.35);"></i>
-                <span>Right-Click + WASD: FlyCam • W/E/R: Gizmo • Space: Play • K: Keyframe • Del: Remove</span>
+        <div class="vfx-status-bar-group" style="flex: 1; justify-content: center; overflow: hidden; padding: 0 8px;">
+            <div id="st-telemetry-cluster" style="display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 9.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; user-select: none;">
+                <!-- CPU -->
+                <div class="vfx-telem-item" id="telem-cpu" style="display: flex; align-items: center; gap: 4px; cursor: help;" title="CPU Utilization">
+                    <span style="color: rgba(255,255,255,0.45); font-weight: 500;">CPU</span>
+                    <canvas id="telem-canvas-cpu" width="34" height="13" style="border-radius: 2px; background: rgba(255,255,255,0.04);"></canvas>
+                    <span id="telem-val-cpu" style="color: #67e8f9; font-weight: 600; min-width: 25px;">--%</span>
+                </div>
+                <!-- RAM -->
+                <div class="vfx-telem-item" id="telem-ram" style="display: flex; align-items: center; gap: 4px; cursor: help;" title="RAM Utilization">
+                    <span style="color: rgba(255,255,255,0.45); font-weight: 500;">RAM</span>
+                    <canvas id="telem-canvas-ram" width="34" height="13" style="border-radius: 2px; background: rgba(255,255,255,0.04);"></canvas>
+                    <span id="telem-val-ram" style="color: #c084fc; font-weight: 600; min-width: 25px;">--%</span>
+                </div>
+                <!-- GPU -->
+                <div class="vfx-telem-item" id="telem-gpu" style="display: flex; align-items: center; gap: 4px; cursor: help;" title="GPU / VRAM Utilization">
+                    <span style="color: rgba(255,255,255,0.45); font-weight: 500;">GPU</span>
+                    <canvas id="telem-canvas-gpu" width="34" height="13" style="border-radius: 2px; background: rgba(255,255,255,0.04);"></canvas>
+                    <span id="telem-val-gpu" style="color: #34d399; font-weight: 600; min-width: 25px;">--%</span>
+                </div>
+                <!-- DISK -->
+                <div class="vfx-telem-item" id="telem-disk" style="display: flex; align-items: center; gap: 4px; cursor: help;" title="Active Disk I/O (Studio & System)">
+                    <span style="color: rgba(255,255,255,0.45); font-weight: 500;">DISK</span>
+                    <canvas id="telem-canvas-disk" width="34" height="13" style="border-radius: 2px; background: rgba(255,255,255,0.04);"></canvas>
+                    <span id="telem-val-disk" style="color: #fbbf24; font-weight: 600; min-width: 32px;">-- MB/s</span>
+                </div>
             </div>
         </div>
 
         <div class="vfx-status-bar-group">
-            <div class="vfx-status-pill" id="st-pill-selection" title="Selected Actor / Proxy Object">
+            <div class="vfx-status-pill" id="st-pill-selection" ${tipAttr("Selected Actor / Proxy Object", "Выбранный объект сцены")}>
                 <i data-lucide="crosshair" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-selected-label">No Selection</span>
             </div>
-            <div class="vfx-status-pill" id="st-pill-actors" title="Total Scene Actors">
+            <div class="vfx-status-pill" id="st-pill-actors" ${tipAttr("Total Scene Actors", "Всего объектов в сцене")}>
                 <i data-lucide="layers" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span id="st-actors-count">0 Actors</span>
             </div>
             <div class="vfx-status-sep"></div>
-            <div class="vfx-status-pill" id="st-pill-vram" title="GPU VRAM Allocation">
+            <div class="vfx-status-pill" id="st-pill-vram" ${tipAttr("GPU VRAM Allocation", "Использование видеопамяти GPU (VRAM)")}>
                 <i data-lucide="cpu" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span>VRAM: <strong style="color: #ffffff; font-weight: 500;">18.4</strong>/24G</span>
             </div>
-            <div class="vfx-status-pill" id="st-btn-terminal" style="cursor: pointer;" title="Toggle Debug Terminal & Logs">
+            <div class="vfx-status-pill" id="st-btn-terminal" style="cursor: pointer;" ${tipAttr("Toggle Debug Terminal & Logs", "Открыть / скрыть терминал отладки и логи")}>
                 <i data-lucide="terminal" style="width: 11px; height: 11px; stroke-width: 1.5; color: rgba(255,255,255,0.65);"></i>
                 <span>Console</span>
                 <span id="st-err-badge" style="display: none; background: #ffffff; color: #000000; border-radius: 3px; padding: 0 3px; font-size: 8px; font-weight: 700;">0</span>
@@ -782,11 +985,11 @@ export async function initStandaloneLayoutStudio() {
     const stPillVram = statusBar.querySelector("#st-pill-vram");
     if (stPillVram) {
         stPillVram.style.cursor = "pointer";
-        stPillVram.title = "Очистить VRAM: кликните для мгновенной выгрузки всех моделей из GPU";
+        setTip(stPillVram, "Purge VRAM: click to instantly unload all models from GPU", "Очистить VRAM: кликните для мгновенной выгрузки всех моделей из GPU");
         stPillVram.onclick = async () => {
             const vramSpan = stPillVram.querySelector("span");
             const oldHtml = vramSpan ? vramSpan.innerHTML : "";
-            if (vramSpan) vramSpan.innerHTML = "VRAM: <em>Очистка...</em>";
+            if (vramSpan) vramSpan.innerHTML = `VRAM: <em>${uiText("Purging...", "Очистка...")}</em>`;
             try {
                 const res = await fetch("/vfx/unload_models", { method: "POST" });
                 const d = await res.json();
@@ -797,29 +1000,128 @@ export async function initStandaloneLayoutStudio() {
                     vramSpan.innerHTML = `VRAM: <strong style="color: #10b981; font-weight: 600;">${usedGb}</strong>/${totGb}G`;
                 }
                 if (typeof window.showToastNotification === "function") {
-                    window.showToastNotification(d.message || "VRAM успешно освобождена!");
+                    window.showToastNotification(d.message || uiText("VRAM successfully purged!", "VRAM успешно освобождена!"));
                 }
             } catch (err) {
                 if (vramSpan) vramSpan.innerHTML = oldHtml;
             }
         };
 
-        // Periodic telemetry poll
-        setInterval(async () => {
+        // Live Centered System Telemetry Graph (CPU, RAM, GPU, DISK)
+        const telemHistory = {
+            cpu: [0, 0, 0, 0, 0],
+            ram: [0, 0, 0, 0, 0],
+            gpu: [0, 0, 0, 0, 0],
+            disk: [0, 0, 0, 0, 0]
+        };
+
+        function drawSparkline(canvas, history, strokeColor, maxVal = 100) {
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            if (!history || history.length < 2) return;
+
+            ctx.beginPath();
+            for (let i = 0; i < history.length; i++) {
+                const x = (i / (history.length - 1)) * (w - 2) + 1;
+                const norm = Math.max(0, Math.min(1, history[i] / maxVal));
+                const y = h - (norm * (h - 3)) - 1.5;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 1.2;
+            ctx.lineJoin = "round";
+            ctx.stroke();
+
+            // Gradient fill under sparkline
+            ctx.lineTo(w - 1, h);
+            ctx.lineTo(1, h);
+            ctx.closePath();
+            ctx.fillStyle = strokeColor.includes("#") ? `${strokeColor}22` : "rgba(255,255,255,0.08)";
+            ctx.fill();
+        }
+
+        async function pollSystemMetrics() {
             try {
-                const res = await fetch("/vfx/vram_status");
-                if (res.ok) {
-                    const d = await res.json();
-                    const vramSpan = stPillVram.querySelector("span");
-                    if (vramSpan && !vramSpan.innerHTML.includes("Очистка")) {
-                        const totGb = d.total_gb || 24;
-                        const usedGb = d.used_gb !== undefined ? d.used_gb : Math.max(0, (totGb - d.free_gb).toFixed(1));
-                        const col = usedGb > 20 ? "#f87171" : (usedGb > 14 ? "#fbbf24" : "#ffffff");
-                        vramSpan.innerHTML = `VRAM: <strong style="color: ${col}; font-weight: 500;">${usedGb}</strong>/${totGb}G`;
-                    }
+                const res = await fetch("/vfx/system_metrics");
+                if (!res.ok) return;
+                const m = await res.json();
+
+                // 1. CPU
+                const cpuVal = Math.round(m.cpu_pct || 0);
+                telemHistory.cpu.push(cpuVal);
+                if (telemHistory.cpu.length === 1) telemHistory.cpu.unshift(cpuVal);
+                if (telemHistory.cpu.length > 16) telemHistory.cpu.shift();
+                const elCpuVal = statusBar.querySelector("#telem-val-cpu");
+                if (elCpuVal) elCpuVal.innerText = `${cpuVal}%`;
+                const cCpu = statusBar.querySelector("#telem-canvas-cpu");
+                drawSparkline(cCpu, telemHistory.cpu, cpuVal > 85 ? "#f87171" : "#67e8f9", 100);
+                const elCpu = statusBar.querySelector("#telem-cpu");
+                if (elCpu) {
+                    elCpu.title = `CPU: ${cpuVal}% (Studio App: ${m.app_cpu_pct || 0}%)\nCores: ${m.cpu_count || 16}`;
+                }
+
+                // 2. RAM
+                const ramVal = Math.round(m.ram_pct || 0);
+                telemHistory.ram.push(ramVal);
+                if (telemHistory.ram.length === 1) telemHistory.ram.unshift(ramVal);
+                if (telemHistory.ram.length > 16) telemHistory.ram.shift();
+                const elRamVal = statusBar.querySelector("#telem-val-ram");
+                if (elRamVal) elRamVal.innerText = `${ramVal}%`;
+                const cRam = statusBar.querySelector("#telem-canvas-ram");
+                drawSparkline(cRam, telemHistory.ram, ramVal > 85 ? "#f87171" : "#c084fc", 100);
+                const elRam = statusBar.querySelector("#telem-ram");
+                if (elRam) {
+                    elRam.title = `RAM: ${m.ram_used_gb || 0} / ${m.ram_total_gb || 0} GB (${ramVal}%)\nStudio App RAM: ${m.app_ram_gb || 0} GB`;
+                }
+
+                // 3. GPU / VRAM
+                const gpuVal = Math.round(m.gpu_util || m.vram_pct || 0);
+                telemHistory.gpu.push(gpuVal);
+                if (telemHistory.gpu.length === 1) telemHistory.gpu.unshift(gpuVal);
+                if (telemHistory.gpu.length > 16) telemHistory.gpu.shift();
+                const elGpuVal = statusBar.querySelector("#telem-val-gpu");
+                if (elGpuVal) elGpuVal.innerText = `${gpuVal}%`;
+                const cGpu = statusBar.querySelector("#telem-canvas-gpu");
+                drawSparkline(cGpu, telemHistory.gpu, gpuVal > 85 ? "#f87171" : "#34d399", 100);
+                const elGpu = statusBar.querySelector("#telem-gpu");
+                if (elGpu) {
+                    elGpu.title = `GPU: ${m.gpu_name || 'GPU'} (${gpuVal}%)\nVRAM: ${m.vram_used_gb || 0} / ${m.vram_total_gb || 24} GB (${m.vram_pct || 0}%)`;
+                }
+
+                // 4. DISK
+                const ioTotal = Math.round(((m.io_read_mb_s || 0) + (m.io_write_mb_s || 0)) * 10) / 10;
+                telemHistory.disk.push(ioTotal);
+                if (telemHistory.disk.length === 1) telemHistory.disk.unshift(ioTotal);
+                if (telemHistory.disk.length > 16) telemHistory.disk.shift();
+                const elDiskVal = statusBar.querySelector("#telem-val-disk");
+                if (elDiskVal) elDiskVal.innerText = `${ioTotal} MB/s`;
+                const cDisk = statusBar.querySelector("#telem-canvas-disk");
+                const maxDisk = Math.max(20, ...telemHistory.disk);
+                drawSparkline(cDisk, telemHistory.disk, ioTotal > 50 ? "#f87171" : "#fbbf24", maxDisk);
+                const elDisk = statusBar.querySelector("#telem-disk");
+                if (elDisk) {
+                    elDisk.title = `Disk Drive [${m.disk_drive || 'App'}]: ${m.disk_free_gb || 0} GB free (${m.disk_pct || 0}% used)\nActive I/O: Read ${m.io_read_mb_s || 0} MB/s, Write ${m.io_write_mb_s || 0} MB/s`;
+                }
+
+                // Update VRAM pill in right section as well
+                const vramSpan = stPillVram.querySelector("span");
+                if (vramSpan && !vramSpan.innerHTML.includes("Purging") && !vramSpan.innerHTML.includes("Очистка")) {
+                    const totGb = m.vram_total_gb || 24;
+                    const usedGb = m.vram_used_gb || 0;
+                    const col = usedGb > 20 ? "#f87171" : (usedGb > 14 ? "#fbbf24" : "#ffffff");
+                    vramSpan.innerHTML = `VRAM: <strong style="color: ${col}; font-weight: 500;">${usedGb}</strong>/${totGb}G`;
                 }
             } catch (_) {}
-        }, 8000);
+        }
+
+        // Poll every 2.5s for snappy live graphs without system overhead
+        setTimeout(pollSystemMetrics, 400);
+        setInterval(pollSystemMetrics, 2500);
     }
 
     const filmGateBox = container.querySelector("#film-gate-box");
@@ -830,6 +1132,7 @@ export async function initStandaloneLayoutStudio() {
     const keyMarkersTrack = footer.querySelector("#key-markers-track");
     const btnPlayPause = footer.querySelector("#btn-play-pause");
     let monitorNeedsRender = true;
+let lastMonitorRenderTime = 0;
 
     // Live generation progress: header chip + popover with step bar, ETA and the sampler preview.
     (() => {
@@ -862,23 +1165,71 @@ export async function initStandaloneLayoutStudio() {
         document.addEventListener("mousedown", (e) => {
             if (open && !pop.contains(e.target) && !chip.contains(e.target)) { open = false; pop.style.display = "none"; }
         });
+        let stopRequestedAt = 0;
+        let inactiveStreak = 0;
+        window.__notifyVfxStopRequested = () => {
+            stopRequestedAt = Date.now();
+            inactiveStreak = 99;
+        };
         function render(d) {
             if (!d) return;
-            const r = d.running, vj = (d.video_jobs || [])[0];
-            const active = !!(r || vj);
+            if (Date.now() - stopRequestedAt < 3500) {
+                chip.style.display = "none";
+                const stopBtn = document.getElementById("btn-stop-all-jobs");
+                if (stopBtn) stopBtn.style.display = "none";
+                if (open) { open = false; pop.style.display = "none"; }
+                return;
+            }
+            let r = (d.running && d.running.status === "running") ? d.running : null;
+            // Guard against completed samplers remaining stuck in snapshot
+            if (r && r.value && r.max && r.value >= r.max && r.eta === 0 && r.elapsed > 15) {
+                r = null;
+            }
+            const vj = (d.video_jobs || [])[0];
+            const mj = (d.mesh_jobs || [])[0];
+            const liveGenActive = Boolean(window.__activeLiveGen && window.__activeLiveGen.active);
+            const activeRaw = Boolean(r || vj || mj || liveGenActive);
+
+            if (activeRaw) {
+                inactiveStreak = 0;
+            } else {
+                inactiveStreak++;
+            }
+
+            // If live generation explicitly ended, reset streak immediately
+            if (window.__activeLiveGen && window.__activeLiveGen.active === false && !r && !vj) {
+                inactiveStreak = 99;
+            }
+
+            // Debounce / latch: don't flicker off on momentary 1-tick pause between ComfyUI nodes
+            const active = activeRaw || (inactiveStreak < 3 && chip.style.display === "inline-flex");
+
             chip.style.display = active ? "inline-flex" : "none";
+            const stopBtn = document.getElementById("btn-stop-all-jobs");
+            if (stopBtn) stopBtn.style.display = active ? "inline-flex" : "none";
             if (!active) { if (open) { open = false; pop.style.display = "none"; } return; }
             let pct, label;
             if (r) {
                 pct = r.percent;
                 const step = r.max ? ` ${r.value}/${r.max}` : "";
                 label = `${Math.round(pct)}% · ${r.node_title || r.label || "…"}${step}${r.eta != null ? " · ~" + fmt(r.eta) : ""}`;
-            } else {
+            } else if (mj) {
+                pct = mj.progress || 0;
+                label = `${Math.round(pct)}% · ${mj.kind} · ${mj.message || ""}`;
+            } else if (vj) {
                 pct = vj.progress || 0;
                 label = `${Math.round(pct)}% · ${vj.kind} · ${vj.message || ""}`;
+            } else if (liveGenActive) {
+                pct = window.__activeLiveGen.pct || 15;
+                const st = (window.__activeLiveGen.stageTxt || "").replace(/^\[\d+\/\d+\]\s*/, '');
+                label = `${Math.round(pct)}% · ${st ? st.slice(0, 26) : (window.__activeLiveGen.isVideo ? "LTX-2.5 Video" : "FLUX.3 Klein")}`;
             }
-            fill.style.width = `${Math.max(2, Math.min(100, pct))}%`;
-            text.textContent = label + (d.pending ? ` (+${d.pending})` : "");
+            if (pct != null) {
+                fill.style.width = `${Math.max(2, Math.min(100, pct))}%`;
+            }
+            if (label != null) {
+                text.textContent = label + (d.pending ? ` (+${d.pending})` : "");
+            }
             if (!open) return;
             let html = "";
             if (r) {
@@ -890,6 +1241,9 @@ export async function initStandaloneLayoutStudio() {
                     ? `<img src="/vfx/process/preview/${encodeURIComponent(r.prompt_id)}?t=${lastPreviewAt}" style="width:100%; border-radius:4px; background:#000; display:block;">`
                     : `<div style="opacity:.5; font-size:10px; padding:8px 0;">${uiText("Preview appears while the sampler runs.", "Превью появится, когда пойдёт сэмплер.")}</div>`;
             }
+            (d.mesh_jobs || []).forEach(j => {
+                html += `<div style="margin-top:8px; border-top:1px solid #27272a; padding-top:6px;"><b>${esc(j.kind)}</b> · ${Math.round(j.progress || 0)}% <span style="opacity:.65">${esc(j.message || "")}</span></div>`;
+            });
             (d.video_jobs || []).forEach(j => {
                 html += `<div style="margin-top:8px; border-top:1px solid #27272a; padding-top:6px;"><b>${esc(j.kind)}</b> · ${Math.round(j.progress || 0)}% <span style="opacity:.65">${esc(j.message || "")}</span></div>`;
             });
@@ -901,11 +1255,14 @@ export async function initStandaloneLayoutStudio() {
             try {
                 const d = await (await fetch("/vfx/process/progress")).json();
                 lastData = d;
-                if (d.running || (d.video_jobs || []).length) {
+                if (d.running || (d.video_jobs || []).length || (d.mesh_jobs || []).length || (window.__activeLiveGen && window.__activeLiveGen.active)) {
                     delay = 1000;
                     if (Date.now() - lastPreviewAt > 1500) lastPreviewAt = Date.now();
                 }
                 render(d);
+                if (typeof window.__vfxOnProcessProgress === "function") {
+                    try { window.__vfxOnProcessProgress(d); } catch (_) {}
+                }
             } catch (_) { delay = 5000; }
             setTimeout(tick, delay);
         }
@@ -916,10 +1273,28 @@ export async function initStandaloneLayoutStudio() {
     const stopAllBtn = document.getElementById("btn-stop-all-jobs");
     if (stopAllBtn) {
         stopAllBtn.onclick = async () => {
+            if (typeof window.__notifyVfxStopRequested === "function") {
+                window.__notifyVfxStopRequested();
+            }
             stopAllBtn.disabled = true;
+            stopAllBtn.style.display = "none";
+            const chip = document.getElementById("vfx-progress-chip");
+            if (chip) chip.style.display = "none";
+            const pop = document.getElementById("vfx-progress-popover");
+            if (pop) pop.style.display = "none";
             try {
-                await fetch("/vfx/process/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
-                if (typeof window.showToastNotification === "function") window.showToastNotification(uiText("Stopped: queue cleared", "Остановлено: очередь очищена"));
+                await fetch("/vfx/mesh3d/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+            } catch (_) {}
+            try {
+                await fetch("/interrupt", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+                await fetch("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clear: true }) }).catch(() => {});
+                await fetch("/vfx/process/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) }).catch(() => {});
+                await fetch("/vfx/agent/unload_vram", { method: "POST" }).catch(() => {});
+                await fetch("/vfx/unload_models", { method: "POST" }).catch(() => {});
+                if (typeof window.__vfxCancelActiveGeneration === "function") {
+                    window.__vfxCancelActiveGeneration();
+                }
+                if (typeof window.showToastNotification === "function") window.showToastNotification(uiText("Stopped: queue cleared, VRAM purged", "Остановлено: очередь очищена, VRAM освобождена"));
             } catch (_) {}
             stopAllBtn.disabled = false;
         };
@@ -957,6 +1332,31 @@ export async function initStandaloneLayoutStudio() {
             setLabel(uiText("Server did not come back — check the ComfyUI console", "Сервер не поднялся — проверьте консоль ComfyUI"));
         };
     })();
+
+    window.__vfxPurgeVRAM = async (showToast = true) => {
+        if (showToast && typeof window.showToastNotification === "function") {
+            window.showToastNotification(uiText("⚡ Purging GPU VRAM & unloading models...", "⚡ Очистка видеопамяти и выгрузка моделей..."));
+        }
+        try {
+            await Promise.allSettled([
+                fetch("/vfx/agent/unload_vram", { method: "POST" }),
+                fetch("/vfx/unload_models", { method: "POST" }),
+                fetch("/free", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unload_models: true, free_memory: true }) })
+            ]);
+            if (showToast && typeof window.showToastNotification === "function") {
+                window.showToastNotification(uiText("⚡ GPU VRAM successfully purged and defragmented!", "⚡ Видеопамять успешно очищена и дефрагментирована!"));
+            }
+        } catch (e) {
+            if (showToast && typeof window.showToastNotification === "function") {
+                window.showToastNotification(uiText("Failed to purge VRAM: " + e, "Не удалось очистить VRAM: " + e), true);
+            }
+        }
+    };
+
+    const btnHdrPurge = document.getElementById("btn-hdr-purge-vram");
+    if (btnHdrPurge) {
+        btnHdrPurge.onclick = () => window.__vfxPurgeVRAM();
+    }
 
     document.getElementById("btn-fullscreen-toggle").onclick = () => {
         if (!document.fullscreenElement) {
@@ -1064,33 +1464,47 @@ export async function initStandaloneLayoutStudio() {
     scene.add(groundAxesHelper);
 
     // =========================================================================
-    // 3D CURSOR (Blender-style 3D Reticle & Spawn Anchor)
+    // 3D CURSOR (Blender-style 3D Reticle & Spawn Anchor with Scale & Thickness)
     // =========================================================================
     let cursor3DPosition = new THREE.Vector3(0, 0, 0);
+    let cursor3DScale = 1.0;
+    let cursor3DThickness = 1.0;
     try {
         const savedCursor = JSON.parse(localStorage.getItem("vfx_3d_cursor"));
         if (savedCursor && typeof savedCursor.x === "number") {
             cursor3DPosition.set(savedCursor.x, savedCursor.y, savedCursor.z);
         }
+        if (savedCursor && typeof savedCursor.scale === "number" && !isNaN(savedCursor.scale)) {
+            cursor3DScale = Math.max(0.05, Math.min(10.0, savedCursor.scale));
+        }
+        if (savedCursor && typeof savedCursor.thickness === "number" && !isNaN(savedCursor.thickness)) {
+            cursor3DThickness = Math.max(0.1, Math.min(10.0, savedCursor.thickness));
+        }
     } catch (_) {}
 
-    let cursor3DVisible = true;
+    let cursor3DVisible = false;
     let is3DCursorToolActive = false;
+
+    const CURSOR_BASE_RING_RADIUS = 0.16;
+    const CURSOR_BASE_CROSS_LEN = 0.24;
+    const CURSOR_RING_SEGS = 64;
 
     function create3DCursorMesh() {
         const grp = new THREE.Group();
         grp.name = "VFX_3D_Cursor_Reticle";
         grp.renderOrder = 99999;
 
-        // 1. Dual-tone Red & White segmented ring (Blender iconic 3D Cursor)
-        const ringRadius = 0.32;
-        const ringSegs = 32;
+        // 1. Billboarded Ring Holder (children[0] rotates to face activeCamera)
+        const ringHolder = new THREE.Group();
+        ringHolder.renderOrder = 99999;
+
+        // 1a. Crisp 1px core line ring
         const ringPos = [];
         const ringColors = [];
-        for (let i = 0; i <= ringSegs; i++) {
-            const theta = (i / ringSegs) * Math.PI * 2;
-            ringPos.push(Math.cos(theta) * ringRadius, Math.sin(theta) * ringRadius, 0);
-            const isRed = Math.floor(i / (ringSegs / 8)) % 2 === 0;
+        for (let i = 0; i <= CURSOR_RING_SEGS; i++) {
+            const theta = (i / CURSOR_RING_SEGS) * Math.PI * 2;
+            ringPos.push(Math.cos(theta) * CURSOR_BASE_RING_RADIUS, Math.sin(theta) * CURSOR_BASE_RING_RADIUS, 0);
+            const isRed = Math.floor(i / (CURSOR_RING_SEGS / 8)) % 2 === 0;
             if (isRed) {
                 ringColors.push(0.96, 0.22, 0.22);
             } else {
@@ -1100,24 +1514,54 @@ export async function initStandaloneLayoutStudio() {
         const ringGeom = new THREE.BufferGeometry();
         ringGeom.setAttribute("position", new THREE.Float32BufferAttribute(ringPos, 3));
         ringGeom.setAttribute("color", new THREE.Float32BufferAttribute(ringColors, 3));
-        const ringMat = new THREE.LineBasicMaterial({
+        const ringLine = new THREE.Line(ringGeom, new THREE.LineBasicMaterial({
             vertexColors: true,
-            linewidth: 2,
             depthTest: false,
             depthWrite: false,
             transparent: true
-        });
-        const ringLine = new THREE.Line(ringGeom, ringMat);
+        }));
         ringLine.renderOrder = 99999;
-        grp.add(ringLine);
+        ringHolder.add(ringLine);
+
+        // 1b. Variable-thickness segmented ribbon mesh for the ring (works on Windows WebGL/ANGLE)
+        const bandPositions = new Float32Array(CURSOR_RING_SEGS * 6 * 3);
+        const bandColors = new Float32Array(CURSOR_RING_SEGS * 6 * 3);
+        for (let i = 0; i < CURSOR_RING_SEGS; i++) {
+            const isRed = Math.floor(i / (CURSOR_RING_SEGS / 8)) % 2 === 0;
+            const r = isRed ? 0.96 : 1.0;
+            const g = isRed ? 0.22 : 1.0;
+            const b = isRed ? 0.22 : 1.0;
+            for (let v = 0; v < 6; v++) {
+                const idx = (i * 6 + v) * 3;
+                bandColors[idx] = r;
+                bandColors[idx + 1] = g;
+                bandColors[idx + 2] = b;
+            }
+        }
+        const bandGeom = new THREE.BufferGeometry();
+        bandGeom.setAttribute("position", new THREE.BufferAttribute(bandPositions, 3));
+        bandGeom.setAttribute("color", new THREE.BufferAttribute(bandColors, 3));
+        const bandMesh = new THREE.Mesh(bandGeom, new THREE.MeshBasicMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.95
+        }));
+        bandMesh.renderOrder = 99999;
+        ringHolder.add(bandMesh);
+        grp.add(ringHolder);
 
         // 2. 3D Axis Crosshair Ticks (Red X, Green Y, Blue Z)
-        const crossLen = 0.46;
+        const crossHolder = new THREE.Group();
+        crossHolder.renderOrder = 99999;
+
         const crossGeom = new THREE.BufferGeometry();
         const crossPositions = [
-            -crossLen, 0, 0,  crossLen, 0, 0,
-            0, -crossLen, 0,  0, crossLen, 0,
-            0, 0, -crossLen,  0, 0, crossLen
+            -CURSOR_BASE_CROSS_LEN, 0, 0,  CURSOR_BASE_CROSS_LEN, 0, 0,
+            0, -CURSOR_BASE_CROSS_LEN, 0,  0, CURSOR_BASE_CROSS_LEN, 0,
+            0, 0, -CURSOR_BASE_CROSS_LEN,  0, 0, CURSOR_BASE_CROSS_LEN
         ];
         const crossColors = [
             1.0, 0.25, 0.25,  1.0, 0.25, 0.25,
@@ -1128,16 +1572,33 @@ export async function initStandaloneLayoutStudio() {
         crossGeom.setAttribute("color", new THREE.Float32BufferAttribute(crossColors, 3));
         const crossLines = new THREE.LineSegments(crossGeom, new THREE.LineBasicMaterial({
             vertexColors: true,
-            linewidth: 2,
             depthTest: false,
             depthWrite: false,
             transparent: true
         }));
         crossLines.renderOrder = 99999;
-        grp.add(crossLines);
+        crossHolder.add(crossLines);
+
+        const unitBox = new THREE.BoxGeometry(1, 1, 1);
+        const makeBar = (colHex) => {
+            const m = new THREE.Mesh(unitBox, new THREE.MeshBasicMaterial({
+                color: colHex,
+                depthTest: false,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.92
+            }));
+            m.renderOrder = 99999;
+            return m;
+        };
+        const xBar = makeBar(0xff4040);
+        const yBar = makeBar(0x26d940);
+        const zBar = makeBar(0x33a6ff);
+        crossHolder.add(xBar, yBar, zBar);
+        grp.add(crossHolder);
 
         // 3. Center Target Dot
-        const dotGeom = new THREE.SphereGeometry(0.024, 8, 8);
+        const dotGeom = new THREE.SphereGeometry(1, 10, 10);
         const dotMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             depthTest: false,
@@ -1148,6 +1609,7 @@ export async function initStandaloneLayoutStudio() {
         dotMesh.renderOrder = 99999;
         grp.add(dotMesh);
 
+        grp.userData.__cursorParts = { bandGeom, xBar, yBar, zBar, dotMesh };
         grp.position.copy(cursor3DPosition);
         grp.visible = cursor3DVisible;
         return grp;
@@ -1156,19 +1618,62 @@ export async function initStandaloneLayoutStudio() {
     const cursor3DGroup = create3DCursorMesh();
     scene.add(cursor3DGroup);
 
+    function apply3DCursorStyle() {
+        if (!cursor3DGroup) return;
+        cursor3DGroup.scale.setScalar(Math.max(0.05, cursor3DScale));
+        const parts = cursor3DGroup.userData.__cursorParts;
+        if (!parts) return;
+
+        const halfBand = Math.max(0.0004, 0.0042 * cursor3DThickness);
+        const rIn = Math.max(0.004, CURSOR_BASE_RING_RADIUS - halfBand);
+        const rOut = CURSOR_BASE_RING_RADIUS + halfBand;
+        const posAttr = parts.bandGeom.getAttribute("position");
+        const arr = posAttr.array;
+        for (let i = 0; i < CURSOR_RING_SEGS; i++) {
+            const t0 = (i / CURSOR_RING_SEGS) * Math.PI * 2;
+            const t1 = ((i + 1) / CURSOR_RING_SEGS) * Math.PI * 2;
+            const c0 = Math.cos(t0), s0 = Math.sin(t0);
+            const c1 = Math.cos(t1), s1 = Math.sin(t1);
+            const base = i * 18;
+            // Tri 1
+            arr[base]     = c0 * rIn;  arr[base + 1] = s0 * rIn;  arr[base + 2] = 0;
+            arr[base + 3] = c0 * rOut; arr[base + 4] = s0 * rOut; arr[base + 5] = 0;
+            arr[base + 6] = c1 * rOut; arr[base + 7] = s1 * rOut; arr[base + 8] = 0;
+            // Tri 2
+            arr[base + 9]  = c0 * rIn;  arr[base + 10] = s0 * rIn;  arr[base + 11] = 0;
+            arr[base + 12] = c1 * rOut; arr[base + 13] = s1 * rOut; arr[base + 14] = 0;
+            arr[base + 15] = c1 * rIn;  arr[base + 16] = s1 * rIn;  arr[base + 17] = 0;
+        }
+        posAttr.needsUpdate = true;
+
+        const barThick = Math.max(0.0006, 0.005 * cursor3DThickness);
+        const fullCross = CURSOR_BASE_CROSS_LEN * 2;
+        parts.xBar.scale.set(fullCross, barThick, barThick);
+        parts.yBar.scale.set(barThick, fullCross, barThick);
+        parts.zBar.scale.set(barThick, barThick, fullCross);
+
+        const dotR = Math.max(0.003, 0.011 * (0.55 + 0.45 * cursor3DThickness));
+        parts.dotMesh.scale.setScalar(dotR);
+    }
+
+    apply3DCursorStyle();
+
     function update3DCursorMesh() {
         if (!cursor3DGroup) return;
         cursor3DGroup.position.copy(cursor3DPosition);
         cursor3DGroup.visible = cursor3DVisible;
+        apply3DCursorStyle();
         try {
             localStorage.setItem("vfx_3d_cursor", JSON.stringify({
                 x: Number(cursor3DPosition.x.toFixed(4)),
                 y: Number(cursor3DPosition.y.toFixed(4)),
-                z: Number(cursor3DPosition.z.toFixed(4))
+                z: Number(cursor3DPosition.z.toFixed(4)),
+                scale: Number(cursor3DScale.toFixed(3)),
+                thickness: Number(cursor3DThickness.toFixed(3))
             }));
         } catch (_) {}
         if (typeof window.__vfxOn3DCursorChanged === "function") {
-            window.__vfxOn3DCursorChanged(cursor3DPosition);
+            window.__vfxOn3DCursorChanged(cursor3DPosition, cursor3DScale, cursor3DThickness);
         }
         notifyDetailsAndOutliner();
         monitorNeedsRender = true;
@@ -1177,7 +1682,26 @@ export async function initStandaloneLayoutStudio() {
 
     function set3DCursorPosition(x, y, z) {
         cursor3DPosition.set(Number(x) || 0, Number(y) || 0, Number(z) || 0);
+        cursor3DVisible = true;
+        if (cursor3DGroup) cursor3DGroup.visible = true;
+        if (typeof update3DCursorUI === "function") update3DCursorUI();
         update3DCursorMesh();
+    }
+
+    function set3DCursorScale(s) {
+        const val = parseFloat(s);
+        if (!isNaN(val)) {
+            cursor3DScale = Math.max(0.05, Math.min(10.0, val));
+            update3DCursorMesh();
+        }
+    }
+
+    function set3DCursorThickness(t) {
+        const val = parseFloat(t);
+        if (!isNaN(val)) {
+            cursor3DThickness = Math.max(0.1, Math.min(10.0, val));
+            update3DCursorMesh();
+        }
     }
 
     function snapCursorToSelected() {
@@ -1222,6 +1746,10 @@ export async function initStandaloneLayoutStudio() {
     window.__vfx3DCursor = {
         get: () => cursor3DPosition.clone(),
         set: set3DCursorPosition,
+        getScale: () => cursor3DScale,
+        setScale: set3DCursorScale,
+        getThickness: () => cursor3DThickness,
+        setThickness: set3DCursorThickness,
         snapCursorToSelected,
         snapSelectedToCursor,
         snapCursorToOrigin,
@@ -1232,17 +1760,66 @@ export async function initStandaloneLayoutStudio() {
         }
     };
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    // Lighting (Balanced Studio PBR Base + Hemisphere Fill so metallic/rough GLB textures are never black)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
-    keyLight.position.set(5, 10, 8);
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x2a3042, 0.55);
+    hemiLight.position.set(0, 0, 15);
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(5, -7, 9);
+    keyLight.castShadow = true;
+    if (keyLight.shadow) {
+        keyLight.shadow.mapSize.width = 1024;
+        keyLight.shadow.mapSize.height = 1024;
+        keyLight.shadow.bias = -0.0005;
+        keyLight.shadow.radius = 2.5;
+    }
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x8899bb, 0.35);
-    fillLight.position.set(-8, -4, 5);
+    const fillLight = new THREE.DirectionalLight(0x9ab0d6, 0.35);
+    fillLight.position.set(-8, 6, 5);
     scene.add(fillLight);
+
+    // Default studio rig auto-dims when the user adds own Sun / Point / Area lights,
+    // so user lights are not fighting a constant baseline (prevents floor blow-out).
+    const DEFAULT_RIG_BASE = { amb: 0.35, hemi: 0.55, key: 1.1, fill: 0.35 };
+    let studioFillLevel = 1.0;   // user multiplier for default rig (Environment & Stage)
+    let viewportExposure = 1.0;  // tone-mapping exposure
+    try {
+        const savedLook = JSON.parse(localStorage.getItem("vfx_viewport_look") || "{}");
+        if (typeof savedLook.fill === "number") studioFillLevel = Math.max(0, Math.min(2, savedLook.fill));
+        if (typeof savedLook.exposure === "number") viewportExposure = Math.max(0.1, Math.min(3, savedLook.exposure));
+    } catch (_) {}
+    let lastUserLightCount = -1;
+    let lastRigFill = -1;
+    function updateDefaultRigForUserLights(force = false) {
+        let n = 0;
+        try { threeObjectsMap.forEach(o => { if (o && o.userData && o.userData.type === "light" && o.visible !== false) n++; }); } catch (_) {}
+        if (!force && n === lastUserLightCount && lastRigFill === studioFillLevel) return;
+        lastUserLightCount = n;
+        lastRigFill = studioFillLevel;
+        const k = (n > 0 ? 0.22 : 1.0) * studioFillLevel;
+        ambientLight.intensity = DEFAULT_RIG_BASE.amb * k;
+        hemiLight.intensity = DEFAULT_RIG_BASE.hemi * k;
+        keyLight.intensity = n > 0 ? 0 : DEFAULT_RIG_BASE.key * studioFillLevel;
+        keyLight.castShadow = n === 0;
+        fillLight.intensity = DEFAULT_RIG_BASE.fill * k;
+    }
+    window.__vfxViewportLook = {
+        setExposure: (v) => { viewportExposure = Math.max(0.1, Math.min(3, Number(v) || 1)); applyViewportLook(); },
+        setStudioFill: (v) => { studioFillLevel = Math.max(0, Math.min(2, Number(v))); applyViewportLook(); },
+        get: () => ({ exposure: viewportExposure, fill: studioFillLevel })
+    };
+    function applyViewportLook() {
+        try { localStorage.setItem("vfx_viewport_look", JSON.stringify({ exposure: viewportExposure, fill: studioFillLevel })); } catch (_) {}
+        if (typeof renderer !== "undefined" && renderer) renderer.toneMappingExposure = viewportExposure;
+        if (typeof monitorRenderer !== "undefined" && monitorRenderer) monitorRenderer.toneMappingExposure = viewportExposure;
+        updateDefaultRigForUserLights(true);
+        try { monitorNeedsRender = true; renderStudioViewports(); } catch (_) {}
+    }
 
     // Cameras
     const flyCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
@@ -1610,10 +2187,16 @@ export async function initStandaloneLayoutStudio() {
         monitorNeedsRender = true;
     }
 
-    // Actor Cutout Billboard
+    // Actor Cutout Billboard (Manual Addition Only - No Cache Fallback)
     let isActorProjectionVisible = false;
     let actorDistance = 3.0;
     let actorOpacity = 0.85;
+    let customActorCutoutUrl = null;
+    let customActorCutoutName = "";
+    let customActorCutoutAspect = null;
+    let customActorCutoutTex = null;
+    let customActorCutoutVideo = null;
+    let customActorCutoutMediaType = "none"; // "image" | "video" | "none"
 
     const actorMaterial = new THREE.MeshBasicMaterial({
         transparent: true,
@@ -1627,39 +2210,228 @@ export async function initStandaloneLayoutStudio() {
     actorBillboard.renderOrder = 999;
     scene.add(actorBillboard);
 
-    const actorTextureCache = new Map();
-    let actorTexLoading = false;
+    function isVideoMedia(url = "", name = "") {
+        const s = (name + " " + url).toLowerCase();
+        return /\.(mp4|webm|mov|mkv|m4v|ogv)(\?|$)/i.test(s) || url.startsWith("data:video/") || url.startsWith("blob:");
+    }
+
+    function setCustomActorCutout(url, name = "", forceType = null) {
+        if (!url) return;
+
+        // Clean up previous video if any
+        if (customActorCutoutVideo) {
+            try {
+                customActorCutoutVideo.pause();
+                customActorCutoutVideo.removeAttribute("src");
+                customActorCutoutVideo.load();
+            } catch (_) {}
+            customActorCutoutVideo = null;
+        }
+        if (customActorCutoutTex) {
+            try { customActorCutoutTex.dispose(); } catch (_) {}
+            customActorCutoutTex = null;
+        }
+
+        const isVid = forceType ? (forceType === "video") : isVideoMedia(url, name);
+        customActorCutoutMediaType = isVid ? "video" : "image";
+        customActorCutoutUrl = url;
+        customActorCutoutName = name || (isVid ? "custom_video.mp4" : "actor_cutout.png");
+
+        isActorProjectionVisible = true;
+        actorBillboard.visible = true;
+        const btnToggleActor = document.getElementById("btn-toggle-actor");
+        if (btnToggleActor) {
+            btnToggleActor.className = "vfx-btn vfx-btn-active";
+            btnToggleActor.innerText = `👤 Actor: ON`;
+        }
+
+        if (isVid) {
+            const vid = document.createElement("video");
+            vid.crossOrigin = "anonymous";
+            vid.playsInline = true;
+            vid.muted = true;
+            vid.loop = true;
+            vid.autoplay = false;
+            vid.preload = "auto";
+            vid.src = url;
+
+            customActorCutoutVideo = vid;
+
+            const onMeta = () => {
+                if (vid.videoWidth && vid.videoHeight) {
+                    customActorCutoutAspect = vid.videoWidth / vid.videoHeight;
+                    updateActorBillboardTransform();
+                    renderStudioViewports();
+                }
+            };
+            vid.addEventListener("loadedmetadata", onMeta);
+            vid.load();
+
+            const vTex = new THREE.VideoTexture(vid);
+            vTex.minFilter = THREE.LinearFilter;
+            vTex.magFilter = THREE.LinearFilter;
+            vTex.format = THREE.RGBAFormat;
+            customActorCutoutTex = vTex;
+            actorMaterial.map = vTex;
+            actorMaterial.needsUpdate = true;
+
+            const fps = projectFPS || 24;
+            vid.currentTime = currentFrame / fps;
+
+            updateActorCutoutUI();
+            updateActorBillboardTransform();
+            renderStudioViewports();
+        } else {
+            textureLoader.load(url, (tex) => {
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                customActorCutoutTex = tex;
+                if (tex.image && tex.image.naturalWidth && tex.image.naturalHeight) {
+                    customActorCutoutAspect = tex.image.naturalWidth / tex.image.naturalHeight;
+                }
+                actorMaterial.map = tex;
+                actorMaterial.needsUpdate = true;
+                updateActorCutoutUI();
+                updateActorBillboardTransform();
+                renderStudioViewports();
+            }, undefined, (err) => {
+                logMsg(`Actor Cutout load error: ${err && err.message ? err.message : 'failed'}`);
+            });
+            updateActorCutoutUI();
+        }
+
+        const pid = (window.currentProject && window.currentProject.id) || "";
+        if (pid) {
+            try {
+                localStorage.setItem(`vfx_actor_cutout_${pid}`, JSON.stringify({
+                    url: customActorCutoutUrl,
+                    name: customActorCutoutName,
+                    aspect: customActorCutoutAspect,
+                    mediaType: customActorCutoutMediaType
+                }));
+            } catch (_) {}
+        }
+    }
+
+    function clearCustomActorCutout() {
+        if (customActorCutoutVideo) {
+            try {
+                customActorCutoutVideo.pause();
+                customActorCutoutVideo.removeAttribute("src");
+                customActorCutoutVideo.load();
+            } catch (_) {}
+            customActorCutoutVideo = null;
+        }
+        if (customActorCutoutTex) {
+            try { customActorCutoutTex.dispose(); } catch (_) {}
+            customActorCutoutTex = null;
+        }
+        customActorCutoutUrl = null;
+        customActorCutoutName = "";
+        customActorCutoutAspect = null;
+        customActorCutoutMediaType = "none";
+        actorMaterial.map = null;
+        actorMaterial.needsUpdate = true;
+        actorBillboard.visible = false;
+        updateActorCutoutUI();
+        renderStudioViewports();
+        const pid = (window.currentProject && window.currentProject.id) || "";
+        if (pid) {
+            try { localStorage.removeItem(`vfx_actor_cutout_${pid}`); } catch (_) {}
+        }
+    }
+
+    function updateActorCutoutUI() {
+        const dropEmpty = document.getElementById("actor-cutout-empty");
+        const previewBox = document.getElementById("actor-cutout-preview-box");
+        const thumbImg = document.getElementById("actor-cutout-thumb");
+        const thumbVid = document.getElementById("actor-cutout-thumb-video");
+        const label = document.getElementById("actor-cutout-label");
+        const badge = document.getElementById("actor-cutout-badge");
+        const btnRembg = document.getElementById("btn-actor-rembg");
+
+        if (customActorCutoutUrl) {
+            if (dropEmpty) dropEmpty.style.display = "none";
+            if (previewBox) previewBox.style.display = "flex";
+            if (label) label.innerText = customActorCutoutName || (customActorCutoutMediaType === "video" ? "custom_video.mp4" : "actor.png");
+            
+            if (customActorCutoutMediaType === "video") {
+                if (thumbImg) thumbImg.style.display = "none";
+                if (thumbVid) {
+                    thumbVid.style.display = "block";
+                    if (thumbVid.src !== customActorCutoutUrl) thumbVid.src = customActorCutoutUrl;
+                }
+                if (badge) {
+                    badge.innerText = "VIDEO";
+                    badge.style.display = "inline-block";
+                    badge.style.background = "rgba(56,189,248,0.2)";
+                    badge.style.color = "#38bdf8";
+                }
+                if (btnRembg) btnRembg.style.display = "none";
+            } else {
+                if (thumbVid) {
+                    thumbVid.style.display = "none";
+                    thumbVid.src = "";
+                }
+                if (thumbImg) {
+                    thumbImg.style.display = "block";
+                    thumbImg.src = customActorCutoutUrl;
+                }
+                if (badge) {
+                    badge.innerText = "IMAGE";
+                    badge.style.display = "inline-block";
+                    badge.style.background = "rgba(16,185,129,0.2)";
+                    badge.style.color = "#34d399";
+                }
+                if (btnRembg) btnRembg.style.display = "inline-flex";
+            }
+        } else {
+            if (dropEmpty) dropEmpty.style.display = "flex";
+            if (previewBox) previewBox.style.display = "none";
+            if (thumbImg) { thumbImg.style.display = "none"; thumbImg.src = ""; }
+            if (thumbVid) { thumbVid.style.display = "none"; thumbVid.src = ""; }
+            if (label) label.innerText = "";
+            if (badge) badge.style.display = "none";
+        }
+    }
+    window.__vfxSetCustomActorCutout = setCustomActorCutout;
+    window.__vfxClearCustomActorCutout = clearCustomActorCutout;
 
     function updateActorTexture(frameIdx) {
         if (!isActorProjectionVisible) {
             actorBillboard.visible = false;
             return;
         }
-        actorBillboard.visible = true;
-        if (actorTextureCache.has(frameIdx)) {
-            const cachedTex = actorTextureCache.get(frameIdx);
-            if (actorMaterial.map !== cachedTex) {
-                actorMaterial.map = cachedTex;
-                actorMaterial.needsUpdate = true;
-            }
+        // Strict manual addition only: if user hasn't added custom media, do NOT show and do NOT load from cache!
+        if (!customActorCutoutTex) {
+            actorBillboard.visible = false;
             return;
         }
-        if (actorTexLoading) return;
-        actorTexLoading = true;
-        textureLoader.load(`/vfx/actor_cutout/${frameIdx}`, (tex) => {
-            actorTexLoading = false;
-            tex.minFilter = THREE.LinearFilter;
-            tex.magFilter = THREE.LinearFilter;
-            actorTextureCache.set(frameIdx, tex);
-            actorMaterial.map = tex;
+        actorBillboard.visible = true;
+        if (actorMaterial.map !== customActorCutoutTex) {
+            actorMaterial.map = customActorCutoutTex;
             actorMaterial.needsUpdate = true;
-        }, undefined, () => {
-            actorTexLoading = false;
-        });
+        }
+
+        if (customActorCutoutMediaType === "video" && customActorCutoutVideo) {
+            const fps = projectFPS || 24;
+            const targetTime = frameIdx / fps;
+            if (customActorCutoutVideo.duration && isFinite(customActorCutoutVideo.duration)) {
+                const loopedTime = targetTime % customActorCutoutVideo.duration;
+                if (Math.abs(customActorCutoutVideo.currentTime - loopedTime) > 0.05) {
+                    customActorCutoutVideo.currentTime = loopedTime;
+                }
+            } else {
+                customActorCutoutVideo.currentTime = targetTime;
+            }
+            if (customActorCutoutTex) {
+                customActorCutoutTex.needsUpdate = true;
+            }
+        }
     }
 
     function updateActorBillboardTransform() {
-        if (!isActorProjectionVisible) return;
+        if (!isActorProjectionVisible || !customActorCutoutTex) return;
         const dir = new THREE.Vector3();
         shotCamera.getWorldDirection(dir);
         actorBillboard.position.copy(shotCamera.position).addScaledVector(dir, actorDistance);
@@ -1667,7 +2439,8 @@ export async function initStandaloneLayoutStudio() {
 
         const vFovRad = THREE.MathUtils.degToRad(shotCamera.fov);
         const planeHeight = 2.0 * actorDistance * Math.tan(vFovRad / 2.0);
-        const planeWidth = planeHeight * plateAspect;
+        const aspect = (customActorCutoutAspect && customActorCutoutAspect > 0) ? customActorCutoutAspect : plateAspect;
+        const planeWidth = planeHeight * aspect;
         actorBillboard.scale.set(planeWidth, planeHeight, 1);
     }
 
@@ -2344,9 +3117,11 @@ export async function initStandaloneLayoutStudio() {
         updateActiveViewLabel("Persp");
     }
 
-    async function loadSceneData(targetProj = null) {
+    async function loadSceneData(targetProj = null, options = {}) {
         try {
-            const pid = targetProj ? (targetProj.id || targetProj) : (window.currentProject ? window.currentProject.id : "");
+            const pid = targetProj
+                ? (targetProj.id || targetProj)
+                : ((window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "New_Movie_Shot");
             const url = pid ? `/vfx/scene_data?project_id=${encodeURIComponent(pid)}` : "/vfx/scene_data";
             const r = await fetch(url);
             const data = await r.json();
@@ -2492,31 +3267,52 @@ export async function initStandaloneLayoutStudio() {
 
             updateActorTexture(currentFrame);
             updateActorBillboardTransform();
-
-            // Load existing saved layout manifest for this project
-            try {
-                const mUrl = pid ? `/vfx/layout_manifest?project_id=${encodeURIComponent(pid)}` : "/vfx/layout_manifest";
-                const mRes = await fetch(mUrl);
-                const mData = await mRes.json();
-                if (Array.isArray(mData) && mData.length > 0) {
-                    loadManifestObjects(mData);
-                } else {
-                    const cached = localStorage.getItem("vfx_3d_manifest_cache");
-                    if (cached) {
-                        const items = JSON.parse(cached);
-                        loadManifestObjects(Array.isArray(items) ? items : []);
-                    } else {
-                        loadManifestObjects([]);
+            if (pid) {
+                try {
+                    const savedCutout = JSON.parse(localStorage.getItem(`vfx_actor_cutout_${pid}`) || "null");
+                    if (savedCutout && savedCutout.url) {
+                        setCustomActorCutout(savedCutout.url, savedCutout.name, savedCutout.mediaType);
                     }
-                }
-            } catch (e) {
-                const cached = localStorage.getItem("vfx_3d_manifest_cache");
-                if (cached) {
-                    try {
-                        const items = JSON.parse(cached);
-                        loadManifestObjects(Array.isArray(items) ? items : []);
-                    } catch (_) { loadManifestObjects([]); }
-                } else {
+                } catch (_) {}
+            }
+
+            // Load existing saved layout manifest for this project (never leak global cache across projects)
+            if (!options.keepExistingActors || threeObjectsMap.size === 0) {
+                try {
+                    try { localStorage.removeItem("vfx_3d_manifest_cache"); } catch (_) {}
+                    const mUrl = pid ? `/vfx/layout_manifest?project_id=${encodeURIComponent(pid)}` : "/vfx/layout_manifest";
+                    const mRes = await fetch(mUrl);
+                    const mData = await mRes.json();
+                    let listToLoad = [];
+                    if (Array.isArray(mData) && mData.length > 0) {
+                        listToLoad = mData.filter(it => !(it && it.type === "character" && /SK_Desert_soldier/i.test(String(it.characterUrl || ""))));
+                    } else if (pid) {
+                        const cached = localStorage.getItem(`vfx_3d_manifest_cache_${pid}`);
+                        if (cached) {
+                            try { listToLoad = JSON.parse(cached) || []; } catch (_) {}
+                        }
+                    }
+                    // Restore dedicated sun settings if available
+                    if (pid) {
+                        try {
+                            const savedSun = JSON.parse(localStorage.getItem(`vfx_3d_sun_${pid}`) || "null");
+                            if (savedSun) {
+                                let lObj = listToLoad.find(it => it && it.type === "light");
+                                if (lObj) {
+                                    Object.assign(lObj, savedSun);
+                                } else {
+                                    listToLoad.push({
+                                        id: `light_sun_${pid}`,
+                                        name: "Sun_1",
+                                        type: "light",
+                                        ...savedSun
+                                    });
+                                }
+                            }
+                        } catch (_) {}
+                    }
+                    loadManifestObjects(listToLoad);
+                } catch (e) {
                     loadManifestObjects([]);
                 }
             }
@@ -2590,6 +3386,11 @@ export async function initStandaloneLayoutStudio() {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
     renderer.setPixelRatio(currentDpr);
     renderer.setSize(width, height, false);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    if (THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = viewportExposure;
     renderer.domElement.className = "vfx-viewport-canvas";
     canvasHost.appendChild(renderer.domElement);
 
@@ -2607,6 +3408,11 @@ export async function initStandaloneLayoutStudio() {
             });
             monitorRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
             monitorRenderer.setClearColor(0x0a0a0d, 1.0);
+            monitorRenderer.shadowMap.enabled = true;
+            monitorRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            if (THREE.sRGBEncoding !== undefined) monitorRenderer.outputEncoding = THREE.sRGBEncoding;
+            monitorRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            monitorRenderer.toneMappingExposure = viewportExposure;
         } catch (e) {
             console.warn("Failed to create monitorRenderer:", e);
         }
@@ -2888,6 +3694,335 @@ export async function initStandaloneLayoutStudio() {
         applyYawPitchToCamera();
     }, { passive: false });
 
+    // =========================================================================
+    // 3D VIEWPORT DRAG & DROP HANDLER
+    // Allows dragging 3D meshes (TRELLIS.2 / GLB), scenes, and models from the
+    // top gallery strip directly into the 3D viewport!
+    // - Dropping onto an existing Actor (e.g. Proxy Cube): replaces it in-place
+    // - Dropping onto empty space / floor: places new 3D model at cursor location
+    // - Dropping an image onto an Actor: applies image as texture
+    // =========================================================================
+    const handle3DViewportDragOver = (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = "copy";
+        }
+        if (renderer && renderer.domElement) {
+            renderer.domElement.style.outline = "2px dashed rgba(255, 255, 255, 0.45)";
+            renderer.domElement.style.outlineOffset = "-2px";
+        }
+    };
+
+    const handle3DViewportDragLeave = (e) => {
+        if (renderer && renderer.domElement) {
+            renderer.domElement.style.outline = "";
+            renderer.domElement.style.outlineOffset = "";
+        }
+    };
+
+    const handle3DViewportDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (renderer && renderer.domElement) {
+            renderer.domElement.style.outline = "";
+            renderer.domElement.style.outlineOffset = "";
+        }
+
+        const raw = e.dataTransfer.getData("application/vfx-media-item") || e.dataTransfer.getData("application/vfx-ref");
+        let payload = null;
+        if (raw) {
+            try { payload = JSON.parse(raw); } catch (_) {}
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        const raycaster = new THREE.Raycaster();
+        const cam = activeCamera || flyCamera;
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cam);
+
+        // Raycast against existing 3D scene objects
+        const interactable = [...threeObjectsMap.values()].filter(o => o.visible !== false);
+        const hits = raycaster.intersectObjects(interactable, true);
+
+        let hitActor = null;
+        let planeHitPoint = null;
+        if (hits.length > 0) {
+            for (const h of hits) {
+                if (h.object && (h.object.isLine || h.object.isLineSegments || h.object.name === "__vfx_proxy_cage")) {
+                    continue;
+                }
+                let cur = h.object;
+                let foundActor = null;
+                while (cur && cur !== scene) {
+                    if (cur.userData && cur.userData.id && threeObjectsMap.has(cur.userData.id)) {
+                        foundActor = cur;
+                        break;
+                    }
+                    cur = cur.parent;
+                }
+                if (foundActor) {
+                    const fType = foundActor.userData.type || "";
+                    const isFloorPlane = fType === "plane" || /^ground$/i.test(foundActor.userData.name || "");
+                    if (isFloorPlane) {
+                        if (!planeHitPoint) planeHitPoint = h.point.clone();
+                        continue;
+                    }
+                    if (fType === "camera") {
+                        continue;
+                    }
+                    hitActor = foundActor;
+                    break;
+                }
+            }
+        }
+
+        const existingReplaceableActors = [...threeObjectsMap.values()].filter(o => {
+            const t = o?.userData?.type || "";
+            const isFloor = t === "plane" || /^ground$/i.test(o?.userData?.name || "");
+            return o && o.visible !== false && !isFloor && t !== "camera";
+        });
+        const targetActorForModal = hitActor
+            || (selectedObject && existingReplaceableActors.includes(selectedObject) ? selectedObject : null)
+            || (existingReplaceableActors.length > 0 ? existingReplaceableActors[existingReplaceableActors.length - 1] : null);
+
+        const computeDropGroundPosition = () => {
+            let pos = null;
+            if (planeHitPoint) {
+                pos = new THREE.Vector3(planeHitPoint.x, planeHitPoint.y, Math.max(0.0, planeHitPoint.z) + 0.6);
+            } else {
+                const groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+                const dropPos = new THREE.Vector3();
+                const hitG = raycaster.ray.intersectPlane(groundPlane, dropPos);
+                if (!hitG) {
+                    if (targetActorForModal) {
+                        pos = new THREE.Vector3(targetActorForModal.position.x + 1.6, targetActorForModal.position.y, Math.max(0.6, targetActorForModal.position.z));
+                    } else {
+                        pos = new THREE.Vector3(0, 0, 0.6);
+                    }
+                } else {
+                    pos = new THREE.Vector3(dropPos.x, dropPos.y, Math.max(0.0, dropPos.z) + 0.6);
+                }
+            }
+            // Ensure new placed model doesn't sit on the exact same XY spot as an existing model
+            for (const ex of existingReplaceableActors) {
+                const dx = pos.x - ex.position.x;
+                const dy = pos.y - ex.position.y;
+                if (Math.hypot(dx, dy) < 0.75) {
+                    pos.x = ex.position.x + 1.6;
+                }
+            }
+            return pos;
+        };
+
+        const showDrop3DChoiceModal = ({ meshTitle, oldName, onPlaceNew, onReplace }) => {
+            const oldModal = document.getElementById("vfx-drop-3d-choice-modal");
+            if (oldModal) oldModal.remove();
+
+            const modal = document.createElement("div");
+            modal.id = "vfx-drop-3d-choice-modal";
+            modal.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 100050;
+                background: rgba(0, 0, 0, 0.75);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                user-select: none;
+                padding: 16px;
+                box-sizing: border-box;
+            `;
+            modal.innerHTML = `
+                <div style="background: #141418; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; width: 420px; max-width: 95vw; box-shadow: 0 24px 64px rgba(0,0,0,0.9); overflow: hidden; display: flex; flex-direction: column;">
+                    <div style="padding: 12px 16px; background: rgba(255, 255, 255, 0.04); border-bottom: 1px solid rgba(255, 255, 255, 0.08); display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-weight: 600; font-size: 12px; color: #ffffff; display: flex; align-items: center; gap: 7px;">
+                            <i data-lucide="box" style="width: 14px; height: 14px; color: #38bdf8;"></i>
+                            <span>${uiText("Place or Replace 3D Model", "Поместить или заменить 3D-модель")}</span>
+                        </span>
+                        <button class="vfx-btn" id="btn-drop3d-close" style="background: transparent; border: none; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; padding: 2px 6px;">✕</button>
+                    </div>
+                    <div style="padding: 16px; font-size: 12px; color: rgba(255, 255, 255, 0.88); line-height: 1.5;">
+                        ${uiText(
+                            `The cursor is over existing object <b>"${oldName}"</b>.<br>What would you like to do with <b>"${meshTitle}"</b>?`,
+                            `Под курсором находится объект <b>«${oldName}»</b>.<br>Что сделать с перетаскиваемой моделью <b>«${meshTitle}»</b>?`
+                        )}
+                    </div>
+                    <div style="padding: 10px 16px; background: rgba(0, 0, 0, 0.3); border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">
+                        <button class="vfx-btn" id="btn-drop3d-cancel" style="padding: 6px 12px; font-size: 11px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: rgba(255,255,255,0.8); border-radius: 4px; cursor: pointer;">
+                            ${uiText("Cancel", "Отмена")}
+                        </button>
+                        <button class="vfx-btn" id="btn-drop3d-replace" style="padding: 6px 14px; font-size: 11px; font-weight: 600; background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.55); color: #fcd34d; border-radius: 4px; cursor: pointer;">
+                            🎯 ${uiText(`Replace "${oldName}"`, `Заменить «${oldName}»`)}
+                        </button>
+                        <button class="vfx-btn vfx-btn-primary" id="btn-drop3d-place" style="padding: 6px 14px; font-size: 11px; font-weight: 600; background: rgba(16, 185, 129, 0.25); border: 1px solid rgba(16, 185, 129, 0.65); color: #6ee7b7; border-radius: 4px; cursor: pointer;">
+                            ➕ ${uiText("Place on Level", "Поместить рядом")}
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            if (window.lucide) { try { window.lucide.createIcons(); } catch (_) {} }
+
+            const close = () => modal.remove();
+            modal.querySelector("#btn-drop3d-close").onclick = close;
+            modal.querySelector("#btn-drop3d-cancel").onclick = close;
+            modal.onclick = (ev) => { if (ev.target === modal) close(); };
+            modal.querySelector("#btn-drop3d-place").onclick = async () => {
+                close();
+                if (typeof onPlaceNew === "function") await onPlaceNew();
+            };
+            modal.querySelector("#btn-drop3d-replace").onclick = async () => {
+                close();
+                if (typeof onReplace === "function") await onReplace();
+            };
+        };
+
+        // Case 1: 3D generated mesh or 3D scene from gallery strip
+        const glbUrl = payload ? (payload.glbUrl || payload.url || (payload.filename ? `/vfx/mesh3d/file/${payload.filename}` : "")) : "";
+        const is3D = payload && (
+            payload.mediaType === "3d-scene" ||
+            payload.type === "3d-scene" ||
+            payload.mode === "mesh" ||
+            /\.(glb|gltf|obj|fbx)(\?|$)/i.test(glbUrl) ||
+            /\.(glb|gltf|obj|fbx)(\?|$)/i.test(payload.filename || "")
+        );
+
+        if (is3D && glbUrl) {
+            const meshTitle = payload.title || payload.filename || "3D_Mesh";
+            const spawnNewAtDrop = async () => {
+                await replaceObjectWithGLB("__spawn_new__", glbUrl, {
+                    name: meshTitle,
+                    glbFilename: payload.filename || meshTitle,
+                    engineUsed: payload.engine || "TRELLIS.2",
+                    textures: payload.textures || {},
+                    fitMode: "native"
+                });
+                if (typeof window.showToastNotification === "function") {
+                    window.showToastNotification(uiText(
+                        `3D model "${meshTitle}" placed into scene!`,
+                        `3D модель "${meshTitle}" добавлена в сцену!`
+                    ));
+                }
+                renderStudioViewports();
+            };
+
+            if (targetActorForModal) {
+                const targetId = targetActorForModal.userData.id;
+                const oldName = targetActorForModal.userData.name || targetId;
+                showDrop3DChoiceModal({
+                    meshTitle,
+                    oldName,
+                    onPlaceNew: spawnNewAtDrop,
+                    onReplace: async () => {
+                        await replaceObjectWithGLB(targetId, glbUrl, {
+                            name: meshTitle,
+                            glbFilename: payload.filename || meshTitle,
+                            engineUsed: payload.engine || "TRELLIS.2",
+                            textures: payload.textures || {}
+                        });
+                        if (typeof window.showToastNotification === "function") {
+                            window.showToastNotification(uiText(
+                                `Replaced "${oldName}" with 3D model "${meshTitle}"!`,
+                                `Объект "${oldName}" заменен на 3D модель "${meshTitle}"!`
+                            ));
+                        }
+                        renderStudioViewports();
+                    }
+                });
+            } else {
+                await spawnNewAtDrop();
+            }
+            return;
+        }
+
+        // Case 2: Local 3D files dragged from OS file explorer
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            if (/\.(glb|gltf|obj)$/i.test(file.name)) {
+                try {
+                    if (typeof uploadToProject === "function") {
+                        const uploadedUrl = await uploadToProject(file);
+                        const cleanName = file.name.replace(/\.[^/.]+$/, "");
+                        const spawnExplorerFileNew = async () => {
+                            await replaceObjectWithGLB("__spawn_new__", uploadedUrl, {
+                                name: cleanName,
+                                glbFilename: file.name,
+                                fitMode: "native"
+                            });
+                            if (typeof window.showToastNotification === "function") {
+                                window.showToastNotification(uiText(`Imported 3D model "${file.name}"!`, `3D модель "${file.name}" загружена в сцену!`));
+                            }
+                            renderStudioViewports();
+                        };
+                        if (targetActorForModal) {
+                            const targetId = targetActorForModal.userData.id;
+                            const oldName = targetActorForModal.userData.name || targetId;
+                            showDrop3DChoiceModal({
+                                meshTitle: cleanName,
+                                oldName,
+                                onPlaceNew: spawnExplorerFileNew,
+                                onReplace: async () => {
+                                    await replaceObjectWithGLB(targetId, uploadedUrl, { name: cleanName, glbFilename: file.name });
+                                    if (typeof window.showToastNotification === "function") {
+                                        window.showToastNotification(uiText(`Replaced "${oldName}" with "${file.name}"!`, `Объект "${oldName}" заменен на "${file.name}"!`));
+                                    }
+                                    renderStudioViewports();
+                                }
+                            });
+                        } else {
+                            await spawnExplorerFileNew();
+                        }
+                    }
+                } catch (err) {
+                    if (typeof window.showToastNotification === "function") window.showToastNotification(`❌ ${err.message}`, true);
+                }
+                return;
+            }
+        }
+
+        // Case 3: Dropped image or video onto a 3D Actor or Actor Cutout Billboard
+        const isMedia = payload && (payload.mediaType === "1d-image" || payload.type === "1d-image" || payload.type === "video" || payload.mediaType === "video" || /\.(png|jpe?g|webp|mp4|webm|mov|mkv)(\?|$)/i.test(payload.url || ""));
+        if (isMedia) {
+            const mUrl = payload.url || payload.fallbackUrl;
+            if (mUrl) {
+                const isVid = payload.type === "video" || payload.mediaType === "video" || isVideoMedia(mUrl, payload.filename || payload.title);
+                if (hitActor === actorBillboard || (isActorProjectionVisible && !hitActor)) {
+                    setCustomActorCutout(mUrl, payload.filename || payload.title || (isVid ? "video.mp4" : "actor.png"), isVid ? "video" : "image");
+                    if (typeof window.showToastNotification === "function") {
+                        window.showToastNotification(uiText(`Actor Cutout ${isVid ? 'video' : 'image'} set!`, `Кастомный ${isVid ? 'видео' : 'изображение'}-эктор установлен!`));
+                    }
+                    renderStudioViewports();
+                    return;
+                }
+                if (hitActor && typeof applyTextureToObject === "function") {
+                    applyTextureToObject(hitActor.userData.id, mUrl, true);
+                    if (typeof window.showToastNotification === "function") {
+                        window.showToastNotification(uiText(
+                            `Texture applied to "${hitActor.userData.name || hitActor.userData.id}"!`,
+                            `Текстура наложена на "${hitActor.userData.name || hitActor.userData.id}"!`
+                        ));
+                    }
+                    renderStudioViewports();
+                    return;
+                }
+            }
+        }
+    };
+
+    renderer.domElement.addEventListener("dragover", handle3DViewportDragOver);
+    renderer.domElement.addEventListener("dragleave", handle3DViewportDragLeave);
+    renderer.domElement.addEventListener("drop", handle3DViewportDrop);
+
+    if (canvasHost) {
+        canvasHost.addEventListener("dragover", handle3DViewportDragOver);
+        canvasHost.addEventListener("dragleave", handle3DViewportDragLeave);
+        canvasHost.addEventListener("drop", handle3DViewportDrop);
+    }
+
     // Cached coordinate resolution for scissored viewports (prevents per-frame / per-pointermove DOM reflow)
     let cachedCanvasRect = null;
     let cachedRightColRect = null;
@@ -3135,7 +4270,14 @@ export async function initStandaloneLayoutStudio() {
         if (ud.assignedImage === undefined) ud.assignedImage = defaults.assignedImage || "";
         if (ud.assignedCharacter === undefined) ud.assignedCharacter = defaults.assignedCharacter || "";
         if (ud.assignedAudio === undefined) ud.assignedAudio = defaults.assignedAudio || "";
-        if (ud.fitMode === undefined) ud.fitMode = defaults.fitMode || "stretch";
+        if (ud.fitMode === undefined) ud.fitMode = defaults.fitMode || (ud.type === "glb" ? "native" : "stretch");
+        if (ud.pivotOffset === undefined && Array.isArray(defaults.pivotOffset) && defaults.pivotOffset.length === 3) {
+            ud.pivotOffset = [
+                Number(defaults.pivotOffset[0]) || 0,
+                Number(defaults.pivotOffset[1]) || 0,
+                Number(defaults.pivotOffset[2]) || 0
+            ];
+        }
         if (ud.color === undefined) {
             ud.color = (obj.material && obj.material.color) ? `#${obj.material.color.getHexString()}` : (defaults.color || "#cccccc");
         }
@@ -3269,7 +4411,15 @@ export async function initStandaloneLayoutStudio() {
             }
         });
 
-        if (activeActors.length === 0) return;
+        if (activeActors.length === 0 || !window.__vfxShowBounds) {
+            selectionBoxHelpers.forEach((helper) => {
+                scene.remove(helper);
+                if (helper.geometry) helper.geometry.dispose();
+                if (helper.material) helper.material.dispose();
+            });
+            selectionBoxHelpers.clear();
+            return;
+        }
 
         const effectiveHighlighted = hoveredKeyframeActors.size > 0 ? hoveredKeyframeActors : highlightedKeyframeActors;
         const hasAnyHighlight = effectiveHighlighted.size > 0;
@@ -3313,6 +4463,7 @@ export async function initStandaloneLayoutStudio() {
         });
     }
 
+    window.__vfxSelectShotCamera = () => selectObject(shotCamera);
     function selectObject(obj, isMulti = false) {
         setTimeout(() => { if (typeof window.__vfxRefreshAnimClips === "function") window.__vfxRefreshAnimClips(); }, 0);
         if (isMulti && obj) {
@@ -3356,6 +4507,10 @@ export async function initStandaloneLayoutStudio() {
         updateOutliner();
         updateTransformInspector(true);
         updateKeyframeMarkers();
+        const monCamActor = getActiveMonitorCameraActor();
+        if (monCamActor) {
+            applyCameraOptics(monCamActor, true);
+        }
         renderStudioViewports();
     }
 
@@ -3704,10 +4859,26 @@ export async function initStandaloneLayoutStudio() {
                 <span class="vfx-outliner-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500;">Shot Camera</span>
                 ${isKeyHighlighted && effectiveKeyFrame !== null ? `<span style="font-size:8px; font-weight:700; color:#fff; background:${shotCamColor}; padding:1px 4px; border-radius:3px;">KEY F${effectiveKeyFrame}</span>` : ''}
                 <span style="font-size:9px; color:rgba(255,255,255,0.4); font-family:monospace;">${cameraMatrices && cameraMatrices.length > 0 ? 'TRACKED' : 'CINEMA'}</span>
-                <span class="vfx-outliner-eye" title="Toggle Camera Visibility (Hide/Show)" style="cursor:pointer; opacity:${isCamProxyVis ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
-                <span class="vfx-outliner-del" title="Delete / Reset Shot Camera" style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
+                <span class="vfx-outliner-nuke" ${tipAttr("Send Camera to Nuke & Deconstruct outputs", "Отправить камеру в Nuke и выходы деконструкции")} style="cursor:pointer; font-size:11px; padding:0 2px; opacity:${(window.__vfxDeconstructManager && window.__vfxDeconstructManager.isItemAdded('shot_camera')) ? '1.0' : '0.4'};">🧩</span>
+                <span class="vfx-outliner-eye" ${tipAttr("Toggle Camera Visibility (Hide/Show)", "Показать / скрыть камеру во вьюпорте")} style="cursor:pointer; opacity:${isCamProxyVis ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
+                <span class="vfx-outliner-del" ${tipAttr("Delete / Reset Shot Camera", "Удалить / сбросить камеру шота")} style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
             `;
             shotCamItem.onclick = (e) => {
+                if (e.target.classList.contains("vfx-outliner-nuke")) {
+                    const curPid = (typeof currentProject !== "undefined" ? currentProject?.id : "New_Movie_Shot") || "sandbox_playground";
+                    if (window.__vfxDeconstructManager) {
+                        window.__vfxDeconstructManager.toggleItem(curPid, {
+                            id: "shot_camera",
+                            source_id: "shot_camera",
+                            source_type: "camera_3d",
+                            name: "Shot Camera",
+                            alias: "cam_shot01",
+                            data_type: "VFX_CAMERA",
+                            meta: { fov: shotCamera.fov }
+                        }).then(() => updateOutliner());
+                    }
+                    return;
+                }
                 if (e.target.classList.contains("vfx-outliner-eye")) {
                     isShotCameraVisible = !isShotCameraVisible;
                     if (camBodyMesh) camBodyMesh.visible = isShotCameraVisible;
@@ -3749,8 +4920,8 @@ export async function initStandaloneLayoutStudio() {
                 <span class="vfx-outliner-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500;">LiDAR Point Cloud</span>
                 ${isKeyHighlighted && effectiveKeyFrame !== null ? `<span style="font-size:8px; font-weight:700; color:#fff; background:${cloudColor}; padding:1px 4px; border-radius:3px;">KEY F${effectiveKeyFrame}</span>` : ''}
                 <span style="font-size:9px; color:rgba(255,255,255,0.4); font-family:monospace;">LIDAR</span>
-                <span class="vfx-outliner-eye" title="Toggle Point Cloud Visibility" style="cursor:pointer; opacity:${cloudMesh.visible !== false ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
-                <span class="vfx-outliner-del" title="Delete Point Cloud" style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
+                <span class="vfx-outliner-eye" ${tipAttr("Toggle Point Cloud Visibility", "Показать / скрыть облако точек трекинга")} style="cursor:pointer; opacity:${cloudMesh.visible !== false ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
+                <span class="vfx-outliner-del" ${tipAttr("Delete Point Cloud", "Удалить облако точек")} style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
             `;
             ptItem.onclick = (e) => {
                 if (e.target.classList.contains("vfx-outliner-eye")) {
@@ -3785,15 +4956,15 @@ export async function initStandaloneLayoutStudio() {
                 item.style.boxShadow = `0 0 10px ${objColor}55, inset 0 0 8px ${objColor}22`;
                 item.style.background = "rgba(255,255,255,0.12)";
             }
-            const iconChar = obj.userData.type === "camera" ? "📹" : (obj.userData.type === "glb" ? "🧊" : (obj.userData.type === "plane" ? "📐" : (obj.userData.type === "splat" ? "✨" : "📦")));
+            const iconChar = obj.userData.type === "camera" ? "📹" : (obj.userData.type === "light" ? (obj.userData.lightSubType === "sun" ? "☀️" : (obj.userData.lightSubType === "area" ? "▭" : "💡")) : (obj.userData.type === "glb" ? "🧊" : (obj.userData.type === "plane" ? "📐" : (obj.userData.type === "splat" ? "✨" : "📦"))));
             item.innerHTML = `
                 ${objColor && activeActors.length > 1 ? `<span style="width:7px; height:7px; border-radius:50%; background:${objColor}; box-shadow:0 0 6px ${objColor}; flex-shrink:0;"></span>` : ''}
                 <span class="vfx-outliner-icon" style="font-size:12px;">${iconChar}</span>
                 <span class="vfx-outliner-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500;">${obj.userData.name}</span>
                 ${isKeyHighlighted && effectiveKeyFrame !== null ? `<span style="font-size:8px; font-weight:700; color:#fff; background:${objColor}; padding:1px 4px; border-radius:3px;">KEY F${effectiveKeyFrame}</span>` : ''}
-                <span style="font-size:9px; color:rgba(255,255,255,0.4); font-family:monospace;">${obj.userData.type.toUpperCase()}</span>
-                <span class="vfx-outliner-eye" title="Toggle Visibility" style="cursor:pointer; opacity:${obj.visible !== false ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
-                <span class="vfx-outliner-del" title="Delete Object (Del)" style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
+                <span style="font-size:9px; color:rgba(255,255,255,0.4); font-family:monospace;">${obj.userData.type === "light" ? String(obj.userData.lightSubType || "sun").toUpperCase() : obj.userData.type.toUpperCase()}</span>
+                <span class="vfx-outliner-eye" ${tipAttr("Toggle Visibility", "Показать / скрыть объект")} style="cursor:pointer; opacity:${obj.visible !== false ? '1.0' : '0.35'}; font-size:11px;">👁️</span>
+                <span class="vfx-outliner-del" ${tipAttr("Delete Object (Del)", "Удалить объект (Del)")} style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
             `;
             item.onclick = (e) => {
                 if (e.target.classList.contains("vfx-outliner-eye")) {
@@ -3827,13 +4998,19 @@ export async function initStandaloneLayoutStudio() {
     const numScaleZ = document.getElementById("num-scale-z");
     const colorPicker = document.getElementById("sidebar-color-picker");
 
+    let sidebarScaleLocked = true;
     function updateTransformInspector(rebuildDetailsDom = false) {
         if (!selectedObject) {
-            if (inspectorTarget) inspectorTarget.innerText = "None";
+            if (inspectorTarget) inspectorTarget.innerText = "• " + uiText("None", "Нет");
+            [numPosX, numPosY, numPosZ].forEach(el => { if (el && document.activeElement !== el) el.value = "0.00"; });
+            [numRotX, numRotY, numRotZ].forEach(el => { if (el && document.activeElement !== el) el.value = "0.0"; });
+            [numScaleX, numScaleY, numScaleZ].forEach(el => { if (el && document.activeElement !== el) el.value = "1.00"; });
+            const lightInsp = document.getElementById("sidebar-light-inspector");
+            if (lightInsp) lightInsp.style.display = "none";
             if (rebuildDetailsDom) notifyDetailsAndOutliner();
             return;
         }
-        if (inspectorTarget) inspectorTarget.innerText = selectedObject.userData.name;
+        if (inspectorTarget) inspectorTarget.innerText = "• " + (selectedObject.userData.name || "Object");
         const px = selectedObject.position.x.toFixed(2);
         const py = selectedObject.position.y.toFixed(2);
         const pz = selectedObject.position.z.toFixed(2);
@@ -3856,8 +5033,52 @@ export async function initStandaloneLayoutStudio() {
         if (numScaleY && document.activeElement !== numScaleY) numScaleY.value = sy;
         if (numScaleZ && document.activeElement !== numScaleZ) numScaleZ.value = sz;
 
-        if (colorPicker && selectedObject.material && selectedObject.material.color) {
-            colorPicker.value = `#${selectedObject.material.color.getHexString()}`;
+        if (colorPicker) {
+            if (selectedObject.userData && selectedObject.userData.color) {
+                colorPicker.value = selectedObject.userData.color;
+            } else if (selectedObject.material && selectedObject.material.color) {
+                colorPicker.value = `#${selectedObject.material.color.getHexString()}`;
+            }
+        }
+        const lightInsp = document.getElementById("sidebar-light-inspector");
+        if (lightInsp) {
+            if (selectedObject && selectedObject.userData && selectedObject.userData.type === "light") {
+                lightInsp.style.display = "flex";
+                const sub = selectedObject.userData.lightSubType || "sun";
+                const inten = Number(selectedObject.userData.lightIntensity ?? 2.5);
+                const ang = Number(selectedObject.userData.lightAngleDeg ?? 8);
+                const rng = Number(selectedObject.userData.lightRange ?? 20);
+                const aw = Number(selectedObject.userData.areaWidth ?? 2.0);
+                const ah = Number(selectedObject.userData.areaHeight ?? 1.2);
+                lightInsp.querySelectorAll(".sidebar-light-mode-btn").forEach(b => {
+                    const active = b.dataset.lmode === sub;
+                    b.style.background = active ? "rgba(251, 191, 36, 0.25)" : "rgba(255,255,255,0.04)";
+                    b.style.borderColor = active ? "#fbbf24" : "rgba(255,255,255,0.12)";
+                    b.style.color = active ? "#fde68a" : "#d4d4d8";
+                });
+                const slInt = document.getElementById("sidebar-light-intensity-slider");
+                const nmInt = document.getElementById("sidebar-light-intensity-num");
+                if (slInt && document.activeElement !== slInt) slInt.value = String(inten);
+                if (nmInt && document.activeElement !== nmInt) nmInt.value = inten.toFixed(1);
+                const slAng = document.getElementById("sidebar-light-angle-slider");
+                const nmAng = document.getElementById("sidebar-light-angle-num");
+                if (slAng && document.activeElement !== slAng) slAng.value = String(ang);
+                if (nmAng && document.activeElement !== nmAng) nmAng.value = String(Math.round(ang));
+                const rngRow = document.getElementById("sidebar-light-range-row");
+                if (rngRow) rngRow.style.display = (sub === "point" || sub === "area") ? "flex" : "none";
+                const slRng = document.getElementById("sidebar-light-range-slider");
+                const nmRng = document.getElementById("sidebar-light-range-num");
+                if (slRng && document.activeElement !== slRng) slRng.value = String(rng);
+                if (nmRng && document.activeElement !== nmRng) nmRng.value = rng.toFixed(1);
+                const areaRow = document.getElementById("sidebar-light-area-row");
+                if (areaRow) areaRow.style.display = (sub === "area") ? "flex" : "none";
+                const inpAw = document.getElementById("sidebar-light-area-w");
+                const inpAh = document.getElementById("sidebar-light-area-h");
+                if (inpAw && document.activeElement !== inpAw) inpAw.value = aw.toFixed(1);
+                if (inpAh && document.activeElement !== inpAh) inpAh.value = ah.toFixed(1);
+            } else {
+                lightInsp.style.display = "none";
+            }
         }
 
         // Update UE5 Details panel transform inputs in-place without rebuilding DOM (prevents focus loss & drag lag)
@@ -3881,16 +5102,30 @@ export async function initStandaloneLayoutStudio() {
         }
     }
 
-    function onInspectorChange() {
+    function onInspectorChange(changedEl) {
         if (!selectedObject) return;
-        pushUndoState("Inspector Transform");
+        if (sidebarScaleLocked && (changedEl === numScaleX || changedEl === numScaleY || changedEl === numScaleZ)) {
+            const axis = changedEl === numScaleX ? "x" : (changedEl === numScaleY ? "y" : "z");
+            const oldVal = selectedObject.scale[axis] || 1;
+            const newVal = Math.max(0.01, parseFloat(changedEl.value) || 1);
+            if (Math.abs(oldVal) > 0.0001) {
+                const ratio = newVal / oldVal;
+                if (changedEl !== numScaleX && numScaleX) numScaleX.value = Math.max(0.01, (selectedObject.scale.x || 1) * ratio).toFixed(2);
+                if (changedEl !== numScaleY && numScaleY) numScaleY.value = Math.max(0.01, (selectedObject.scale.y || 1) * ratio).toFixed(2);
+                if (changedEl !== numScaleZ && numScaleZ) numScaleZ.value = Math.max(0.01, (selectedObject.scale.z || 1) * ratio).toFixed(2);
+            }
+        }
         selectedObject.position.set(parseFloat(numPosX.value) || 0, parseFloat(numPosY.value) || 0, parseFloat(numPosZ.value) || 0);
         selectedObject.rotation.set(
             THREE.MathUtils.degToRad(parseFloat(numRotX.value) || 0),
             THREE.MathUtils.degToRad(parseFloat(numRotY.value) || 0),
             THREE.MathUtils.degToRad(parseFloat(numRotZ.value) || 0)
         );
-        selectedObject.scale.set(parseFloat(numScaleX.value) || 1, parseFloat(numScaleY.value) || 1, parseFloat(numScaleZ.value) || 1);
+        selectedObject.scale.set(
+            Math.max(0.01, parseFloat(numScaleX.value) || 1),
+            Math.max(0.01, parseFloat(numScaleY.value) || 1),
+            Math.max(0.01, parseFloat(numScaleZ.value) || 1)
+        );
         selectedObject.updateMatrixWorld(true);
         if (selectedObject === shotCamera) {
             syncShotCameraVisuals(true);
@@ -3907,12 +5142,115 @@ export async function initStandaloneLayoutStudio() {
     }
 
     [numPosX, numPosY, numPosZ, numRotX, numRotY, numRotZ, numScaleX, numScaleY, numScaleZ].forEach(inp => {
-        if (inp) inp.addEventListener("input", onInspectorChange);
+        if (!inp) return;
+        inp.addEventListener("focus", () => { if (selectedObject) pushUndoState("Inspector Transform"); });
+        inp.addEventListener("input", () => onInspectorChange(inp));
+        inp.addEventListener("change", () => onInspectorChange(inp));
+    });
+
+    // Wire row resets, scale lock, snap floor, pivot buttons, and UE5 drag-scrubbing in 3D sidebar
+    const btnSidebarLockScale = document.getElementById("btn-sidebar-lock-scale");
+    if (btnSidebarLockScale) {
+        btnSidebarLockScale.onclick = () => {
+            sidebarScaleLocked = !sidebarScaleLocked;
+            btnSidebarLockScale.classList.toggle("active", sidebarScaleLocked);
+            btnSidebarLockScale.innerHTML = `<i data-lucide="${sidebarScaleLocked ? 'lock' : 'unlock'}" style="width:10px; height:10px;"></i>`;
+            if (window.lucide) try { window.lucide.createIcons({ nodes: [btnSidebarLockScale] }); } catch (_) {}
+        };
+    }
+    const btnSidebarResetPos = document.getElementById("btn-sidebar-reset-pos");
+    if (btnSidebarResetPos) {
+        btnSidebarResetPos.onclick = () => {
+            if (!selectedObject) return;
+            pushUndoState("Reset Position");
+            const isNativeGlb = selectedObject.userData?.type === "glb" && selectedObject.userData?.fitMode === "native";
+            selectedObject.position.set(0, 0, isNativeGlb ? 0.0 : 0.5);
+            selectedObject.updateMatrixWorld(true);
+            updateTransformInspector(true);
+            syncSceneData();
+            renderStudioViewports();
+        };
+    }
+    const btnSidebarResetRot = document.getElementById("btn-sidebar-reset-rot");
+    if (btnSidebarResetRot) {
+        btnSidebarResetRot.onclick = () => {
+            if (!selectedObject) return;
+            pushUndoState("Reset Rotation");
+            selectedObject.rotation.set(0, 0, 0);
+            selectedObject.updateMatrixWorld(true);
+            updateTransformInspector(true);
+            syncSceneData();
+            renderStudioViewports();
+        };
+    }
+    const btnSidebarResetScale = document.getElementById("btn-sidebar-reset-scale");
+    if (btnSidebarResetScale) {
+        btnSidebarResetScale.onclick = () => {
+            if (!selectedObject) return;
+            pushUndoState("Reset Scale");
+            selectedObject.scale.set(1, 1, 1);
+            selectedObject.updateMatrixWorld(true);
+            updateTransformInspector(true);
+            syncSceneData();
+            renderStudioViewports();
+        };
+    }
+    const btnSidebarSnapFloor = document.getElementById("btn-sidebar-snap-floor");
+    if (btnSidebarSnapFloor) {
+        btnSidebarSnapFloor.onclick = () => snapSelectedObjectToFloor();
+    }
+    document.querySelectorAll(".btn-sidebar-pivot").forEach(btn => {
+        btn.onclick = () => {
+            if (selectedObject && typeof applyObjectPivot === "function") {
+                applyObjectPivot(selectedObject, btn.dataset.pivot || "bottom");
+            }
+        };
+    });
+
+    // Enable horizontal drag-scrubbing on all .ue-striped-input-wrap inside #body-inspector and #body-cursor3d
+    document.querySelectorAll("#body-inspector .ue-striped-input-wrap, #body-cursor3d .ue-striped-input-wrap").forEach(wrap => {
+        const inp = wrap.querySelector("input[type='number']");
+        if (!inp) return;
+        wrap.style.cursor = "ew-resize";
+        wrap.addEventListener("pointerdown", (e) => {
+            if (e.target === inp && document.activeElement === inp) return;
+            if (e.button !== 0) return;
+            const startX = e.clientX;
+            const startVal = parseFloat(inp.value) || 0;
+            const isRot = inp.id.includes("rot");
+            const isScale = inp.id.includes("scale");
+            const step = isRot ? 1.0 : 0.05;
+            let pushedUndo = false;
+            const onMove = (ev) => {
+                const dx = ev.clientX - startX;
+                if (Math.abs(dx) >= 2) {
+                    if (!pushedUndo && selectedObject && !inp.id.includes("cursor")) {
+                        pushUndoState("Scrub Transform");
+                        pushedUndo = true;
+                    }
+                    const mult = ev.shiftKey ? 0.2 : (ev.ctrlKey ? 5.0 : 1.0);
+                    let next = startVal + dx * step * mult;
+                    if (isScale) next = Math.max(0.01, next);
+                    inp.value = isRot ? next.toFixed(1) : next.toFixed(2);
+                    inp.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+            };
+            const onUp = () => {
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", onUp);
+            };
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp);
+        });
     });
 
     function setActorColor(obj, hexColor) {
         if (!obj) return;
         obj.userData.color = hexColor;
+        if (obj.userData.type === "light") {
+            updateLightActor(obj, { color: hexColor });
+            return;
+        }
         obj.traverse((child) => {
             if (child.isMesh && child.material && child.material.color) {
                 child.material.color.setStyle(hexColor);
@@ -3920,6 +5258,8 @@ export async function initStandaloneLayoutStudio() {
         });
         syncSceneData();
         notifyDetailsAndOutliner();
+        monitorNeedsRender = true;
+        renderStudioViewports();
     }
 
     if (colorPicker) {
@@ -3939,6 +5279,12 @@ export async function initStandaloneLayoutStudio() {
     swatchMap.forEach(([id, hex]) => {
         const el = document.getElementById(id);
         if (el) el.onclick = () => { if (selectedObject) setActorColor(selectedObject, hex); };
+    });
+    document.querySelectorAll(".sidebar-quick-color-swatch").forEach(btn => {
+        btn.onclick = () => {
+            const hex = btn.dataset.col;
+            if (hex && selectedObject) setActorColor(selectedObject, hex);
+        };
     });
 
     // Primitives Creation & Proxy-to-3D Replacement
@@ -3979,22 +5325,42 @@ export async function initStandaloneLayoutStudio() {
             return false;
         }
 
-        pushUndoState(`Adjust Pivot (${mode})`);
-
         let box = new THREE.Box3();
-        const isSingleMesh = (obj instanceof THREE.Mesh) && obj.geometry;
+        let hasChildMeshes = false;
+        if (obj.children && obj.children.length > 0) {
+            obj.traverse((ch) => {
+                if (ch !== obj && ch.isMesh && ch.geometry) hasChildMeshes = true;
+            });
+        }
+        const isSingleMesh = (obj instanceof THREE.Mesh) && obj.geometry && !hasChildMeshes;
 
         if (isSingleMesh) {
             if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
             box.copy(obj.geometry.boundingBox);
         } else {
             obj.updateMatrixWorld(true);
+            const invObjWorld = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+            const relMat = new THREE.Matrix4();
+            const tmpVec = new THREE.Vector3();
             box.makeEmpty();
             obj.traverse((child) => {
-                if (child !== obj && child.isMesh && child.geometry) {
-                    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
-                    const childBox = child.geometry.boundingBox.clone().applyMatrix4(child.matrix);
-                    box.union(childBox);
+                if (!child || child === obj) return;
+                if (child.name === "__vfx_proxy_cage" || child.isLine || child.isLineSegments || child.isHelper) return;
+                if (child.isMesh && child.geometry) {
+                    relMat.multiplyMatrices(invObjWorld, child.matrixWorld);
+                    const posAttr = child.geometry.attributes && child.geometry.attributes.position;
+                    if (posAttr && posAttr.count > 0 && posAttr.count <= 300000) {
+                        for (let i = 0; i < posAttr.count; i++) {
+                            tmpVec.fromBufferAttribute(posAttr, i).applyMatrix4(relMat);
+                            box.expandByPoint(tmpVec);
+                        }
+                    } else {
+                        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+                        if (child.geometry.boundingBox) {
+                            const childBox = child.geometry.boundingBox.clone().applyMatrix4(relMat);
+                            box.union(childBox);
+                        }
+                    }
                 }
             });
             if (box.isEmpty()) {
@@ -4037,16 +5403,24 @@ export async function initStandaloneLayoutStudio() {
             delta.copy(localCursor);
         }
 
-        if (delta.lengthSq() < 1e-8) {
+        if (delta.lengthSq() < 1e-6) {
             logMsg(`Object pivot is already at target position (${mode}).`);
             return true;
         }
+
+        pushUndoState(`Adjust Pivot (${mode})`);
 
         // Translate geometry vertices or direct children by -delta
         if (isSingleMesh) {
             obj.geometry.translate(-delta.x, -delta.y, -delta.z);
             obj.geometry.computeBoundingBox();
             obj.geometry.computeBoundingSphere();
+            if (obj.children && obj.children.length > 0) {
+                obj.children.forEach(child => {
+                    child.position.sub(delta);
+                    child.updateMatrixWorld(true);
+                });
+            }
         } else {
             obj.children.forEach(child => {
                 child.position.sub(delta);
@@ -4055,9 +5429,21 @@ export async function initStandaloneLayoutStudio() {
         }
 
         // Compensate obj.position so the object does not move in world space!
-        const deltaWorld = delta.clone().applyEuler(obj.rotation).multiply(obj.scale);
+        const deltaWorld = delta.clone().multiply(obj.scale).applyQuaternion(obj.quaternion);
         obj.position.add(deltaWorld);
         obj.updateMatrixWorld(true);
+
+        // Compensate any existing keyframes so scrubbing timeline preserves world pose
+        if (obj.userData && Array.isArray(obj.userData.keyframes) && obj.userData.keyframes.length > 0) {
+            obj.userData.keyframes.forEach(kf => {
+                if (kf && kf.position) {
+                    const kfScale = kf.scale || obj.scale;
+                    const kfQuat = kf.quaternion || obj.quaternion;
+                    const kfDeltaWorld = delta.clone().multiply(kfScale).applyQuaternion(kfQuat);
+                    kf.position.add(kfDeltaWorld);
+                }
+            });
+        }
 
         // Record cumulative pivot offset in userData for export/persistence
         obj.userData.pivotOffset = obj.userData.pivotOffset || [0, 0, 0];
@@ -4068,9 +5454,11 @@ export async function initStandaloneLayoutStudio() {
         if (transformControls.object === obj) {
             transformControls.attach(obj);
         }
+        updateSelectionHelpers();
         updateTransformInspector(false);
         updateOutliner();
         notifyDetailsAndOutliner();
+        syncSceneData();
         monitorNeedsRender = true;
         renderStudioViewports();
 
@@ -4079,6 +5467,11 @@ export async function initStandaloneLayoutStudio() {
     }
 
     window.__vfxApplyObjectPivot = applyObjectPivot;
+    window.__vfxRefreshStudioLanguage = () => {
+        try { updateOutliner(); } catch (_) {}
+        try { updateKeyframeMarkers(); } catch (_) {}
+        try { updateTimelineActiveContextBar(); } catch (_) {}
+    };
 
     // =========================================================================
     // CHARACTERS: skinned FBX/GLB (UE mannequin, Mixamo…) with a skeleton and animation clips.
@@ -4205,7 +5598,11 @@ export async function initStandaloneLayoutStudio() {
 
     // Wraps a model as a studio object: Y-up -> Z-up, centimetres -> metres, feet on the ground at the 3D cursor.
     async function addCharacter(url, displayName, meta = {}, recordUndo = true) {
+        const expectedGen = meta._loadGen !== undefined ? meta._loadGen : manifestLoadGen;
         const { root, clips } = await loadAnyModel(url, meta.fileName || url);
+        if (expectedGen !== manifestLoadGen) {
+            return null;
+        }
         if (recordUndo) pushUndoState("Add Character");
         const zUp = new THREE.Group(); zUp.rotation.x = Math.PI / 2; zUp.add(root);
         const wrap = new THREE.Group(); wrap.add(zUp);
@@ -4226,12 +5623,14 @@ export async function initStandaloneLayoutStudio() {
         if (meta.position) wrap.position.fromArray(meta.position); else wrap.position.copy(cursor3DPosition);
         if (meta.rotation) wrap.rotation.fromArray(meta.rotation);
         if (meta.scale) wrap.scale.fromArray(meta.scale);
+        wrap.updateMatrixWorld(true);
         const obj = registerObject(wrap, displayName || "Character", "character", {
             ...(meta.id ? { id: meta.id } : {}), characterUrl: url, fileName: meta.fileName || "", animUrl: meta.animUrl || "", animName: meta.animName || "",
             animOffset: meta.animOffset || 0, animSpeed: meta.animSpeed || 1, showBones: skeletonOnly ? true : meta.showBones !== false, unitScale: k,
             skeletonOnly, color: skeletonOnly ? "#f59e0b" : "#9aa3ad", keyframes: meta.keyframes || []
         });
-        const rig = { root, zUp, helper, bones: collectBones(root), height: (box2.max.z - box2.min.z) / k, ownClips: clips, mixer: new THREE.AnimationMixer(root), action: null, retarget: null };
+        const rig = { id: obj.userData.id, obj, root, zUp, helper, bones: collectBones(root), height: (box2.max.z - box2.min.z) / k, ownClips: clips, mixer: new THREE.AnimationMixer(root), action: null, retarget: null };
+        wrap.updateMatrixWorld(true);
         root.updateMatrixWorld(true);
         rig.rest = new Map(); rig.bones.forEach((b, n) => rig.rest.set(n, { q: b.quaternion.clone(), p: b.position.clone() }));
         characterRigs.set(obj.userData.id, rig);
@@ -4269,6 +5668,7 @@ export async function initStandaloneLayoutStudio() {
         // rest poses (before the clip plays): world quaternions + directions to the first matched child
         // restore the rest pose on the mapped nodes only (FBX may nest same-name copies that must stay at identity)
         rig.bones.forEach((b, n) => { const r = rig.rest.get(n); if (r) { b.quaternion.copy(r.q); b.position.copy(r.p); } });
+        if (rig.obj) rig.obj.updateMatrixWorld(true);
         rig.zUp.updateMatrixWorld(true);
         const wq = (o) => o.getWorldQuaternion(new THREE.Quaternion());
         const wp = (o) => o.getWorldPosition(new THREE.Vector3());
@@ -4284,7 +5684,8 @@ export async function initStandaloneLayoutStudio() {
         };
         const srcSet = new Set(pairs.map(p => p.sb)), tgtSet = new Set(pairs.map(p => p.tb));
         pairs.forEach(p => {
-            p.sRest = wq(p.sb); p.tRest = wq(p.tb);
+            p.sRest = wq(p.sb);
+            p.tRest = wq(p.tb);
             const ds = childDir(p.sb, srcSet), dt = childDir(p.tb, tgtSet);
             p.corr = (ds && dt) ? new THREE.Quaternion().setFromUnitVectors(dt, ds) : new THREE.Quaternion();
         });
@@ -4295,29 +5696,49 @@ export async function initStandaloneLayoutStudio() {
         const depth = (o) => { let d = 0; while (o.parent) { d++; o = o.parent; } return d; };
         pairs.sort((a, b) => depth(a.tb) - depth(b.tb));
         const action = src.mixer.clipAction(srcClip); action.play();
-        return { src, pivot, pairs, hip, hipSrcRest: wp(hip.sb), hipTgtRest: wp(hip.tb), ratio: tgtH / srcH, action, clip: srcClip };
+        return { src, pivot, pairs, hip, hipSrcRest: wp(hip.sb), ratio: tgtH / srcH, action, clip: srcClip };
     }
 
     function applyRetarget(rig, t) {
         const R = rig.retarget;
         R.src.mixer.setTime(t);
         R.pivot.updateMatrixWorld(true);
+        if (rig.obj) rig.obj.updateMatrixWorld(true);
         rig.zUp.updateMatrixWorld(true);
         const tmpQ = new THREE.Quaternion(), parentQ = new THREE.Quaternion();
         R.pairs.forEach(p => {
             const sNow = p.sb.getWorldQuaternion(tmpQ.clone());
-            // target world = source delta from its rest, applied to the target rest bent into the source rest
-            const world = sNow.multiply(p.sRest.clone().invert()).multiply(p.corr).multiply(p.tRest);
+            // Source rotation delta from rest
+            const sDelta = sNow.multiply(p.sRest.clone().invert());
             p.tb.parent.getWorldQuaternion(parentQ);
+            // Target world rotation = delta applied through corr onto target rest orientation
+            const world = sDelta.multiply(p.corr).multiply(p.tRest);
             p.tb.quaternion.copy(parentQ.invert().multiply(world));
             p.tb.updateMatrixWorld(true);
         });
-        // root motion of the hips, scaled to the target's size
-        const sHip = R.hip.sb.getWorldPosition(new THREE.Vector3());
-        const want = R.hipTgtRest.clone().add(sHip.sub(R.hipSrcRest).multiplyScalar(R.ratio));
-        const parentInv = new THREE.Matrix4().copy(R.hip.tb.parent.matrixWorld).invert();
-        R.hip.tb.position.copy(want.applyMatrix4(parentInv));
-        R.hip.tb.updateMatrixWorld(true);
+
+        // Root motion of the hips: calculate delta in world space and apply in local parent space
+        // Correct unit scaling: parent (root) has scale 0.01 (centimetres), so world delta must be divided by parentWorldScale!
+        const charObj = rig.obj || (selectedObject && selectedObject.userData.id === rig.id ? selectedObject : null);
+        if (charObj && charObj.userData && charObj.userData.enableHipsMotion === false) {
+            const rest = (rig.rest && rig.rest.get(R.hip.tn)) || { p: R.hip.tb.position };
+            R.hip.tb.position.copy(rest.p);
+            R.hip.tb.updateMatrixWorld(true);
+        } else {
+            const sHip = R.hip.sb.getWorldPosition(new THREE.Vector3());
+            const sHipDelta = sHip.sub(R.hipSrcRest).multiplyScalar(R.ratio);
+            if (charObj && charObj.userData && charObj.userData.bakeRootMode === "pivot") {
+                sHipDelta.x = 0;
+                sHipDelta.y = 0;
+            }
+            const rest = (rig.rest && rig.rest.get(R.hip.tn)) || { p: R.hip.tb.position };
+            const localRest = rest.p.clone();
+            const parentRotInv = R.hip.tb.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+            const parentWorldScale = R.hip.tb.parent.getWorldScale(new THREE.Vector3());
+            const localDelta = sHipDelta.applyQuaternion(parentRotInv).divide(parentWorldScale);
+            R.hip.tb.position.copy(localRest.add(localDelta));
+            R.hip.tb.updateMatrixWorld(true);
+        }
     }
 
     async function setCharacterAnimation(obj, url, clipName, recordUndo = true) {
@@ -4370,53 +5791,140 @@ export async function initStandaloneLayoutStudio() {
             at(0.075, 0.025, -0.032), at(0.075, 0.025, 0.032), at(-0.005, 0.0, -0.075), at(-0.005, 0.0, 0.075)];
     }
     async function exportPoseLayerFrom3D(opts = {}) {
+        const cardProgress = document.getElementById("render-progress-card");
+        const fillProgress = document.getElementById("render-progress-fill");
+        const lblProgress = document.getElementById("render-progress-label");
+        if (cardProgress) cardProgress.style.display = "flex";
+        if (fillProgress) fillProgress.style.width = "10%";
+        if (lblProgress) lblProgress.innerText = uiText("Projecting 3D OpenPose...", "Проекция 3D OpenPose...");
+
         const src = { ...(window.__vfxSceneSource || {}), ...(opts.video ? { video: opts.video, startFrame: opts.startFrame || 0 } : {}) };
-        if (!src.video) throw new Error("no tracked video in this scene — activate a camera track first");
-        // the tracked shot camera is what matches the plate; a free camera only as a fallback
-        const cam = (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : getActiveMonitorCamera();
-        if (!cam) throw new Error("no camera — add the camera track to the scene (Media → Track) or a 3D camera");
+        const activeVid = typeof window.__vfxGetActiveVideoId === "function" ? window.__vfxGetActiveVideoId() : null;
+        if (!src.video) {
+            src.video = activeVid || (typeof activeVideoId !== "undefined" && activeVideoId ? activeVideoId : null);
+        }
+        if (!src.video) {
+            const vidList = (typeof mediaVideos2D !== "undefined" && Array.isArray(mediaVideos2D)) ? mediaVideos2D : [];
+            const existingVid = vidList.find(v => v && v.id && v.id !== "live_video_render");
+            if (existingVid) {
+                src.video = existingVid.id;
+            } else {
+                const autoVidId = "vid_3d_stage";
+                const autoVid = {
+                    id: autoVidId,
+                    title: "3D Stage Pose Sequence",
+                    badge: "3D STAGE",
+                    type: "html5",
+                    width: opts.width || plateWidth || 1280,
+                    height: opts.height || plateHeight || 720,
+                    fps: 24,
+                    total_frames: opts.frames || totalFrames || 49
+                };
+                if (Array.isArray(mediaVideos2D)) mediaVideos2D.unshift(autoVid);
+                src.video = autoVidId;
+                if (typeof activeVideoId !== "undefined") activeVideoId = autoVidId;
+            }
+        }
         const chars = [...threeObjectsMap.values()].filter(o => o.userData.type === "character" && o.visible !== false && characterRigs.has(o.userData.id)
             && (!opts.only || opts.only.includes(o.userData.id)));
-        if (!chars.length) throw new Error("add a character or a skeleton first");
-        const keepFrame = currentFrame, keepAspect = cam.aspect;
-        const frames = []; let visible = 0, dbg = null;
-        try {
-            const outW = opts.width || plateWidth, outH = opts.height || plateHeight;
-            cam.aspect = outW / outH; cam.updateProjectionMatrix();
-            const nFrames = opts.frames || totalFrames;
-            for (let f = 0; f < nFrames; f++) {
-                currentFrame = f;
-                if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
-                evaluateAnimation();
-                updateCharactersAtFrame();
-                scene.updateMatrixWorld(true);
-                cam.updateMatrixWorld(true);
-                const people = [];
-                chars.forEach(o => {
-                    const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
-                    people.push(pts.map(v => {
-                        if (!v) return null;
-                        const n = v.clone().project(cam);
-                        if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
-                        if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
-                        visible++;
-                        return [+((n.x + 1) / 2).toFixed(5), +((1 - n.y) / 2).toFixed(5)];
-                    }));
-                });
-                frames.push({ frame: (src.startFrame || 0) + f, people });
-            }
-        } finally {
-            cam.aspect = keepAspect; cam.updateProjectionMatrix();
-            currentFrame = keepFrame; onFrameChanged();
+        if (!chars.length) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("Add a character or skeleton first (👤+)", "Сначала добавьте скелет или персонажа (👤+)"));
         }
-        if (opts.dryRun) return { visible, frames: frames.length, debug: dbg, keypoints: frames };
-        if (!visible) throw new Error("the characters are not in the shot camera's view on any frame — place them in front of the camera");
-        const pid = (window.currentProject && window.currentProject.id) || "sandbox_playground";
+
+        const candidateCams = [
+            (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : null,
+            getActiveMonitorCamera(),
+            shotCamera,
+            flyCamera
+        ].filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+        if (!candidateCams.length) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
+        }
+
+        const keepFrame = currentFrame;
+        let frames = [], visible = 0, dbg = null;
+        const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
+        const nFrames = opts.frames || totalFrames || 49;
+
+        for (const cam of candidateCams) {
+            const keepAspect = cam.aspect;
+            frames = [];
+            visible = 0;
+            dbg = null;
+            try {
+                cam.aspect = outW / outH;
+                cam.updateProjectionMatrix();
+                for (let f = 0; f < nFrames; f++) {
+                    currentFrame = f;
+                    if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
+                    evaluateAnimation();
+                    scene.updateMatrixWorld(true);
+                    updateCharactersAtFrame();
+                    scene.updateMatrixWorld(true);
+                    if (cam.parent) cam.parent.updateMatrixWorld(true);
+                    cam.updateMatrixWorld(true);
+                    const people = [];
+                    chars.forEach(o => {
+                        const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
+                        people.push(pts.map(v => {
+                            if (!v) return null;
+                            const n = v.clone().project(cam);
+                            if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
+                            if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
+                            visible++;
+                            return [+((n.x + 1) / 2).toFixed(5), +((1 - n.y) / 2).toFixed(5)];
+                        }));
+                    });
+                    frames.push({ frame: (src.startFrame || 0) + f, people });
+                }
+            } finally {
+                cam.aspect = keepAspect;
+                cam.updateProjectionMatrix();
+                currentFrame = keepFrame;
+                onFrameChanged();
+            }
+            if (visible > 0) break;
+        }
+
+        if (opts.dryRun) {
+            if (cardProgress) cardProgress.style.display = "none";
+            return { visible, frames: frames.length, debug: dbg, keypoints: frames };
+        }
+        if (!visible) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("Characters are not in the camera view — place them in front of the camera", "Персонажи не попадают в кадр камеры — разместите их перед камерой"));
+        }
+
+        if (fillProgress) fillProgress.style.width = "60%";
+        if (lblProgress) lblProgress.innerText = uiText("Rendering OpenPose frames...", "Отрисовка кадров OpenPose...");
+        const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
+        const payload = { name: `Pose from 3D (${chars.map(o => o.userData.name).join(", ")})`.slice(0, 80), width: outW, height: outH, frames };
         const r = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/pose_from_3d`, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: `Pose from 3D (${chars.map(o => o.userData.name).join(", ")})`.slice(0, 80), width: opts.width || plateWidth, height: opts.height || plateHeight, frames })
+            body: JSON.stringify(payload)
         }).then(x => x.json());
-        if (r.error) throw new Error(r.error);
+        if (r.error) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(r.error);
+        }
+        if (activeVid && activeVid !== src.video && activeVid !== "baked_layout_sequence" && activeVid !== "live_video_render") {
+            try {
+                await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(activeVid)}/pose_from_3d`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+            } catch (_) {}
+        }
+        if (fillProgress) fillProgress.style.width = "100%";
+        if (lblProgress) lblProgress.innerText = uiText("✅ OpenPose layer ready!", "✅ Слой позы OpenPose готов!");
+        setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
+        if (typeof window.__vfxOn3DLayerExported === "function") {
+            try {
+                await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: r.layer, frames: r.frames, kind: "pose" });
+            } catch (_) {}
+        }
         logMsg(`✓ Pose layer «${r.layer.name}»: ${r.frames} frames on video ${src.video}`);
         return r;
     }
@@ -4424,63 +5932,110 @@ export async function initStandaloneLayoutStudio() {
 
     // ---- 3D characters rendered through the shot camera -> an RGB layer (layout-to-render input, first-frame guide) ----
     async function exportRenderLayerFrom3D(opts = {}) {
+        const cardProgress = document.getElementById("render-progress-card");
+        const fillProgress = document.getElementById("render-progress-fill");
+        const lblProgress = document.getElementById("render-progress-label");
+        if (cardProgress) cardProgress.style.display = "flex";
+        if (fillProgress) fillProgress.style.width = "5%";
+        if (lblProgress) lblProgress.innerText = uiText("Rendering 3D pass...", "Рендер 3D-слоя через камеру...");
+
         const src = { ...(window.__vfxSceneSource || {}), ...(opts.video ? { video: opts.video, startFrame: opts.startFrame || 0 } : {}) };
-        if (!src.video) throw new Error("no target video");
-        const cam = (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : getActiveMonitorCamera();
-        if (!cam) throw new Error("no camera");
-        const outW = opts.width || plateWidth, outH = opts.height || plateHeight;
+        const activeVid = typeof window.__vfxGetActiveVideoId === "function" ? window.__vfxGetActiveVideoId() : null;
+        if (!src.video) {
+            if (activeVid) src.video = activeVid;
+            else if (typeof activeVideoId !== "undefined" && activeVideoId) src.video = activeVideoId;
+        }
+        if (!src.video) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("No target video in project", "В проекте нет целевого видео"));
+        }
+        const cam = (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : (getActiveMonitorCamera() || shotCamera);
+        if (!cam) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
+        }
+        let outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
+        if (Math.max(outW, outH) > 1920) {
+            const sc = 1920 / Math.max(outW, outH);
+            outW = Math.max(2, Math.round(outW * sc) & ~1);
+            outH = Math.max(2, Math.round(outH * sc) & ~1);
+        }
         // what goes into the pass: characters (clay) and/or the primitive set dressing (own colours)
         const withChars = opts.characters !== false;
         const PROP_TYPES = new Set(["box", "sphere", "cylinder", "cone", "torus", "plane", "mesh", "glb"]);
         const chars = !withChars ? [] : [...threeObjectsMap.values()].filter(o => o.userData.type === "character" && characterRigs.has(o.userData.id)
             && (!opts.only || opts.only.includes(o.userData.id)));
-        const props = !opts.props ? [] : [...threeObjectsMap.values()].filter(o => PROP_TYPES.has(o.userData.type) && o.visible !== false);
-        if (!chars.length && !props.length) throw new Error("nothing to render (no characters or props)");
+        const includeProps = opts.props || chars.length === 0;
+        const props = !includeProps ? [] : [...threeObjectsMap.values()].filter(o => PROP_TYPES.has(o.userData.type) && o.visible !== false);
+        if (!chars.length && !props.length) {
+            if (cardProgress) cardProgress.style.display = "none";
+            throw new Error(uiText("Nothing to render (add a character or 3D object)", "Нечего рендерить (добавьте персонажа или 3D объект)"));
+        }
         const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         r.setPixelRatio(1); r.setSize(outW, outH, false);
         // only the chosen characters and the lights; helpers, grid, cloud, other objects hidden
         const keepVis = new Map();
         const charSet = new Set([...chars, ...props]);
-        scene.children.forEach(o => { keepVis.set(o, o.visible); if (!(o.isLight || charSet.has(o))) o.visible = false; });
-        const helpers = chars.map(o => characterRigs.get(o.userData.id).helper).filter(Boolean);
+        const skelOnlyHelpers = new Set(chars.filter(o => o.userData?.skeletonOnly).map(o => characterRigs.get(o.userData.id)?.helper).filter(Boolean));
+        scene.children.forEach(o => {
+            keepVis.set(o, o.visible);
+            const isUserLight = o.userData?.type === "light" && o.visible !== false;
+            if (isUserLight && o.userData?.lightGizmo) {
+                keepVis.set(o.userData.lightGizmo, o.userData.lightGizmo.visible);
+                o.userData.lightGizmo.visible = false;
+            }
+            if (!(o.isLight || isUserLight || charSet.has(o) || skelOnlyHelpers.has(o))) o.visible = false;
+        });
+        const helpersToHide = chars.filter(o => !o.userData?.skeletonOnly).map(o => characterRigs.get(o.userData.id)?.helper).filter(Boolean);
         const keepBg = scene.background, keepFrame = currentFrame, keepAspect = cam.aspect;
         scene.background = new THREE.Color(opts.background || "#d4d4d4");
         const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 0.75); scene.add(hemi);
         const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(3, -4, 6); scene.add(key);
         // clay look: imported characters often miss their textures (black); a layout pass wants clean shading anyway
         const keepOverride = scene.overrideMaterial;
-        if (opts.material !== "original" && !props.length) {
+        const hasSkelOnly = chars.some(o => o.userData?.skeletonOnly);
+        if (opts.material !== "original" && !props.length && !hasSkelOnly) {
             const clay = new THREE.MeshLambertMaterial({ color: 0x8c8c8c });
             clay.skinning = true;   // older three.js: without it skinned meshes render in their bind pose
             scene.overrideMaterial = clay;
         }
-        const nFrames = opts.frames || totalFrames;
-        let layerId = null, sent = 0, batch = [];
-        const pid = (window.currentProject && window.currentProject.id) || "sandbox_playground";
+        const nFrames = opts.frames || totalFrames || 49;
+        let layerId = null, lastLayer = null, sent = 0, batch = [];
+        const layerName = opts.name || `3D render (${[...chars, ...props].map(o => o.userData.name).join(", ")})`.slice(0, 80);
+        const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
         const flush = async () => {
             if (!batch.length) return;
             const res = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/layer_frames`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ layer_id: layerId, name: opts.name || `3D render (${[...chars, ...props].map(o => o.userData.name).join(", ")})`.slice(0, 80), type: "rgb", frames: batch })
+                body: JSON.stringify({ layer_id: layerId, name: layerName, type: "rgb", frames: batch })
             }).then(x => x.json());
             if (res.error) throw new Error(res.error);
-            layerId = res.layer.id; sent += res.frames; batch = [];
+            layerId = res.layer.id; lastLayer = res.layer; sent += res.frames; batch = [];
         };
         try {
-            helpers.forEach(h => { h.visible = false; });
+            helpersToHide.forEach(h => { h.visible = false; });
+            skelOnlyHelpers.forEach(h => { h.visible = true; });
             cam.aspect = outW / outH; cam.updateProjectionMatrix();
             for (let f = 0; f < nFrames; f++) {
                 currentFrame = f;
                 if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
                 evaluateAnimation();
-                updateCharactersAtFrame();
-                helpers.forEach(h => { h.visible = false; });
                 scene.updateMatrixWorld(true);
+                updateCharactersAtFrame();
+                helpersToHide.forEach(h => { h.visible = false; });
+                skelOnlyHelpers.forEach(h => { h.visible = true; });
+                scene.updateMatrixWorld(true);
+                if (cam.parent) cam.parent.updateMatrixWorld(true);
+                cam.updateMatrixWorld(true);
                 r.render(scene, cam);
                 batch.push({ frame: (src.startFrame || 0) + f, data: r.domElement.toDataURL("image/jpeg", 0.92) });
-                if (batch.length >= 6) await flush();
+                if (fillProgress) fillProgress.style.width = Math.round(((f + 1) / nFrames) * 95) + "%";
+                if (lblProgress) lblProgress.innerText = `${uiText("Rendering 3D frame", "Рендер 3D кадра")} ${f + 1}/${nFrames}...`;
+                if (batch.length >= 12) await flush();
             }
             await flush();
+            if (fillProgress) fillProgress.style.width = "100%";
+            if (lblProgress) lblProgress.innerText = uiText("✅ 3D Render layer ready!", "✅ 3D-слой рендера готов!");
         } finally {
             scene.remove(hemi); scene.remove(key);
             scene.overrideMaterial = keepOverride;
@@ -4488,13 +6043,20 @@ export async function initStandaloneLayoutStudio() {
             keepVis.forEach((v, o) => { o.visible = v; });
             cam.aspect = keepAspect; cam.updateProjectionMatrix();
             currentFrame = keepFrame; onFrameChanged();
+            setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
             r.dispose();
         }
+        if (typeof window.__vfxOn3DLayerExported === "function") {
+            try {
+                await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: lastLayer || { id: layerId, name: layerName, type: "rgb" }, frames: sent, kind: "rgb" });
+            } catch (_) {}
+        }
         logMsg(`✓ 3D render layer: ${sent} frames on video ${src.video}`);
-        return { layer_id: layerId, frames: sent };
+        return { layer_id: layerId, layer: lastLayer, frames: sent };
     }
     window.__vfxRenderFrom3D = exportRenderLayerFrom3D;
     window.__vfxCreateCameraPreset = (preset, opts) => createDefaultCameraTrajectory(preset, opts || {});
+    window.__vfxReplaceObjectWithGLB = (targetId, glbUrl, metaPatch = {}) => replaceObjectWithGLB(targetId, glbUrl, metaPatch);
     // scripted set dressing (agent / tests): a primitive with position, scale, rotation (deg) and colour
     window.__vfxAddProp = (type = "box", o = {}) => {
         const m = new THREE.Mesh(createPrimitiveGeometry(type), defMat(o.color != null ? new THREE.Color(o.color).getHex() : 0xcccccc, type === "plane"));
@@ -4517,8 +6079,25 @@ export async function initStandaloneLayoutStudio() {
     // files with many takes (animation libraries): pick the clip for the selected character
     function refreshAnimClipSelect() {
         const sel = document.getElementById("sel-anim-clip"); if (!sel) return;
+        const btnHips = document.getElementById("btn-toggle-hips-motion");
+        const btnBake = document.getElementById("btn-bake-root-motion");
         const obj = selectedObject && selectedObject.userData && selectedObject.userData.type === "character" ? selectedObject : null;
         const rig = obj && characterRigs.get(obj.userData.id);
+        const hasAnim = Boolean(obj && (obj.userData.animUrl || (rig && (rig.retarget || rig.action))));
+        
+        if (btnHips) {
+            btnHips.style.display = hasAnim ? "" : "none";
+            const hipsOn = obj ? obj.userData.enableHipsMotion !== false : true;
+            btnHips.innerText = `Hips: ${hipsOn ? "ON" : "LOCK"}`;
+            btnHips.className = hipsOn ? "vfx-btn vfx-btn-active" : "vfx-btn";
+        }
+        if (btnBake) {
+            btnBake.style.display = (hasAnim && rig && rig.retarget) ? "" : "none";
+            const isBaked = obj && obj.userData && obj.userData.bakeRootMode === "pivot";
+            btnBake.innerText = isBaked ? "📌 Pivot: ON" : "📌 Root to Pivot";
+            btnBake.className = isBaked ? "vfx-btn vfx-btn-active" : "vfx-btn";
+        }
+
         const list = (rig && rig.animClips) || [];
         if (list.length < 2) { sel.style.display = "none"; return; }
         sel.innerHTML = "";
@@ -4535,6 +6114,8 @@ export async function initStandaloneLayoutStudio() {
         characterRigs.forEach((rig, id) => {
             const obj = threeObjectsMap.get(id);
             if (!obj) { scene.remove(rig.helper); characterRigs.delete(id); return; }
+            rig.obj = obj;
+            rig.id = id;
             rig.helper.visible = obj.visible !== false && obj.userData.showBones !== false;
             const dur = obj.userData.animDuration || 0;
             if (!dur) return;
@@ -4566,7 +6147,9 @@ export async function initStandaloneLayoutStudio() {
         rigs: characterRigs
     };
 
-    // Replace any selected Cube/Primitive in-place with a 3D GLB model, inheriting exact position, rotation, and scale!
+    const loadedGlbSceneCache = new Map();
+
+    // Spawn a 3D GLB model with its native transforms, or replace a selected Cube/Primitive in-place when requested
     function replaceObjectWithGLB(targetId, glbUrl, metaPatch = {}, recordUndo = true) {
         return new Promise((resolve, reject) => {
             if (!THREE.GLTFLoader) {
@@ -4576,119 +6159,212 @@ export async function initStandaloneLayoutStudio() {
             }
 
             let targetObj = (targetId && targetId !== "__spawn_new__" && threeObjectsMap.get(targetId)) || (targetId === "__spawn_new__" ? null : selectedObject);
-            if (!targetObj) {
-                const fallbackBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), defMat());
-                fallbackBox.position.set(0, 0, 0.5);
-                if (Array.isArray(metaPatch.bboxScale) && metaPatch.bboxScale.length === 3) {
-                    fallbackBox.scale.set(
-                        Math.max(0.1, Number(metaPatch.bboxScale[0]) || 1),
-                        Math.max(0.1, Number(metaPatch.bboxScale[1]) || 1),
-                        Math.max(0.1, Number(metaPatch.bboxScale[2]) || 1)
-                    );
-                }
-                targetObj = registerObject(fallbackBox, metaPatch.name || metaPatch.glbFilename || `Mesh3D_${nextObjId}`, "box");
-            }
+            const isReplacingExisting = Boolean(targetObj);
+            const actorTitle = metaPatch.name || metaPatch.actorName || metaPatch.glbFilename || `Mesh3D_${nextObjId}`;
 
+            // Record Undo BEFORE creating/registering the placeholder so the Undo snapshot does NOT contain a phantom placeholder!
             if (recordUndo) {
-                pushUndoState("Replace Cube with 3D GLB");
+                pushUndoState(isReplacingExisting ? "Replace Object with 3D GLB" : "Add 3D GLB to Scene");
             }
 
+            if (!targetObj) {
+                const placeholder = new THREE.Group();
+                if (Array.isArray(metaPatch.position) && metaPatch.position.length === 3) {
+                    placeholder.position.fromArray(metaPatch.position);
+                } else {
+                    placeholder.position.set(0, 0, 0);
+                }
+                if (Array.isArray(metaPatch.rotation) && metaPatch.rotation.length >= 3) {
+                    placeholder.rotation.set(metaPatch.rotation[0] || 0, metaPatch.rotation[1] || 0, metaPatch.rotation[2] || 0);
+                } else {
+                    placeholder.rotation.set(0, 0, 0);
+                }
+                if (Array.isArray(metaPatch.scale) && metaPatch.scale.length === 3) {
+                    placeholder.scale.fromArray(metaPatch.scale);
+                } else {
+                    placeholder.scale.set(1, 1, 1);
+                }
+                targetObj = registerObject(placeholder, actorTitle, "glb", {
+                    ...metaPatch,
+                    glbUrl: glbUrl,
+                    fitMode: metaPatch.fitMode || "native"
+                });
+            }
+
+            const myLoadGen = manifestLoadGen;
             const savedId = targetObj.userData.id;
             const savedPos = targetObj.position.clone();
             const savedQuat = targetObj.quaternion.clone();
             const savedScale = targetObj.scale.clone();
+            const resolvedFitMode = metaPatch.fitMode
+                || (!isReplacingExisting ? "native" : (targetObj.userData.type === "glb" ? (targetObj.userData.fitMode || "native") : (targetObj.userData.fitMode || "stretch")));
             const savedMeta = {
                 ...targetObj.userData,
                 ...metaPatch,
+                name: metaPatch.name || metaPatch.actorName || targetObj.userData.name || actorTitle,
                 id: savedId,
                 type: "glb",
-                glbUrl: glbUrl
+                glbUrl: glbUrl,
+                fitMode: resolvedFitMode
             };
+
+            const mountGlbFromPrototype = (protoScene) => {
+                // Abort if Undo/Redo or another manifest load invalidated this request
+                if (myLoadGen !== manifestLoadGen || threeObjectsMap.get(savedId) !== targetObj) {
+                    purgeObjectArtifacts(targetObj);
+                    scene.remove(targetObj);
+                    return resolve(null);
+                }
+
+                const wrapperGroup = new THREE.Group();
+                const zUpPivot = new THREE.Group();
+                const modelRoot = protoScene.clone(true);
+
+                // Clone & sanitize PBR materials so TRELLIS.2 / HY3D GLBs with metallicFactor=1.0 are never black without HDRI
+                const sanitizeGlbMaterial = (mat) => {
+                    if (!mat) return mat;
+                    let m = mat;
+                    if (m.isMeshBasicMaterial) {
+                        m = new THREE.MeshStandardMaterial({
+                            color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+                            map: m.map || null,
+                            roughness: 0.45,
+                            metalness: 0.15
+                        });
+                    } else if (typeof m.clone === "function") {
+                        m = m.clone();
+                    }
+                    if (typeof m.metalness === "number" && m.metalness > 0.35) {
+                        m.metalness = 0.15;
+                    }
+                    if (typeof m.roughness === "number" && m.roughness > 0.85) {
+                        m.roughness = 0.55;
+                    }
+                    if (m.map && m.color && (m.color.r + m.color.g + m.color.b) < 0.15) {
+                        m.color.setHex(0xffffff);
+                    }
+                    if (m.map && THREE.sRGBEncoding && m.map.encoding !== THREE.sRGBEncoding) {
+                        m.map.encoding = THREE.sRGBEncoding;
+                        m.map.needsUpdate = true;
+                    }
+                    m.needsUpdate = true;
+                    return m;
+                };
+                modelRoot.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material = child.material.map(sanitizeGlbMaterial);
+                            } else {
+                                child.material = sanitizeGlbMaterial(child.material);
+                            }
+                        }
+                    }
+                });
+
+                // Convert standard Y-up GLTF to our Z-up studio coordinate system
+                zUpPivot.rotation.x = Math.PI / 2;
+                zUpPivot.add(modelRoot);
+                zUpPivot.updateMatrixWorld(true);
+
+                const bbox = new THREE.Box3().setFromObject(zUpPivot);
+                const size = new THREE.Vector3();
+                const center = new THREE.Vector3();
+                bbox.getSize(size);
+                bbox.getCenter(center);
+
+                const sx = Math.max(size.x, 0.001);
+                const sy = Math.max(size.y, 0.001);
+                const sz = Math.max(size.z, 0.001);
+
+                const normHolder = new THREE.Group();
+                normHolder.add(zUpPivot);
+
+                if (savedMeta.fitMode === "native") {
+                    zUpPivot.position.set(0, 0, 0);
+                    normHolder.scale.set(1, 1, 1);
+                } else if (savedMeta.fitMode === "uniform") {
+                    zUpPivot.position.set(-center.x, -center.y, -center.z);
+                    const maxDim = Math.max(sx, sy, sz);
+                    normHolder.scale.setScalar(1.0 / maxDim);
+                } else {
+                    zUpPivot.position.set(-center.x, -center.y, -center.z);
+                    normHolder.scale.set(1.0 / sx, 1.0 / sy, 1.0 / sz);
+                }
+                wrapperGroup.add(normHolder);
+
+                if (Array.isArray(savedMeta.pivotOffset) && savedMeta.pivotOffset.length === 3) {
+                    const po = new THREE.Vector3(
+                        Number(savedMeta.pivotOffset[0]) || 0,
+                        Number(savedMeta.pivotOffset[1]) || 0,
+                        Number(savedMeta.pivotOffset[2]) || 0
+                    );
+                    if (po.lengthSq() > 1e-8) {
+                        wrapperGroup.children.forEach(ch => {
+                            ch.position.sub(po);
+                            ch.updateMatrixWorld(true);
+                        });
+                    }
+                }
+
+                // Use live transform from targetObj in case it was moved/evaluated before load completed
+                wrapperGroup.position.copy(targetObj.position || savedPos);
+                wrapperGroup.quaternion.copy(targetObj.quaternion || savedQuat);
+                wrapperGroup.scale.copy(targetObj.scale || savedScale);
+
+                ensureActorUserData(wrapperGroup, savedMeta);
+
+                const wasSelected = (selectedObject === targetObj) || selectedObjects.has(targetObj);
+
+                // Remove targetObj and any duplicate/orphan in scene.children with the same ID
+                if (transformControls.object === targetObj) {
+                    transformControls.detach();
+                }
+                purgeObjectArtifacts(targetObj);
+                scene.remove(targetObj);
+                scene.children.slice().forEach(ch => {
+                    if (ch && ch.userData && ch.userData.id === savedId) {
+                        purgeObjectArtifacts(ch);
+                        scene.remove(ch);
+                    }
+                });
+
+                scene.add(wrapperGroup);
+                threeObjectsMap.set(savedId, wrapperGroup);
+
+                if (savedMeta.assignedImage) {
+                    applyTextureToObject(savedId, savedMeta.assignedImage, false);
+                }
+
+                if (recordUndo || wasSelected) {
+                    selectObject(wrapperGroup);
+                } else {
+                    updateSelectionHelpers();
+                    updateOutliner();
+                    notifyDetailsAndOutliner();
+                    renderStudioViewports();
+                }
+                syncSceneData();
+                logMsg(`Loaded 3D GLB [${savedMeta.name}] at Pos(${wrapperGroup.position.x.toFixed(2)}, ${wrapperGroup.position.y.toFixed(2)}, ${wrapperGroup.position.z.toFixed(2)})`);
+                resolve(wrapperGroup);
+            };
+
+            if (loadedGlbSceneCache.has(glbUrl)) {
+                mountGlbFromPrototype(loadedGlbSceneCache.get(glbUrl));
+                return;
+            }
 
             const loader = new THREE.GLTFLoader();
             loader.load(
                 glbUrl,
                 (gltf) => {
-                    const wrapperGroup = new THREE.Group();
-                    const zUpPivot = new THREE.Group();
-                    const modelRoot = gltf.scene || (gltf.scenes && gltf.scenes[0]);
-
-                    // Convert standard Y-up GLTF to our Z-up studio coordinate system
-                    zUpPivot.rotation.x = Math.PI / 2;
-                    zUpPivot.add(modelRoot);
-                    zUpPivot.updateMatrixWorld(true);
-
-                    // Compute bounding box in Z-up space and normalize to a 1x1x1 unit cube centered at (0,0,0)
-                    // so wrapperGroup.scale (inherited from the Proxy Cube!) defines the exact world dimensions!
-                    const bbox = new THREE.Box3().setFromObject(zUpPivot);
-                    const size = new THREE.Vector3();
-                    const center = new THREE.Vector3();
-                    bbox.getSize(size);
-                    bbox.getCenter(center);
-
-                    const sx = Math.max(size.x, 0.001);
-                    const sy = Math.max(size.y, 0.001);
-                    const sz = Math.max(size.z, 0.001);
-
-                    // Center geometry at local origin
-                    zUpPivot.position.set(-center.x, -center.y, -center.z);
-
-                    const normHolder = new THREE.Group();
-                    normHolder.add(zUpPivot);
-
-                    if (savedMeta.fitMode === "uniform") {
-                        const maxDim = Math.max(sx, sy, sz);
-                        normHolder.scale.setScalar(1.0 / maxDim);
-                    } else {
-                        normHolder.scale.set(1.0 / sx, 1.0 / sy, 1.0 / sz);
+                    const rawRoot = gltf.scene || (gltf.scenes && gltf.scenes[0]);
+                    if (rawRoot) {
+                        loadedGlbSceneCache.set(glbUrl, rawRoot);
                     }
-
-                    // Ensure standard materials receive scene lighting nicely
-                    modelRoot.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                            if (child.material && child.material.isMeshBasicMaterial) {
-                                child.material = new THREE.MeshStandardMaterial({
-                                    color: child.material.color || 0xcccccc,
-                                    map: child.material.map || null,
-                                    roughness: 0.45,
-                                    metalness: 0.15
-                                });
-                            }
-                        }
-                    });
-
-                    // Wireframe bounding cage helper (subtle when selected, shows proxy volume)
-                    const bboxHelperGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
-                    const bboxHelperMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 });
-                    const bboxCage = new THREE.LineSegments(bboxHelperGeom, bboxHelperMat);
-                    bboxCage.name = "__vfx_proxy_cage";
-                    wrapperGroup.add(bboxCage);
-
-                    wrapperGroup.add(normHolder);
-
-                    // Apply the replaced Cube's exact world position, rotation, and scale!
-                    wrapperGroup.position.copy(savedPos);
-                    wrapperGroup.quaternion.copy(savedQuat);
-                    wrapperGroup.scale.copy(savedScale);
-
-                    ensureActorUserData(wrapperGroup, savedMeta);
-
-                    // Swap in Three.js scene & map
-                    transformControls.detach();
-                    scene.remove(targetObj);
-                    scene.add(wrapperGroup);
-                    threeObjectsMap.set(savedId, wrapperGroup);
-
-                    if (savedMeta.assignedImage) {
-                        applyTextureToObject(savedId, savedMeta.assignedImage, false);
-                    }
-
-                    selectObject(wrapperGroup);
-                    syncSceneData();
-                    logMsg(`Replaced [${targetObj.userData.name}] with 3D GLB: ${savedMeta.name} at Pos(${savedPos.x.toFixed(2)}, ${savedPos.y.toFixed(2)}, ${savedPos.z.toFixed(2)}) Scale(${savedScale.x.toFixed(2)}, ${savedScale.y.toFixed(2)}, ${savedScale.z.toFixed(2)})`);
-                    resolve(wrapperGroup);
+                    mountGlbFromPrototype(rawRoot);
                 },
                 undefined,
                 (err) => {
@@ -4848,13 +6524,6 @@ export async function initStandaloneLayoutStudio() {
         const ptsMesh = new THREE.Points(ptGeom, ptMat);
         splatGroup.add(ptsMesh);
 
-        // Subtle wireframe bounding box for intuitive picking and scaling
-        const bboxHelperGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.2, 1.2, 1.2));
-        const bboxHelperMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25 });
-        const bboxCage = new THREE.LineSegments(bboxHelperGeom, bboxHelperMat);
-        bboxCage.name = "__vfx_splat_cage";
-        splatGroup.add(bboxCage);
-
         registerObject(splatGroup, actorName, "splat", {
             id: actorId,
             splatUrl: splatData.ply_url || splatData.url || "",
@@ -4952,13 +6621,22 @@ export async function initStandaloneLayoutStudio() {
             name: newName,
             keyframes: Array.isArray(src.userData.keyframes) ? JSON.parse(JSON.stringify(src.userData.keyframes)) : []
         };
+        if (src.userData.type === "light") {
+            const newLight = addSceneLight(src.userData.lightSubType || "sun", {
+                ...extraProps,
+                position: [src.position.x + 0.5, src.position.y + 0.5, src.position.z],
+                rotation: [src.rotation.x, src.rotation.y, src.rotation.z],
+                scale: [src.scale.x, src.scale.y, src.scale.z]
+            }, false);
+            return newLight;
+        }
         if (src.userData.type === "glb" && src.userData.glbUrl) {
-            const tempBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), defMat());
-            tempBox.position.copy(src.position).add(new THREE.Vector3(0.4, 0.4, 0));
-            tempBox.quaternion.copy(src.quaternion);
-            tempBox.scale.copy(src.scale);
-            const reg = registerObject(tempBox, newName, "box", extraProps);
-            replaceObjectWithGLB(reg.userData.id, src.userData.glbUrl, { name: newName }, false);
+            const tempGrp = new THREE.Group();
+            tempGrp.position.copy(src.position).add(new THREE.Vector3(0.4, 0.4, 0));
+            tempGrp.quaternion.copy(src.quaternion);
+            tempGrp.scale.copy(src.scale);
+            const reg = registerObject(tempGrp, newName, "glb", extraProps);
+            replaceObjectWithGLB(reg.userData.id, src.userData.glbUrl, { name: newName, fitMode: src.userData.fitMode || "native" }, false);
             return reg;
         }
         const cloneMesh = new THREE.Mesh(createPrimitiveGeometry(src.userData.type), defMat(src.userData.color || 0xcccccc, src.userData.type === "plane"));
@@ -4971,7 +6649,8 @@ export async function initStandaloneLayoutStudio() {
     function resetSelectedObjectTransform() {
         if (!selectedObject) return;
         pushUndoState("Reset Transform");
-        selectedObject.position.set(0, 0, 0.5);
+        const isNativeGlb = selectedObject.userData?.type === "glb" && selectedObject.userData?.fitMode === "native";
+        selectedObject.position.set(0, 0, isNativeGlb ? 0.0 : 0.5);
         selectedObject.rotation.set(0, 0, 0);
         selectedObject.scale.set(1, 1, 1);
         updateTransformInspector();
@@ -4993,18 +6672,80 @@ export async function initStandaloneLayoutStudio() {
     if (btnResetXf) btnResetXf.onclick = resetSelectedObjectTransform;
 
     const btnCamView = document.getElementById("btn-cam-view");
+    const btnSidebarOrbitCam = document.getElementById("btn-sidebar-3d-orbit-cam");
     if (btnCamView) {
         btnCamView.onclick = () => {
             const monCam = getActiveMonitorCamera();
             if (!monCam && !isShotCamActive) {
                 logMsg("No active camera in scene to view through.");
+                if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("No camera in scene to view through", "Нет камеры в сцене для просмотра"));
                 return;
             }
             isShotCamActive = !isShotCamActive;
             activeCamera = (isShotCamActive && monCam) ? monCam : flyCamera;
             orbitControls.enabled = false;
             btnCamView.className = isShotCamActive ? "vfx-btn vfx-btn-active" : "vfx-btn";
+            if (btnSidebarOrbitCam) {
+                btnSidebarOrbitCam.style.borderColor = isShotCamActive ? "rgba(56,189,248,0.65)" : "rgba(255,255,255,0.12)";
+                btnSidebarOrbitCam.style.color = isShotCamActive ? "#7dd3fc" : "#d4d4d8";
+            }
             logMsg(`Viewport Camera switched to: ${isShotCamActive ? "Shot Camera" : "Free Orbit / FlyCam"}`);
+        };
+    }
+    if (btnSidebarOrbitCam) {
+        btnSidebarOrbitCam.onclick = () => {
+            if (btnCamView) btnCamView.click();
+        };
+    }
+
+    const btnSidebarAddCam = document.getElementById("btn-sidebar-3d-add-cam");
+    const menuSidebarCamPresets = document.getElementById("menu-sidebar-3d-cam-presets");
+    if (btnSidebarAddCam && menuSidebarCamPresets) {
+        btnSidebarAddCam.onclick = (e) => {
+            e.stopPropagation();
+            const isOpen = menuSidebarCamPresets.style.display === "flex";
+            menuSidebarCamPresets.style.display = isOpen ? "none" : "flex";
+        };
+        menuSidebarCamPresets.querySelectorAll(".btn-sidebar-cam-preset").forEach(item => {
+            item.onclick = (e) => {
+                e.stopPropagation();
+                menuSidebarCamPresets.style.display = "none";
+                const preset = item.dataset.preset || "orbit";
+                if (typeof createDefaultCameraTrajectory === "function") {
+                    createDefaultCameraTrajectory(preset);
+                }
+            };
+        });
+        document.addEventListener("click", (ev) => {
+            if (menuSidebarCamPresets.style.display === "flex" && !menuSidebarCamPresets.contains(ev.target) && ev.target !== btnSidebarAddCam) {
+                menuSidebarCamPresets.style.display = "none";
+            }
+        });
+    }
+
+    const btnSidebarKfCam = document.getElementById("btn-sidebar-3d-keyframe-cam");
+    if (btnSidebarKfCam) {
+        btnSidebarKfCam.onclick = () => {
+            if (typeof setCameraKeyframe === "function") {
+                setCameraKeyframe(currentFrame);
+                if (typeof window.__vfxToast === "function") {
+                    window.__vfxToast(uiText(`Camera keyframe recorded at frame ${currentFrame}`, `Ключ камеры записан на кадре ${currentFrame}`));
+                }
+            }
+        };
+    }
+
+    const btnSidebarSaveScene = document.getElementById("btn-sidebar-3d-save-scene");
+    if (btnSidebarSaveScene) {
+        btnSidebarSaveScene.onclick = async () => {
+            if (typeof window.__vfxSaveLevelSnapshot === "function") {
+                await window.__vfxSaveLevelSnapshot();
+            } else {
+                await saveManifestToServer();
+                if (typeof window.__vfxToast === "function") {
+                    window.__vfxToast(uiText("3D Scene saved", "3D сцена сохранена"));
+                }
+            }
         };
     }
 
@@ -5017,26 +6758,24 @@ export async function initStandaloneLayoutStudio() {
             if (!file) return;
             if (/\.fbx$/i.test(file.name)) {
                 // FBX = a character with a skeleton (UE mannequin, Mixamo…): kept in the project, not a blob
-                window.__vfxCharacters3D.add(file).then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Персонаж «${o.userData.name}» добавлен`); })
-                    .catch(err => { logMsg(`ERROR: character import: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(`Ошибка импорта: ${err.message}`); });
+                window.__vfxCharacters3D.add(file).then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Character "${o.userData.name}" added`, `Персонаж «${o.userData.name}» добавлен`)); })
+                    .catch(err => { logMsg(`ERROR: character import: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Import error: ${err.message}`, `Ошибка импорта: ${err.message}`)); });
                 fileMeshInput.value = "";
                 return;
             }
             const blobUrl = URL.createObjectURL(file);
             const cleanName = file.name.replace(/\.[^/.]+$/, "");
-            if (selectedObject) {
-                replaceObjectWithGLB(selectedObject.userData.id, blobUrl, { name: cleanName, meshEngine: "Imported GLB" });
-            } else {
-                const proxy = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), defMat());
-                proxy.position.set(0, 0, 0.5);
-                const reg = registerObject(proxy, cleanName, "box");
-                replaceObjectWithGLB(reg.userData.id, blobUrl, { name: cleanName, meshEngine: "Imported GLB" }, false);
-            }
+            replaceObjectWithGLB("__spawn_new__", blobUrl, { name: cleanName, meshEngine: "Imported GLB", fitMode: "native" });
             fileMeshInput.value = "";
         };
     }
 
     (() => {
+        if (typeof window.__vfxToast !== "function") {
+            window.__vfxToast = (msg, isErr) => {
+                if (typeof window.showToastNotification === "function") window.showToastNotification(msg, !!isErr);
+            };
+        }
         const b = document.getElementById("btn-import-anim"), inp = document.getElementById("file-anim-input"), bones = document.getElementById("btn-toggle-bones");
         if (b && inp) {
             b.onclick = () => inp.click();
@@ -5044,8 +6783,8 @@ export async function initStandaloneLayoutStudio() {
                 const file = e.target.files?.[0]; inp.value = "";
                 if (!file) return;
                 window.__vfxCharacters3D.animate(file)
-                    .then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Анимация на «${o.userData.name}»`); })
-                    .catch(err => { logMsg(`ERROR: animation: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(`Анимация: ${err.message}`); });
+                    .then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Animation applied to "${o.userData.name}"`, `Анимация на «${o.userData.name}»`), false); })
+                    .catch(err => { logMsg(`ERROR: animation: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Animation error: ${err.message}`, `Анимация: ${err.message}`), true); });
             };
         }
         if (bones) bones.onclick = () => window.__vfxCharacters3D.toggleBones();
@@ -5053,29 +6792,29 @@ export async function initStandaloneLayoutStudio() {
         if (pb) pb.onclick = () => {
             pb.disabled = true;
             exportPoseLayerFrom3D()
-                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Слой позы создан: ${r.frames} кадров — откройте видео во вкладке 2D`); })
-                .catch(err => { logMsg(`ERROR: pose from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(`Поза из 3D: ${err.message}`); })
+                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose layer created: ${r.frames} frames (added to Gallery & 2D Video)`, `Слой позы создан: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
+                .catch(err => { logMsg(`ERROR: pose from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose from 3D: ${err.message}`, `Поза из 3D: ${err.message}`), true); })
                 .finally(() => { pb.disabled = false; });
         };
         const rb = document.getElementById("btn-render-from-3d");
         if (rb) rb.onclick = () => {
             rb.disabled = true;
             exportRenderLayerFrom3D()
-                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Слой рендера создан: ${r.frames} кадров — откройте видео во вкладке 2D`); })
-                .catch(err => { logMsg(`ERROR: render from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(`Рендер из 3D: ${err.message}`); })
+                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Render layer created: ${r.frames} frames (added to Gallery & 2D Video)`, `Слой рендера создан: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
+                .catch(err => { logMsg(`ERROR: render from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Render from 3D: ${err.message}`, `Рендер из 3D: ${err.message}`), true); })
                 .finally(() => { rb.disabled = false; });
         };
         const eb = document.getElementById("btn-render-env-from-3d");
         if (eb) eb.onclick = () => {
             eb.disabled = true;
             exportRenderLayerFrom3D({ characters: false, props: true, background: "#bcd4e6", name: "3D layout: environment" })
-                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Слой окружения создан: ${r.frames} кадров — откройте видео во вкладке 2D`); })
-                .catch(err => { logMsg(`ERROR: environment render: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(`Рендер окружения: ${err.message}`); })
+                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Environment layer created: ${r.frames} frames — open video in 2D tab`, `Слой окружения создан: ${r.frames} кадров — откройте видео во вкладке 2D`), false); })
+                .catch(err => { logMsg(`ERROR: environment render: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Environment render: ${err.message}`, `Рендер окружения: ${err.message}`), true); })
                 .finally(() => { eb.disabled = false; });
         };
         const sk = document.getElementById("btn-add-skeleton");
         if (sk) sk.onclick = () => window.__vfxCharacters3D.addSkeleton()
-            .then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(`Скелет «${o.userData.name}» добавлен — теперь можно назначить анимацию`); })
+            .then(o => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Skeleton "${o.userData.name}" added — you can now assign animation`, `Скелет «${o.userData.name}» добавлен — теперь можно назначить анимацию`), false); })
             .catch(err => logMsg(`ERROR: skeleton: ${err.message}`));
     })();
 
@@ -5093,8 +6832,6 @@ export async function initStandaloneLayoutStudio() {
         // If there is no tracked trajectory on Shot Camera, retire the untracked default Shot Camera
         // so there is no duplicate/phantom camera left behind.
         if (!cameraMatrices || cameraMatrices.length === 0) {
-            isShotCameraDeleted = true;
-            try { localStorage.setItem("vfx_3d_shot_cam_deleted", "true"); } catch (_) {}
             if (camBodyMesh) camBodyMesh.visible = false;
             if (camFrustumHelper) camFrustumHelper.visible = false;
         }
@@ -5152,6 +6889,335 @@ export async function initStandaloneLayoutStudio() {
         return reg;
     }
 
+    // =========================================================================
+    // 3D SCENE LIGHT SOURCES: SUN (☀️) & POINT ⇄ AREA (💡/▭)
+    // =========================================================================
+    let nextLightId = 1;
+
+    function rebuildLightInternals(lightGroup) {
+        if (!lightGroup || !lightGroup.userData) return;
+        const ud = lightGroup.userData;
+        const subType = ud.lightSubType || "sun";
+        const intensity = Math.max(0, Number(ud.lightIntensity ?? (subType === "sun" ? 2.5 : 3.5)));
+        const hexColor = ud.color || (subType === "sun" ? "#fff7ed" : "#ffffff");
+        const threeCol = new THREE.Color(hexColor);
+        const angleDeg = Math.max(0, Math.min(45, Number(ud.lightAngleDeg ?? (subType === "sun" ? 8 : (subType === "area" ? 25 : 15)))));
+        const range = Math.max(1, Number(ud.lightRange ?? 20));
+        const areaW = Math.max(0.2, Number(ud.areaWidth ?? 2.0));
+        const areaH = Math.max(0.2, Number(ud.areaHeight ?? 1.2));
+        const softness = angleDeg / 45.0; // 0 = hard light, 1 = soft diffused light
+
+        // Clear previous internal emitter & gizmo children
+        lightGroup.children.slice().forEach(ch => {
+            lightGroup.remove(ch);
+            if (ch.traverse) {
+                ch.traverse(node => {
+                    try {
+                        if (node.geometry) node.geometry.dispose();
+                        if (node.material) {
+                            if (Array.isArray(node.material)) node.material.forEach(m => m.dispose());
+                            else node.material.dispose();
+                        }
+                    } catch (_) {}
+                });
+            }
+        });
+
+        const emitterGroup = new THREE.Group();
+        emitterGroup.name = "__vfx_light_emitters";
+        lightGroup.add(emitterGroup);
+
+        const gizmoGroup = new THREE.Group();
+        gizmoGroup.name = "__vfx_light_gizmo";
+        gizmoGroup.userData.isLightGizmo = true;
+        lightGroup.add(gizmoGroup);
+        ud.lightGizmo = gizmoGroup;
+
+        // Invisible hit sphere so clicking the light in the 3D viewport is effortless
+        const hitGeo = new THREE.SphereGeometry(0.38, 12, 10);
+        const hitMat = new THREE.MeshBasicMaterial({ color: threeCol, transparent: true, opacity: 0.0, depthWrite: false });
+        const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+        hitMesh.name = "__vfx_light_hit";
+        gizmoGroup.add(hitMesh);
+
+        const lineMat = new THREE.LineBasicMaterial({ color: threeCol, transparent: true, opacity: 0.92 });
+        const softRayMat = new THREE.LineBasicMaterial({ color: threeCol, transparent: true, opacity: 0.55 });
+        const coreMat = new THREE.MeshBasicMaterial({ color: threeCol });
+
+        if (subType === "sun") {
+            // Directional Sun Light aimed along local -Z
+            const targetObj = new THREE.Object3D();
+            targetObj.position.set(0, 0, -5);
+            emitterGroup.add(targetObj);
+
+            const dirLight = new THREE.DirectionalLight(threeCol, intensity);
+            dirLight.position.set(0, 0, 0);
+            dirLight.target = targetObj;
+            dirLight.castShadow = ud.castShadows !== false;
+            if (dirLight.shadow) {
+                dirLight.shadow.mapSize.width = 1024;
+                dirLight.shadow.mapSize.height = 1024;
+                dirLight.shadow.camera.near = 0.2;
+                dirLight.shadow.camera.far = 45;
+                const d = 10;
+                dirLight.shadow.camera.left = -d;
+                dirLight.shadow.camera.right = d;
+                dirLight.shadow.camera.top = d;
+                dirLight.shadow.camera.bottom = -d;
+                dirLight.shadow.bias = -0.0005;
+                // Angle controls shadow penumbra softness (0° = razor sharp 1.0, 45° = wide soft 14.0)
+                dirLight.shadow.radius = 1.0 + softness * 13.0;
+            }
+            emitterGroup.add(dirLight);
+
+            // Soft sky wrap fill proportional to Angle (simulates larger solar disk / overcast diffusion)
+            if (softness > 0.02) {
+                const wrapHemi = new THREE.HemisphereLight(threeCol, 0x1e2433, intensity * softness * 0.16);
+                emitterGroup.add(wrapHemi);
+            }
+
+            // Sun Gizmo: glowing core + solar ring + 8 corona spikes + directional beam cone with spread = lightAngleDeg
+            const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), coreMat);
+            gizmoGroup.add(coreSphere);
+
+            const ringPts = [];
+            const ringR = 0.28;
+            for (let i = 0; i <= 32; i++) {
+                const a = (i / 32) * Math.PI * 2;
+                ringPts.push(new THREE.Vector3(Math.cos(a) * ringR, Math.sin(a) * ringR, 0));
+            }
+            gizmoGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), lineMat));
+
+            const spikePts = [];
+            for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                spikePts.push(
+                    new THREE.Vector3(Math.cos(a) * (ringR + 0.04), Math.sin(a) * (ringR + 0.04), 0),
+                    new THREE.Vector3(Math.cos(a) * (ringR + 0.14), Math.sin(a) * (ringR + 0.14), 0)
+                );
+            }
+            // Central aim arrow along -Z
+            const beamLen = 2.2;
+            spikePts.push(
+                new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -beamLen),
+                new THREE.Vector3(0, 0, -beamLen), new THREE.Vector3(0.08, 0, -beamLen + 0.2),
+                new THREE.Vector3(0, 0, -beamLen), new THREE.Vector3(-0.08, 0, -beamLen + 0.2)
+            );
+            gizmoGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(spikePts), lineMat));
+
+            // Softness / Angle cone rays along -Z (spreads wider as Angle increases from 0° hard to 45° soft)
+            const spreadRad = THREE.MathUtils.degToRad(angleDeg);
+            const endR = ringR + Math.sin(spreadRad) * beamLen * 0.85;
+            const conePts = [];
+            for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                conePts.push(
+                    new THREE.Vector3(Math.cos(a) * ringR * 0.7, Math.sin(a) * ringR * 0.7, 0),
+                    new THREE.Vector3(Math.cos(a) * endR, Math.sin(a) * endR, -beamLen)
+                );
+            }
+            const endRingPts = [];
+            for (let i = 0; i <= 24; i++) {
+                const a = (i / 24) * Math.PI * 2;
+                endRingPts.push(new THREE.Vector3(Math.cos(a) * endR, Math.sin(a) * endR, -beamLen));
+            }
+            gizmoGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(conePts), softRayMat));
+            gizmoGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(endRingPts), softRayMat));
+        } else if (subType === "area") {
+            // Area Panel Light (W x H rectangle emitting along local -Z with soft multi-point array + directional fill)
+            const decay = 1.6 - softness * 0.6;
+            const centerPt = new THREE.PointLight(threeCol, intensity * 0.5, range, decay);
+            centerPt.castShadow = ud.castShadows !== false;
+            if (centerPt.shadow) {
+                centerPt.shadow.bias = -0.0006;
+                centerPt.shadow.radius = 2.5 + softness * 12.0;
+            }
+            emitterGroup.add(centerPt);
+
+            // 4 corner sub-emitters across the Area panel for true soft area wrap illumination on PBR meshes
+            const hw = areaW * 0.5;
+            const hh = areaH * 0.5;
+            const cornerOffsets = [
+                [-hw * 0.65, -hh * 0.65, -0.05],
+                [ hw * 0.65, -hh * 0.65, -0.05],
+                [ hw * 0.65,  hh * 0.65, -0.05],
+                [-hw * 0.65,  hh * 0.65, -0.05]
+            ];
+            cornerOffsets.forEach(([ox, oy, oz]) => {
+                const subPt = new THREE.PointLight(threeCol, intensity * 0.18, range, decay);
+                subPt.position.set(ox, oy, oz);
+                emitterGroup.add(subPt);
+            });
+
+            // Forward directional bounce along -Z
+            const targetObj = new THREE.Object3D();
+            targetObj.position.set(0, 0, -4);
+            emitterGroup.add(targetObj);
+            const areaDir = new THREE.DirectionalLight(threeCol, intensity * 0.35);
+            areaDir.target = targetObj;
+            emitterGroup.add(areaDir);
+
+            // Area Panel Gizmo: rectangular softbox frame + inner cross + emission rays
+            const rectPts = [
+                new THREE.Vector3(-hw, -hh, 0), new THREE.Vector3(hw, -hh, 0),
+                new THREE.Vector3(hw, -hh, 0),  new THREE.Vector3(hw, hh, 0),
+                new THREE.Vector3(hw, hh, 0),   new THREE.Vector3(-hw, hh, 0),
+                new THREE.Vector3(-hw, hh, 0),  new THREE.Vector3(-hw, -hh, 0),
+                new THREE.Vector3(-hw, 0, 0),   new THREE.Vector3(hw, 0, 0),
+                new THREE.Vector3(0, -hh, 0),   new THREE.Vector3(0, hh, 0)
+            ];
+            gizmoGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(rectPts), lineMat));
+
+            // Semi-transparent glowing diffuser plane in viewport
+            const panelGeo = new THREE.PlaneGeometry(areaW, areaH);
+            const panelMat = new THREE.MeshBasicMaterial({ color: threeCol, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
+            gizmoGroup.add(new THREE.Mesh(panelGeo, panelMat));
+
+            // Soft spread rays from corners & center along -Z
+            const spread = Math.tan(THREE.MathUtils.degToRad(angleDeg)) * 1.1;
+            const rayLen = 1.25;
+            const rayPts = [
+                new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -rayLen),
+                new THREE.Vector3(-hw, -hh, 0), new THREE.Vector3(-hw - spread * 0.5, -hh - spread * 0.5, -rayLen),
+                new THREE.Vector3( hw, -hh, 0), new THREE.Vector3( hw + spread * 0.5, -hh - spread * 0.5, -rayLen),
+                new THREE.Vector3( hw,  hh, 0), new THREE.Vector3( hw + spread * 0.5,  hh + spread * 0.5, -rayLen),
+                new THREE.Vector3(-hw,  hh, 0), new THREE.Vector3(-hw - spread * 0.5,  hh + spread * 0.5, -rayLen)
+            ];
+            gizmoGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(rayPts), softRayMat));
+        } else {
+            // Point Light (Omni-directional bulb with adjustable hard/soft angle radius)
+            const decay = 1.8 - softness * 0.75;
+            const ptLight = new THREE.PointLight(threeCol, intensity, range, decay);
+            ptLight.castShadow = ud.castShadows !== false;
+            if (ptLight.shadow) {
+                ptLight.shadow.bias = -0.0005;
+                ptLight.shadow.radius = 1.2 + softness * 12.0;
+            }
+            emitterGroup.add(ptLight);
+
+            if (softness > 0.1) {
+                const ambFill = new THREE.HemisphereLight(threeCol, 0x181c26, intensity * softness * 0.22);
+                emitterGroup.add(ambFill);
+            }
+
+            // Point Light Gizmo: core bulb + 3 orthogonal rings whose outer halo scales with softness angle
+            const bulbR = 0.11 + softness * 0.12;
+            gizmoGroup.add(new THREE.Mesh(new THREE.SphereGeometry(bulbR, 14, 12), coreMat));
+
+            const haloR = 0.22 + softness * 0.24;
+            const circle1 = [], circle2 = [], circle3 = [];
+            for (let i = 0; i <= 24; i++) {
+                const a = (i / 24) * Math.PI * 2;
+                const c = Math.cos(a) * haloR;
+                const s = Math.sin(a) * haloR;
+                circle1.push(new THREE.Vector3(c, s, 0));
+                circle2.push(new THREE.Vector3(c, 0, s));
+                circle3.push(new THREE.Vector3(0, c, s));
+            }
+            gizmoGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circle1), lineMat));
+            gizmoGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circle2), softRayMat));
+            gizmoGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circle3), softRayMat));
+        }
+    }
+
+    function updateLightActor(targetObj, patch = {}, recordUndo = false) {
+        const obj = targetObj || selectedObject;
+        if (!obj || !obj.userData || obj.userData.type !== "light") return false;
+        if (recordUndo) pushUndoState("Update Light Settings");
+        if (patch.lightSubType !== undefined) obj.userData.lightSubType = patch.lightSubType;
+        if (patch.lightIntensity !== undefined) obj.userData.lightIntensity = Math.max(0, Number(patch.lightIntensity));
+        if (patch.color !== undefined) obj.userData.color = patch.color;
+        if (patch.lightAngleDeg !== undefined) obj.userData.lightAngleDeg = Math.max(0, Math.min(45, Number(patch.lightAngleDeg)));
+        if (patch.lightRange !== undefined) obj.userData.lightRange = Math.max(1, Number(patch.lightRange));
+        if (patch.areaWidth !== undefined) obj.userData.areaWidth = Math.max(0.2, Number(patch.areaWidth));
+        if (patch.areaHeight !== undefined) obj.userData.areaHeight = Math.max(0.2, Number(patch.areaHeight));
+        if (patch.castShadows !== undefined) obj.userData.castShadows = !!patch.castShadows;
+
+        rebuildLightInternals(obj);
+        obj.updateMatrixWorld(true);
+        updateSelectionHelpers();
+        updateOutliner();
+        updateTransformInspector(false);
+        syncSceneData();
+        // Immediately persist sun to localStorage for instant reload immunity
+        const pidLight = (window.currentProject && window.currentProject.id) || "";
+        if (pidLight) {
+            try {
+                localStorage.setItem(`vfx_3d_sun_${pidLight}`, JSON.stringify({
+                    lightSubType: obj.userData.lightSubType || "sun",
+                    lightIntensity: obj.userData.lightIntensity,
+                    color: obj.userData.color,
+                    lightAngleDeg: obj.userData.lightAngleDeg,
+                    lightRange: obj.userData.lightRange,
+                    areaWidth: obj.userData.areaWidth,
+                    areaHeight: obj.userData.areaHeight,
+                    castShadows: obj.userData.castShadows,
+                    position: [obj.position.x, obj.position.y, obj.position.z],
+                    rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z]
+                }));
+            } catch (_) {}
+        }
+        notifyDetailsAndOutliner();
+        monitorNeedsRender = true;
+        renderStudioViewports();
+        return true;
+    }
+
+    function addSceneLight(subType = "sun", options = {}, recordUndo = true) {
+        const normSub = (subType === "area" || subType === "point") ? subType : "sun";
+        if (recordUndo) pushUndoState(`Add ${normSub === "sun" ? "Sun" : (normSub === "area" ? "Area" : "Point")} Light`);
+
+        const defaultName = options.name || (normSub === "sun" ? `Sun_${nextLightId++}` : (normSub === "area" ? `AreaLight_${nextLightId++}` : `PointLight_${nextLightId++}`));
+        const lightGroup = new THREE.Group();
+        lightGroup.up.set(0, 0, 1);
+
+        if (Array.isArray(options.position) && options.position.length === 3) {
+            lightGroup.position.fromArray(options.position);
+        } else if (normSub === "sun") {
+            lightGroup.position.set(cursor3DPosition.x + 2.2, cursor3DPosition.y - 2.6, cursor3DPosition.z + 3.8);
+            aimCameraGroup(lightGroup, cursor3DPosition.clone());
+        } else {
+            lightGroup.position.set(cursor3DPosition.x + 1.0, cursor3DPosition.y - 1.4, cursor3DPosition.z + 2.0);
+            aimCameraGroup(lightGroup, cursor3DPosition.clone());
+        }
+
+        if (Array.isArray(options.rotation) && options.rotation.length >= 3) {
+            lightGroup.rotation.set(options.rotation[0] || 0, options.rotation[1] || 0, options.rotation[2] || 0);
+        }
+        if (Array.isArray(options.scale) && options.scale.length === 3) {
+            lightGroup.scale.fromArray(options.scale);
+        }
+
+        const ud = {
+            id: options.id || `light_${normSub}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            name: defaultName,
+            type: "light",
+            lightSubType: normSub,
+            color: options.color || (normSub === "sun" ? "#fff7ed" : "#ffffff"),
+            lightIntensity: options.lightIntensity !== undefined ? Number(options.lightIntensity) : (normSub === "sun" ? 2.5 : (normSub === "area" ? 4.0 : 3.5)),
+            lightAngleDeg: options.lightAngleDeg !== undefined ? Number(options.lightAngleDeg) : (normSub === "sun" ? 8 : (normSub === "area" ? 25 : 15)),
+            lightRange: options.lightRange !== undefined ? Number(options.lightRange) : 20,
+            areaWidth: options.areaWidth !== undefined ? Number(options.areaWidth) : 2.0,
+            areaHeight: options.areaHeight !== undefined ? Number(options.areaHeight) : 1.2,
+            castShadows: options.castShadows !== false,
+            keyframes: options.keyframes || []
+        };
+
+        ensureActorUserData(lightGroup, ud);
+        rebuildLightInternals(lightGroup);
+        const reg = registerObject(lightGroup, defaultName, "light", ud);
+        monitorNeedsRender = true;
+        renderStudioViewports();
+        logMsg(`Created 3D Light: ${defaultName} (${normSub.toUpperCase()})`);
+        return reg;
+    }
+
+    window.__vfxAddLight = (subType = "sun", opts = {}) => addSceneLight(subType, opts, true);
+    window.__vfxUpdateLight = (patch = {}, targetId = null) => {
+        const obj = targetId ? threeObjectsMap.get(targetId) : selectedObject;
+        return updateLightActor(obj, patch, true);
+    };
+
     initViewportViewButtons();
 
     // 3D Cursor controls (under Viewport Views and above 3D Tools)
@@ -5190,20 +7256,172 @@ export async function initStandaloneLayoutStudio() {
         sidebarCursorZ.oninput = updateSidebarCursorFromInps;
         sidebarCursorZ.onchange = updateSidebarCursorFromInps;
     }
+    if (sidebarCursorX) sidebarCursorX.value = cursor3DPosition.x.toFixed(2);
+    if (sidebarCursorY) sidebarCursorY.value = cursor3DPosition.y.toFixed(2);
+    if (sidebarCursorZ) sidebarCursorZ.value = cursor3DPosition.z.toFixed(2);
+
+    const sidebarCursorScale = document.getElementById("sidebar-cursor-scale");
+    const sidebarCursorScaleSlider = document.getElementById("sidebar-cursor-scale-slider");
+    const sidebarCursorThickness = document.getElementById("sidebar-cursor-thickness");
+    const sidebarCursorThicknessSlider = document.getElementById("sidebar-cursor-thickness-slider");
+
+    if (sidebarCursorScale) sidebarCursorScale.value = cursor3DScale.toFixed(2);
+    if (sidebarCursorScaleSlider) sidebarCursorScaleSlider.value = String(cursor3DScale);
+    if (sidebarCursorThickness) sidebarCursorThickness.value = cursor3DThickness.toFixed(2);
+    if (sidebarCursorThicknessSlider) sidebarCursorThicknessSlider.value = String(cursor3DThickness);
+
+    const onScaleInput = (v) => {
+        const num = parseFloat(v);
+        if (!isNaN(num)) {
+            if (sidebarCursorScale && document.activeElement !== sidebarCursorScale) sidebarCursorScale.value = num.toFixed(2);
+            if (sidebarCursorScaleSlider && document.activeElement !== sidebarCursorScaleSlider) sidebarCursorScaleSlider.value = String(num);
+            set3DCursorScale(num);
+        }
+    };
+    const onThicknessInput = (v) => {
+        const num = parseFloat(v);
+        if (!isNaN(num)) {
+            if (sidebarCursorThickness && document.activeElement !== sidebarCursorThickness) sidebarCursorThickness.value = num.toFixed(2);
+            if (sidebarCursorThicknessSlider && document.activeElement !== sidebarCursorThicknessSlider) sidebarCursorThicknessSlider.value = String(num);
+            set3DCursorThickness(num);
+        }
+    };
+
+    if (sidebarCursorScale) {
+        sidebarCursorScale.oninput = (e) => onScaleInput(e.target.value);
+        sidebarCursorScale.onchange = (e) => onScaleInput(e.target.value);
+    }
+    if (sidebarCursorScaleSlider) {
+        sidebarCursorScaleSlider.oninput = (e) => onScaleInput(e.target.value);
+        sidebarCursorScaleSlider.onchange = (e) => onScaleInput(e.target.value);
+    }
+    if (sidebarCursorThickness) {
+        sidebarCursorThickness.oninput = (e) => onThicknessInput(e.target.value);
+        sidebarCursorThickness.onchange = (e) => onThicknessInput(e.target.value);
+    }
+    if (sidebarCursorThicknessSlider) {
+        sidebarCursorThicknessSlider.oninput = (e) => onThicknessInput(e.target.value);
+        sidebarCursorThicknessSlider.onchange = (e) => onThicknessInput(e.target.value);
+    }
 
     const btnAddCam = document.getElementById("btn-add-camera");
     if (btnAddCam) {
         btnAddCam.onclick = () => addFreeCamera();
     }
+    const btnAddSunLight = document.getElementById("btn-add-sun-light");
+    if (btnAddSunLight) {
+        btnAddSunLight.onclick = (e) => {
+            const existingSun = Array.from(threeObjectsMap.values()).find(o => o.userData?.type === "light" && (o.userData?.lightSubType === "sun" || (o.userData?.name || "").startsWith("Sun")));
+            if (existingSun && !e.shiftKey) {
+                selectObject(existingSun);
+                if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("Selected existing Sun Light", "Выбрано существующее Солнце"));
+                return;
+            }
+            addSceneLight("sun");
+        };
+    }
+    const btnAddPointLight = document.getElementById("btn-add-point-light");
+    if (btnAddPointLight) {
+        btnAddPointLight.onclick = () => addSceneLight("point");
+    }
+    // Wire sidebar light inspector controls
+    document.querySelectorAll(".sidebar-light-mode-btn").forEach(btn => {
+        btn.onclick = () => {
+            if (selectedObject && selectedObject.userData?.type === "light") {
+                updateLightActor(selectedObject, { lightSubType: btn.dataset.lmode || "sun" }, true);
+            }
+        };
+    });
+    const bindLightPair = (sliderId, numId, propKey) => {
+        const sl = document.getElementById(sliderId);
+        const nm = document.getElementById(numId);
+        if (sl) {
+            sl.oninput = (e) => {
+                const v = parseFloat(e.target.value);
+                if (nm) nm.value = String(v);
+                if (selectedObject && selectedObject.userData?.type === "light") {
+                    updateLightActor(selectedObject, { [propKey]: v }, false);
+                }
+            };
+        }
+        if (nm) {
+            nm.oninput = (e) => {
+                const v = parseFloat(e.target.value);
+                if (!isNaN(v)) {
+                    if (sl) sl.value = String(v);
+                    if (selectedObject && selectedObject.userData?.type === "light") {
+                        updateLightActor(selectedObject, { [propKey]: v }, false);
+                    }
+                }
+            };
+        }
+    };
+    bindLightPair("sidebar-light-intensity-slider", "sidebar-light-intensity-num", "lightIntensity");
+    bindLightPair("sidebar-light-angle-slider", "sidebar-light-angle-num", "lightAngleDeg");
+    bindLightPair("sidebar-light-range-slider", "sidebar-light-range-num", "lightRange");
+    const inpAreaW = document.getElementById("sidebar-light-area-w");
+    const inpAreaH = document.getElementById("sidebar-light-area-h");
+    if (inpAreaW) {
+        inpAreaW.oninput = (e) => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v) && selectedObject?.userData?.type === "light") updateLightActor(selectedObject, { areaWidth: v }, false);
+        };
+    }
+    if (inpAreaH) {
+        inpAreaH.oninput = (e) => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v) && selectedObject?.userData?.type === "light") updateLightActor(selectedObject, { areaHeight: v }, false);
+        };
+    }
+
+    const sliderExposure = document.getElementById("slider-viewport-exposure");
+    const lblExposure = document.getElementById("lbl-viewport-exposure");
+    const sliderStudioFill = document.getElementById("slider-studio-fill");
+    const lblStudioFill = document.getElementById("lbl-studio-fill");
+    if (sliderExposure) {
+        sliderExposure.value = String(viewportExposure);
+        if (lblExposure) lblExposure.textContent = viewportExposure.toFixed(2);
+        sliderExposure.oninput = (e) => {
+            const v = parseFloat(e.target.value) || 1;
+            if (lblExposure) lblExposure.textContent = v.toFixed(2);
+            window.__vfxViewportLook.setExposure(v);
+        };
+        sliderExposure.ondblclick = () => { sliderExposure.value = "1"; sliderExposure.oninput({ target: sliderExposure }); };
+    }
+    if (sliderStudioFill) {
+        sliderStudioFill.value = String(studioFillLevel);
+        if (lblStudioFill) lblStudioFill.textContent = studioFillLevel.toFixed(2);
+        sliderStudioFill.oninput = (e) => {
+            const v = parseFloat(e.target.value);
+            if (lblStudioFill) lblStudioFill.textContent = (isNaN(v) ? 1 : v).toFixed(2);
+            window.__vfxViewportLook.setStudioFill(isNaN(v) ? 1 : v);
+        };
+        sliderStudioFill.ondblclick = () => { sliderStudioFill.value = "1"; sliderStudioFill.oninput({ target: sliderStudioFill }); };
+    }
+
+    function update3DCursorUI() {
+        const btn = document.getElementById("btn-tool-3d-cursor");
+        if (!btn) return;
+        btn.style.background = cursor3DVisible ? "rgba(244, 63, 94, 0.25)" : "transparent";
+        btn.style.borderColor = cursor3DVisible ? "#f43f5e" : "transparent";
+        btn.style.boxShadow = cursor3DVisible ? "0 0 8px rgba(244, 63, 94, 0.45)" : "none";
+        btn.style.color = cursor3DVisible ? "#f43f5e" : "rgba(255,255,255,0.65)";
+        if (typeof renderer !== "undefined" && renderer?.domElement) {
+            renderer.domElement.style.cursor = is3DCursorToolActive ? "crosshair" : "default";
+        }
+    }
+    window.__vfxUpdate3DCursorUI = update3DCursorUI;
 
     const btnTool3DCursor = document.getElementById("btn-tool-3d-cursor");
     if (btnTool3DCursor) {
+        update3DCursorUI();
         btnTool3DCursor.onclick = () => {
             is3DCursorToolActive = !is3DCursorToolActive;
-            btnTool3DCursor.style.background = is3DCursorToolActive ? "rgba(244, 63, 94, 0.25)" : "transparent";
-            btnTool3DCursor.style.borderColor = is3DCursorToolActive ? "#f43f5e" : "transparent";
-            renderer.domElement.style.cursor = is3DCursorToolActive ? "crosshair" : "default";
-            logMsg(is3DCursorToolActive ? "3D Cursor Tool active: click anywhere in 3D scene to place cursor" : "3D Cursor Tool deactivated");
+            cursor3DVisible = is3DCursorToolActive;
+            if (cursor3DGroup) cursor3DGroup.visible = cursor3DVisible;
+            update3DCursorUI();
+            logMsg(cursor3DVisible ? "3D-курсор: ВКЛ (кликните в сцене или Shift+ПКМ для перемещения)" : "3D-курсор: ВЫКЛ");
+            if (typeof renderStudioViewports === "function") renderStudioViewports();
         };
     }
 
@@ -5249,7 +7467,8 @@ export async function initStandaloneLayoutStudio() {
         registerObject(m, `Floor_${nextObjId}`, "plane");
     };
 
-    document.getElementById("btn-add-markers").onclick = () => {
+    const btnAddMarkers = document.getElementById("btn-add-markers");
+    if (btnAddMarkers) btnAddMarkers.onclick = () => {
         const existing = scene.getObjectByName("LTX_Calibration_Markers_3");
         if (existing) {
             existing.visible = !existing.visible;
@@ -5473,6 +7692,8 @@ export async function initStandaloneLayoutStudio() {
             gridColorHex = hex;
             gridHelper = createGridHelper(hex);
             scene.add(gridHelper);
+            monitorNeedsRender = true;
+            try { renderStudioViewports(); } catch (_) {}
         };
     }
 
@@ -5484,6 +7705,8 @@ export async function initStandaloneLayoutStudio() {
             localStorage.setItem("vfx_3d_env_bg_color", hex);
             envBgColor = hex;
             scene.background = new THREE.Color(hex);
+            monitorNeedsRender = true;
+            try { renderStudioViewports(); } catch (_) {}
         };
     }
 
@@ -5492,6 +7715,8 @@ export async function initStandaloneLayoutStudio() {
         envBgColor = hex;
         scene.background = new THREE.Color(hex);
         if (envPicker) envPicker.value = hex;
+        monitorNeedsRender = true;
+        try { renderStudioViewports(); } catch (_) {}
     };
     const envDark = document.getElementById("env-swatch-dark");
     if (envDark) envDark.onclick = () => setEnvBgColor("#0a0a0d");
@@ -5557,7 +7782,11 @@ export async function initStandaloneLayoutStudio() {
         };
     }
 
-    // Actor Cutout Toggles
+    // Camera Monitor: Live 3D View (stale Baked View overlay disabled)
+    window.__vfxUpdateBakedMonitorFrame = () => {};
+    window.__vfxIsBakedViewActive = () => false;
+
+    // Actor Cutout Toggles & Custom Dropzone
     const btnToggleActor = document.getElementById("btn-toggle-actor");
     if (btnToggleActor) {
         btnToggleActor.onclick = () => {
@@ -5565,6 +7794,11 @@ export async function initStandaloneLayoutStudio() {
             actorBillboard.visible = isActorProjectionVisible;
             btnToggleActor.className = isActorProjectionVisible ? "vfx-btn vfx-btn-active" : "vfx-btn";
             btnToggleActor.innerText = `👤 Actor: ${isActorProjectionVisible ? "ON" : "OFF"}`;
+            if (isActorProjectionVisible && !customActorCutoutTex) {
+                updateActorTexture(currentFrame);
+            }
+            updateActorBillboardTransform();
+            renderStudioViewports();
         };
     }
 
@@ -5573,6 +7807,7 @@ export async function initStandaloneLayoutStudio() {
         sliderActorDist.oninput = (e) => {
             actorDistance = parseFloat(e.target.value);
             updateActorBillboardTransform();
+            renderStudioViewports();
         };
     }
 
@@ -5581,6 +7816,236 @@ export async function initStandaloneLayoutStudio() {
         sliderActorAlpha.oninput = (e) => {
             actorOpacity = parseFloat(e.target.value);
             actorMaterial.opacity = actorOpacity;
+            renderStudioViewports();
+        };
+    }
+
+    const dropzoneActor = document.getElementById("actor-cutout-dropzone");
+    const inputActorCutout = document.getElementById("input-actor-cutout");
+    const btnActorRembg = document.getElementById("btn-actor-rembg");
+    const btnActorReset = document.getElementById("btn-actor-reset");
+
+    if (dropzoneActor && inputActorCutout) {
+        dropzoneActor.onclick = (e) => {
+            if (e.target && e.target.closest("button")) return;
+            inputActorCutout.click();
+        };
+        inputActorCutout.onchange = async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const isVid = file.type.startsWith("video/") || /\.(mp4|webm|mov|mkv|m4v)$/i.test(file.name);
+            try {
+                if (typeof uploadToProject === "function") {
+                    const upUrl = await uploadToProject(file);
+                    setCustomActorCutout(upUrl, file.name, isVid ? "video" : "image");
+                } else {
+                    const objUrl = URL.createObjectURL(file);
+                    setCustomActorCutout(objUrl, file.name, isVid ? "video" : "image");
+                }
+            } catch (err) {
+                const objUrl = URL.createObjectURL(file);
+                setCustomActorCutout(objUrl, file.name, isVid ? "video" : "image");
+            }
+        };
+
+        dropzoneActor.ondragover = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzoneActor.style.borderColor = "#38bdf8";
+            dropzoneActor.style.backgroundColor = "rgba(56, 189, 248, 0.15)";
+        };
+        dropzoneActor.ondragleave = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzoneActor.style.borderColor = "rgba(255,255,255,0.22)";
+            dropzoneActor.style.backgroundColor = "rgba(0,0,0,0.25)";
+        };
+        dropzoneActor.ondrop = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzoneActor.style.borderColor = "rgba(255,255,255,0.22)";
+            dropzoneActor.style.backgroundColor = "rgba(0,0,0,0.25)";
+
+            // 1. Check application/vfx-media-item or application/vfx-ref from top strip / gallery
+            const rawItem = e.dataTransfer.getData("application/vfx-media-item") || e.dataTransfer.getData("application/vfx-ref");
+            if (rawItem) {
+                try {
+                    const item = JSON.parse(rawItem);
+                    const url = item.cutout_url || item.url || item.thumbnailUrl;
+                    const isVid = item.type === "video" || item.mediaType === "video" || isVideoMedia(url, item.name || item.filename);
+                    if (url) {
+                        setCustomActorCutout(url, item.name || item.filename || (isVid ? "video.mp4" : "actor.png"), isVid ? "video" : "image");
+                        if (typeof window.showToastNotification === "function") {
+                            window.showToastNotification(uiText(`Actor set from "${item.name || 'gallery'}"`, `Кастомный эктор установлен из галереи`));
+                        }
+                        return;
+                    }
+                } catch (_) {}
+            }
+
+            // 2. Check local files (both video and image!)
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                const isVid = file.type.startsWith("video/") || /\.(mp4|webm|mov|mkv|m4v)$/i.test(file.name);
+                const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name);
+                if (isVid || isImg) {
+                    try {
+                        if (typeof uploadToProject === "function") {
+                            const upUrl = await uploadToProject(file);
+                            setCustomActorCutout(upUrl, file.name, isVid ? "video" : "image");
+                        } else {
+                            const objUrl = URL.createObjectURL(file);
+                            setCustomActorCutout(objUrl, file.name, isVid ? "video" : "image");
+                        }
+                    } catch (_) {
+                        const objUrl = URL.createObjectURL(file);
+                        setCustomActorCutout(objUrl, file.name, isVid ? "video" : "image");
+                    }
+                    if (typeof window.showToastNotification === "function") {
+                        window.showToastNotification(uiText(`Actor set: "${file.name}"`, `Эктор установлен: "${file.name}"`));
+                    }
+                    return;
+                }
+            }
+
+            // 3. Fallback: text / URL
+            const textUrl = e.dataTransfer.getData("text/plain");
+            if (textUrl && /\.(png|jpe?g|webp|mp4|webm|mov)(\?|$)/i.test(textUrl)) {
+                const trimmed = textUrl.trim();
+                const isVid = /\.(mp4|webm|mov)(\?|$)/i.test(trimmed);
+                setCustomActorCutout(trimmed, isVid ? "video.mp4" : "actor.png", isVid ? "video" : "image");
+            }
+        };
+    }
+
+    if (btnActorRembg) {
+        btnActorRembg.onclick = async (e) => {
+            e.stopPropagation();
+            if (!customActorCutoutUrl) return;
+            btnActorRembg.disabled = true;
+            btnActorRembg.innerText = "⏳ Rembg...";
+            try {
+                const res = await fetch("/vfx/mesh3d/rembg", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ image: customActorCutoutUrl })
+                }).then(r => r.json());
+                if (res && res.cutout_url) {
+                    setCustomActorCutout(res.cutout_url, (customActorCutoutName ? "cutout_" + customActorCutoutName : "cutout.png"));
+                    if (typeof window.showToastNotification === "function") {
+                        window.showToastNotification(uiText("Background removed via BiRefNet!", "Фон успешно удален через BiRefNet!"));
+                    }
+                } else {
+                    throw new Error(res.error || "Rembg failed");
+                }
+            } catch (err) {
+                logMsg(`Rembg error: ${err.message}`);
+                if (typeof window.showToastNotification === "function") {
+                    window.showToastNotification(`❌ Rembg: ${err.message}`, true);
+                }
+            } finally {
+                btnActorRembg.disabled = false;
+                btnActorRembg.innerText = `✂️ ${uiText('Remove BG', 'Удалить фон')}`;
+            }
+        };
+    }
+
+    if (btnActorReset) {
+        btnActorReset.onclick = (e) => {
+            e.stopPropagation();
+            clearCustomActorCutout();
+            if (typeof window.showToastNotification === "function") {
+                window.showToastNotification(uiText("Reset to video cutout plane", "Сброшено к вырезке из видео"));
+            }
+        };
+    }
+
+    // Animation Hips & Root Motion buttons wiring
+    const btnToggleHipsMotion = document.getElementById("btn-toggle-hips-motion");
+    if (btnToggleHipsMotion) {
+        btnToggleHipsMotion.onclick = () => {
+            const obj = selectedObject && selectedObject.userData && selectedObject.userData.type === "character" ? selectedObject : null;
+            if (!obj) return;
+            const currentVal = obj.userData.enableHipsMotion !== false;
+            obj.userData.enableHipsMotion = !currentVal;
+            refreshAnimClipSelect();
+            updateCharactersAtFrame();
+            syncSceneData();
+            renderStudioViewports();
+            logMsg(`Hips motion ${obj.userData.enableHipsMotion ? "enabled" : "locked"}`);
+        };
+    }
+
+    const btnBakeRootMotion = document.getElementById("btn-bake-root-motion");
+    if (btnBakeRootMotion) {
+        btnBakeRootMotion.onclick = () => {
+            const obj = selectedObject && selectedObject.userData && selectedObject.userData.type === "character" ? selectedObject : null;
+            const rig = obj && characterRigs.get(obj.userData.id);
+            if (!obj || !rig || !rig.retarget) {
+                logMsg("Select a character with retargeted animation to bake root motion");
+                return;
+            }
+            if (obj.userData.bakeRootMode === "pivot") {
+                // Toggle off / clear pivot baking
+                pushUndoState("Unbake Root Motion");
+                obj.userData.bakeRootMode = "hips";
+                refreshAnimClipSelect();
+                updateCharactersAtFrame();
+                syncSceneData();
+                renderStudioViewports();
+                logMsg(`Hips motion returned to character skeleton`);
+                return;
+            }
+            pushUndoState("Bake Root Motion to Pivot");
+            const R = rig.retarget;
+            const baseObjPos = obj.position.clone();
+            const dur = obj.userData.animDuration || 1;
+            const fps = projectFPS || 24;
+            const speed = obj.userData.animSpeed || 1;
+            const offset = obj.userData.animOffset || 0;
+            
+            // Calculate displacement at t = 0 as base
+            R.src.mixer.setTime(0);
+            R.pivot.updateMatrixWorld(true);
+            const baseSHip = R.hip.sb.getWorldPosition(new THREE.Vector3());
+            const baseWorldDelta = baseSHip.sub(R.hipSrcRest).multiplyScalar(R.ratio);
+
+            if (!Array.isArray(obj.userData.keyframes)) obj.userData.keyframes = [];
+            
+            for (let f = 0; f < totalFrames; f++) {
+                let t = (f - offset) / fps * speed;
+                t = ((t % dur) + dur) % dur;
+                R.src.mixer.setTime(t);
+                R.pivot.updateMatrixWorld(true);
+                const curSHip = R.hip.sb.getWorldPosition(new THREE.Vector3());
+                const curWorldDelta = curSHip.sub(R.hipSrcRest).multiplyScalar(R.ratio);
+                
+                const dx = curWorldDelta.x - baseWorldDelta.x;
+                const dy = curWorldDelta.y - baseWorldDelta.y;
+                const framePos = baseObjPos.clone().add(new THREE.Vector3(dx, dy, 0));
+                
+                let kf = obj.userData.keyframes.find(k => Number(k.frame) === f);
+                if (!kf) {
+                    kf = {
+                        frame: f,
+                        position: framePos,
+                        quaternion: obj.quaternion.clone(),
+                        scale: obj.scale.clone(),
+                        interp: "linear"
+                    };
+                    obj.userData.keyframes.push(kf);
+                } else {
+                    kf.position = framePos;
+                }
+            }
+            obj.userData.keyframes.sort((a, b) => a.frame - b.frame);
+            obj.userData.bakeRootMode = "pivot";
+            refreshAnimClipSelect();
+            syncSceneData();
+            evaluateAnimation();
+            updateCharactersAtFrame();
+            renderStudioViewports();
+            logMsg(`✓ Root motion baked to ${totalFrames} keyframes on «${obj.userData.name}» pivot`);
         };
     }
 
@@ -5594,6 +8059,13 @@ export async function initStandaloneLayoutStudio() {
         isPlaying = !isPlaying;
         if (btnPlayPause) {
             btnPlayPause.innerText = isPlaying ? "⏸ Pause" : "▶ Play";
+        }
+        if (customActorCutoutMediaType === "video" && customActorCutoutVideo) {
+            if (isPlaying) {
+                if (customActorCutoutVideo.paused) customActorCutoutVideo.play().catch(() => {});
+            } else {
+                if (!customActorCutoutVideo.paused) customActorCutoutVideo.pause();
+            }
         }
         if (typeof window.__vfxOnExternalPlayState === "function") {
             window.__vfxOnExternalPlayState(isPlaying);
@@ -5933,6 +8405,7 @@ export async function initStandaloneLayoutStudio() {
         updateActorTexture(currentFrame);
         updateActorBillboardTransform();
         updateTransformInspector(false);
+        if (isBakedViewActive) updateBakedMonitorFrame(currentFrame);
         updateTimelineActiveContextBar();
         monitorNeedsRender = true;
         renderStudioViewports();
@@ -5977,8 +8450,8 @@ export async function initStandaloneLayoutStudio() {
                 white-space: nowrap;
             `;
             const icons = { character: '👤', location: '📍', storyboard: '🎬', '3d': '🧊', action: '⚡' };
-            chip.innerHTML = `<span>${icons[ev.type] || '•'} ${ev.targetName}</span><span style="opacity: 0.6; font-size: 9px; margin-left: 2px;" title="${uiText('Remove binding', 'Удалить привязку')}">✕</span>`;
-            chip.title = `${ev.type.toUpperCase()}: ${ev.targetName}\n${ev.prompt_note || ''}\n${uiText('(Click to edit, ✕ to delete)', '(Нажмите для редактирования, ✕ для удаления)')}`;
+            chip.innerHTML = `<span>${icons[ev.type] || '•'} ${ev.targetName}</span><span style="opacity: 0.6; font-size: 9px; margin-left: 2px;" ${tipAttr('Remove binding', 'Удалить привязку')}>✕</span>`;
+            setTip(chip, `${ev.type.toUpperCase()}: ${ev.targetName}\n${ev.prompt_note || ''}\n(Click to edit, ✕ to delete)`, `${ev.type.toUpperCase()}: ${ev.targetName}\n${ev.prompt_note || ''}\n(Нажмите для редактирования, ✕ для удаления)`);
             chip.onclick = (e) => {
                 if (e.target.innerText === "✕") {
                     e.stopPropagation();
@@ -6654,7 +9127,7 @@ export async function initStandaloneLayoutStudio() {
             };
 
             const actorsList = entry.names.map(n => `● ${n}`).join("\n");
-            mark.title = uiText(
+            mark.title = tipText(
                 `Phantom Keyframe [Frame ${f}] (${entry.actors.length} object${entry.actors.length > 1 ? 's' : ''}):\n${actorsList}\n• Click to jump & select object`,
                 `Фантомный ключ [Кадр ${f}] (${entry.actors.length} объ.${entry.actors.length > 1 ? 'екта' : 'ект'}):\n${actorsList}\n• Нажмите для перехода и выбора объекта`
             );
@@ -6755,9 +9228,9 @@ export async function initStandaloneLayoutStudio() {
 
                 const actorsDesc = entry.actors.map((act, i) => `● ${entry.names[i]}`).join("\n");
                 const otherActors = (allObjectsKeyMap.get(f)?.actors || []).filter(a => !entry.actors.includes(a));
-                const otherDesc = otherActors.length > 0 ? `\n${uiText("Other objects at this frame:", "Другие объекты на этом кадре:")}\n` + otherActors.map(a => `○ ${a.userData?.name || a.name || "Object"}`).join("\n") : "";
+                const otherDesc = otherActors.length > 0 ? `\n${tipText("Other objects at this frame:", "Другие объекты на этом кадре:")}\n` + otherActors.map(a => `○ ${a.userData?.name || a.name || "Object"}`).join("\n") : "";
 
-                mark.title = uiText(
+                mark.title = tipText(
                     `3D Keyframe [Frame ${f}]:\n${actorsDesc}${otherDesc}\n• Drag key to move\n• Click to highlight owner & jump to frame`,
                     `3D Ключ [Кадр ${f}]:\n${actorsDesc}${otherDesc}\n• Потяните ключ для перемещения\n• Нажмите для подсветки объекта и перехода к кадру`
                 );
@@ -6790,7 +9263,7 @@ export async function initStandaloneLayoutStudio() {
             mark.innerText = events.length > 1 ? `${iconText}${events.length}` : iconText;
 
             const desc = events.map(e => `[${e.type.toUpperCase()}] ${e.targetName}${e.prompt_note ? ': "' + e.prompt_note + '"' : ''}`).join("\n");
-            mark.title = uiText(
+            mark.title = tipText(
                 `Frame [${String(f).padStart(3, '0')}]:\n${desc}\n• Drag key to move\n• Click to jump`,
                 `Frame [${String(f).padStart(3, '0')}]:\n${desc}\n• Потяните ключ для перемещения\n• Нажмите для перехода`
             );
@@ -7088,6 +9561,12 @@ export async function initStandaloneLayoutStudio() {
                 } else {
                     localStorage.removeItem("vfx_3d_shot_cam_deleted");
                 }
+                if (camBodyMesh) {
+                    camBodyMesh.visible = !isShotCameraDeleted && isShotCameraVisible && activeCamera !== shotCamera;
+                }
+                if (cameraPathLine) {
+                    cameraPathLine.visible = !isShotCameraDeleted && isShotCameraVisible;
+                }
                 applyCameraOptics(shotCamera, false);
                 updateCameraFrustumHelper(shotCamera);
             }
@@ -7118,7 +9597,10 @@ export async function initStandaloneLayoutStudio() {
             evaluateAnimation();
             updateKeyframeMarkers();
             renderTimelineKeyframes();
+            updateSelectionHelpers();
+            updateOutliner();
             notifyDetailsAndOutliner();
+            syncSceneData();
             monitorNeedsRender = true;
             renderStudioViewports();
             logMsg(`Undo/Redo: ${snap.label || 'Action'}`);
@@ -7214,7 +9696,8 @@ export async function initStandaloneLayoutStudio() {
             assignedImage: obj.userData.assignedImage || "",
             assignedCharacter: obj.userData.assignedCharacter || "",
             assignedAudio: obj.userData.assignedAudio || "",
-            fitMode: obj.userData.fitMode || "stretch",
+            fitMode: obj.userData.fitMode || (obj.userData.type === "glb" ? "native" : "stretch"),
+            pivotOffset: Array.isArray(obj.userData.pivotOffset) ? [...obj.userData.pivotOffset] : undefined,
             camConv: obj.userData.type === "camera" ? true : undefined,
             focalMm: obj.userData.type === "camera" ? (obj.userData.focalMm ?? 35) : undefined,
             sensorPreset: obj.userData.type === "camera" ? (obj.userData.sensorPreset || "full_frame") : undefined,
@@ -7231,6 +9714,13 @@ export async function initStandaloneLayoutStudio() {
             distortionK2: obj.userData.type === "camera" ? (obj.userData.distortionK2 ?? 0.0) : undefined,
             frustumRayLength: obj.userData.type === "camera" ? (obj.userData.frustumRayLength ?? 3.5) : undefined,
             frustumRayOpacity: obj.userData.type === "camera" ? (obj.userData.frustumRayOpacity ?? 0.75) : undefined,
+            lightSubType: obj.userData.type === "light" ? (obj.userData.lightSubType || "sun") : undefined,
+            lightIntensity: obj.userData.type === "light" ? (obj.userData.lightIntensity ?? 2.5) : undefined,
+            lightAngleDeg: obj.userData.type === "light" ? (obj.userData.lightAngleDeg ?? 8) : undefined,
+            lightRange: obj.userData.type === "light" ? (obj.userData.lightRange ?? 20) : undefined,
+            areaWidth: obj.userData.type === "light" ? (obj.userData.areaWidth ?? 2.0) : undefined,
+            areaHeight: obj.userData.type === "light" ? (obj.userData.areaHeight ?? 1.2) : undefined,
+            castShadows: obj.userData.type === "light" ? (obj.userData.castShadows !== false) : undefined,
             keyframes: (obj.userData.keyframes || []).map(k => ({
                 frame: k.frame,
                 position: [k.position.x, k.position.y, k.position.z],
@@ -7252,9 +9742,30 @@ export async function initStandaloneLayoutStudio() {
     let manifestServerSaveTimer = null;
     function syncSceneData() {
         sceneData = exportManifest();
+        const pid = (window.currentProject && window.currentProject.id) || "";
         try {
-            localStorage.setItem("vfx_3d_manifest_cache", JSON.stringify(sceneData));
+            if (pid) {
+                localStorage.setItem(`vfx_3d_manifest_cache_${pid}`, JSON.stringify(sceneData));
+                const liveSun = Array.from(threeObjectsMap.values()).find(o => o.userData?.type === 'light');
+                if (liveSun) {
+                    localStorage.setItem(`vfx_3d_sun_${pid}`, JSON.stringify({
+                        lightSubType: liveSun.userData.lightSubType || 'sun',
+                        lightIntensity: liveSun.userData.lightIntensity,
+                        color: liveSun.userData.color,
+                        lightAngleDeg: liveSun.userData.lightAngleDeg,
+                        lightRange: liveSun.userData.lightRange,
+                        areaWidth: liveSun.userData.areaWidth,
+                        areaHeight: liveSun.userData.areaHeight,
+                        castShadows: liveSun.userData.castShadows,
+                        position: [liveSun.position.x, liveSun.position.y, liveSun.position.z],
+                        rotation: [liveSun.rotation.x, liveSun.rotation.y, liveSun.rotation.z]
+                    }));
+                }
+            }
         } catch (_) {}
+        if (typeof window.__vfxSyncActiveLevelData === "function") {
+            try { window.__vfxSyncActiveLevelData(); } catch (_) {}
+        }
         if (manifestServerSaveTimer) clearTimeout(manifestServerSaveTimer);
         manifestServerSaveTimer = setTimeout(() => {
             fetch("/vfx/save_layout_batch", {
@@ -7264,7 +9775,7 @@ export async function initStandaloneLayoutStudio() {
                     frames: [],
                     manifest: sceneData,
                     total_frames: totalFrames,
-                    project_id: (window.currentProject && window.currentProject.id) || ""
+                    project_id: pid
                 })
             }).catch(() => {});
         }, 500);
@@ -7301,7 +9812,9 @@ export async function initStandaloneLayoutStudio() {
     if (btnSaveManifest) btnSaveManifest.onclick = saveManifestToServer;
     window.__vfxSaveManifest = saveManifestToServer;
 
+    let manifestLoadGen = 0;
     function loadManifestObjects(items) {
+        const myGen = ++manifestLoadGen;
         pendingCharacterItems.clear();
         threeObjectsMap.forEach(obj => {
             purgeObjectArtifacts(obj);
@@ -7312,11 +9825,44 @@ export async function initStandaloneLayoutStudio() {
         selectedObject = null;
         selectedObjects.clear();
 
-        try { characterRigs.forEach(r => scene.remove(r.helper)); characterRigs.clear(); } catch (_) {}
-        items.forEach(item => {
+        try {
+            selectionBoxHelpers.forEach(h => {
+                scene.remove(h);
+                try { h.geometry && h.geometry.dispose(); h.material && h.material.dispose(); } catch (_) {}
+            });
+            selectionBoxHelpers.clear();
+            characterRigs.forEach(r => scene.remove(r.helper));
+            characterRigs.clear();
+            // Sweep any orphaned actor meshes, groups, or helpers from cancelled async loads
+            const systemSceneNodes = new Set([
+                gridHelper, groundAxesHelper, cursor3DGroup,
+                ambientLight, hemiLight, keyLight, fillLight,
+                shotCamera, camFrustumHelper, camBodyMesh,
+                cameraPathLine, actorBillboard, cloudMesh,
+                transformControls, transformProxyGroup
+            ]);
+            scene.children.slice().forEach(ch => {
+                if (!ch || systemSceneNodes.has(ch) || ch.isLight) return;
+                if (ch.userData?.id || ch.isSkeletonHelper || ch.type === "SkeletonHelper" || ch.type === "BoxHelper" || ch.type === "CameraHelper") {
+                    purgeObjectArtifacts(ch);
+                    scene.remove(ch);
+                }
+            });
+        } catch (_) {}
+        try { localStorage.removeItem("vfx_3d_manifest_cache"); } catch (_) {}
+        const cleanItems = (Array.isArray(items) ? items : []).filter(it => {
+            if (!it) return false;
+            if (it.type === "glb" && !it.glbUrl) return false;
+            if (it.type === "character" && !it.characterUrl) return false;
+            if (it.type === "character" && /desert[_\s]*soldier/i.test(String(it.name || "") + " " + String(it.characterUrl || "") + " " + String(it.fileName || ""))) {
+                return false;
+            }
+            return true;
+        });
+        cleanItems.forEach(item => {
             if (item.type === "character" && item.characterUrl) {
                 if (item.id) pendingCharacterItems.set(item.id, item);
-                addCharacter(item.characterUrl, item.name, { ...item, keyframes: (item.keyframes || []).map(k => ({
+                addCharacter(item.characterUrl, item.name, { ...item, _loadGen: myGen, keyframes: (item.keyframes || []).map(k => ({
                     frame: k.frame, position: new THREE.Vector3().fromArray(k.position || [0, 0, 0]),
                     quaternion: new THREE.Quaternion().fromArray(k.rotation || [0, 0, 0, 1]), scale: new THREE.Vector3().fromArray(k.scale || [1, 1, 1]),
                     interp: k.interp || "bezier" })) }, false).then(() => { pendingCharacterItems.delete(item.id); }).catch(e => logMsg(`Character «${item.name}»: ${e.message}`));
@@ -7378,11 +9924,51 @@ export async function initStandaloneLayoutStudio() {
                 }
                 return;
             }
+            if (item.type === "light") {
+                const lightObj = addSceneLight(item.lightSubType || "sun", {
+                    ...item,
+                    keyframes: (item.keyframes || []).map(k => ({
+                        frame: k.frame,
+                        position: new THREE.Vector3().fromArray(k.position || [0, 0, 0]),
+                        quaternion: new THREE.Quaternion().fromArray(k.rotation || [0, 0, 0, 1]),
+                        scale: new THREE.Vector3().fromArray(k.scale || [1, 1, 1]),
+                        interp: k.interp || "bezier",
+                        bezierMode: k.bezierMode || "user",
+                        handleOut: k.handleOut ? { dx: Number(k.handleOut.dx) ?? 0.333, dy: k.handleOut.dy !== undefined ? Number(k.handleOut.dy) : 0.333 } : { dx: 0.333, dy: 0.333 },
+                        handleIn: k.handleIn ? { dx: Number(k.handleIn.dx) ?? -0.333, dy: k.handleIn.dy !== undefined ? Number(k.handleIn.dy) : -0.333 } : { dx: -0.333, dy: -0.333 },
+                        tangentOutScale: k.tangentOutScale !== undefined ? Number(k.tangentOutScale) : 1.0,
+                        tangentInScale: k.tangentInScale !== undefined ? Number(k.tangentInScale) : 1.0,
+                        tangentOutOffset: Array.isArray(k.tangentOutOffset) ? [...k.tangentOutOffset] : [0, 0, 0],
+                        tangentInOffset: Array.isArray(k.tangentInOffset) ? [...k.tangentInOffset] : [0, 0, 0]
+                    }))
+                }, false);
+                if (item.id && lightObj) {
+                    threeObjectsMap.delete(lightObj.userData.id);
+                    lightObj.userData.id = item.id;
+                    threeObjectsMap.set(item.id, lightObj);
+                }
+                return;
+            }
 
-            const primType = item.type === "glb" ? "box" : (item.type || "box");
-            const geom = createPrimitiveGeometry(primType);
-            const mat = defMat(item.color ? new THREE.Color(item.color) : 0xcccccc, primType === "plane");
-            const m = new THREE.Mesh(geom, mat);
+            let m;
+            if (item.type === "glb") {
+                m = new THREE.Group();
+            } else {
+                const primType = item.type || "box";
+                const geom = createPrimitiveGeometry(primType);
+                if (Array.isArray(item.pivotOffset) && item.pivotOffset.length === 3) {
+                    const px = Number(item.pivotOffset[0]) || 0;
+                    const py = Number(item.pivotOffset[1]) || 0;
+                    const pz = Number(item.pivotOffset[2]) || 0;
+                    if (px * px + py * py + pz * pz > 1e-8) {
+                        geom.translate(-px, -py, -pz);
+                        geom.computeBoundingBox();
+                        geom.computeBoundingSphere();
+                    }
+                }
+                const mat = defMat(item.color ? new THREE.Color(item.color) : 0xcccccc, primType === "plane");
+                m = new THREE.Mesh(geom, mat);
+            }
             if (item.position) m.position.fromArray(item.position);
             if (item.rotation) m.rotation.fromArray(item.rotation);
             if (item.scale) m.scale.fromArray(item.scale);
@@ -7399,7 +9985,8 @@ export async function initStandaloneLayoutStudio() {
                 assignedImage: item.assignedImage || "",
                 assignedCharacter: item.assignedCharacter || "",
                 assignedAudio: item.assignedAudio || "",
-                fitMode: item.fitMode || "stretch",
+                fitMode: item.fitMode || (item.type === "glb" ? "native" : "stretch"),
+                pivotOffset: Array.isArray(item.pivotOffset) ? [...item.pivotOffset] : undefined,
                 keyframes: (item.keyframes || []).map(k => ({
                     frame: k.frame,
                     position: new THREE.Vector3().fromArray(k.position || [0, 0, 0]),
@@ -7433,17 +10020,27 @@ export async function initStandaloneLayoutStudio() {
     }
 
     // Export .chan Trajectory
+    const getChanUrl = () => {
+        const pid = window.currentProject ? (window.currentProject.id || window.currentProject) : "";
+        return pid ? `/vfx/export_chan?project_id=${encodeURIComponent(pid)}` : "/vfx/export_chan";
+    };
     const btnExportChanTop = document.getElementById("btn-export-chan-top");
     if (btnExportChanTop) {
-        btnExportChanTop.onclick = () => window.open("/vfx/export_chan", "_blank");
+        btnExportChanTop.onclick = () => window.open(getChanUrl(), "_blank");
     }
-    window.__vfxExportChan = () => window.open("/vfx/export_chan", "_blank");
+    window.__vfxExportChan = () => window.open(getChanUrl(), "_blank");
 
     // Baking Layout Sequence
     async function bakeLayoutSequence() {
         const cardProgress = document.getElementById("render-progress-card");
         const fillProgress = document.getElementById("render-progress-fill");
         const lblProgress = document.getElementById("render-progress-label");
+        const btnMonRender = document.getElementById("btn-mon-render-camera");
+        const origBtnText = btnMonRender ? btnMonRender.innerHTML : "";
+        if (btnMonRender) {
+            btnMonRender.disabled = true;
+            btnMonRender.style.opacity = "0.75";
+        }
 
         if (cardProgress) cardProgress.style.display = "flex";
         const frames = [];
@@ -7458,51 +10055,265 @@ export async function initStandaloneLayoutStudio() {
             overrideMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0xffffff });
         }
 
-        for (let f = 0; f < totalFrames; f++) {
-            updateShotCameraPose(f);
-            evaluateAnimation();
-            updateActorTexture(f);
-            updateActorBillboardTransform();
+        const restoreFrame = currentFrame;
 
-            if (overrideMat) scene.overrideMaterial = overrideMat;
-            renderer.render(scene, shotCamera);
-            if (overrideMat) scene.overrideMaterial = null;
-
-            const b64 = renderer.domElement.toDataURL("image/png");
-            frames.push({ frame: f, image: b64 });
-
-            if (fillProgress) fillProgress.style.width = `${Math.round(((f + 1) / totalFrames) * 100)}%`;
-            if (lblProgress) lblProgress.innerText = `Baking frame ${f + 1} / ${totalFrames}...`;
-            await new Promise(r => setTimeout(r, 10));
+        // Hide gizmos, camera helpers, selection boxes and grid so they don't burn into baked render
+        const prevTcVis = transformControls ? transformControls.visible : false;
+        if (transformControls) transformControls.visible = false;
+        const hiddenNodes = [];
+        if (Array.isArray(selectionBoxHelpers)) {
+            selectionBoxHelpers.forEach(h => {
+                if (h && h.visible) {
+                    hiddenNodes.push(h);
+                    h.visible = false;
+                }
+            });
+        }
+        if (camFrustumHelper && camFrustumHelper.visible) {
+            hiddenNodes.push(camFrustumHelper);
+            camFrustumHelper.visible = false;
+        }
+        if (camBodyMesh && camBodyMesh.visible) {
+            hiddenNodes.push(camBodyMesh);
+            camBodyMesh.visible = false;
+        }
+        if (cameraPathLine && cameraPathLine.visible) {
+            hiddenNodes.push(cameraPathLine);
+            cameraPathLine.visible = false;
+        }
+        if (gridHelper && gridHelper.visible) {
+            hiddenNodes.push(gridHelper);
+            gridHelper.visible = false;
+        }
+        if (cursor3DGroup && cursor3DGroup.visible) {
+            hiddenNodes.push(cursor3DGroup);
+            cursor3DGroup.visible = false;
+        }
+        if (typeof threeObjectsMap !== "undefined" && threeObjectsMap.forEach) {
+            threeObjectsMap.forEach(obj => {
+                if (obj.userData?.cameraHelper && obj.userData.cameraHelper.visible) {
+                    hiddenNodes.push(obj.userData.cameraHelper);
+                    obj.userData.cameraHelper.visible = false;
+                }
+                if (obj.userData?.isCameraProxy && obj.visible) {
+                    hiddenNodes.push(obj);
+                    obj.visible = false;
+                }
+                if (obj.userData?.lightGizmo && obj.userData.lightGizmo.visible) {
+                    hiddenNodes.push(obj.userData.lightGizmo);
+                    obj.userData.lightGizmo.visible = false;
+                }
+            });
+        }
+        if (typeof characterRigs !== "undefined" && characterRigs.forEach) {
+            characterRigs.forEach(rig => {
+                if (rig && rig.helper && rig.helper.visible) {
+                    hiddenNodes.push(rig.helper);
+                    rig.helper.visible = false;
+                }
+            });
         }
 
-        // Upload batch
+        const targetCamActor = getActiveMonitorCameraActor();
+        const cam = getActiveMonitorCamera() || ((!isShotCameraDeleted && shotCamera) ? shotCamera : null);
+        if (!cam) {
+            console.warn("[VFX Studio] No camera available to bake layout");
+            if (cardProgress) cardProgress.style.display = "none";
+            if (btnMonRender) {
+                btnMonRender.disabled = false;
+                btnMonRender.style.opacity = "1";
+                btnMonRender.innerHTML = origBtnText;
+            }
+            return;
+        }
+
+        // Determine exact project/camera render resolution (capped to 1280 max edge so 4K shots render & upload fast without 200MB JSON payload stalls)
+        let outW = Math.max(256, Math.round(Number(targetCamActor?.userData?.imageWidth) || plateWidth || 1280));
+        let outH = Math.max(144, Math.round(Number(targetCamActor?.userData?.imageHeight) || plateHeight || 720));
+        const maxBakeDim = 1280;
+        if (Math.max(outW, outH) > maxBakeDim) {
+            const sc = maxBakeDim / Math.max(outW, outH);
+            outW = Math.max(256, Math.round(outW * sc));
+            outH = Math.max(144, Math.round(outH * sc));
+        }
+        if (outW % 2 !== 0) outW += 1;
+        if (outH % 2 !== 0) outH += 1;
+
+        const keepAspect = cam.aspect;
+        cam.aspect = outW / outH;
+        cam.updateProjectionMatrix();
+
+        // Dedicated offscreen WebGL renderer ensures full 16:9 canvas without editor sidebar letterboxing/cropping
+        let bakeRenderer = null;
         try {
-            await fetch("/vfx/save_layout_batch", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    frames,
-                    manifest: exportManifest(),
-                    total_frames: totalFrames
-                })
+            bakeRenderer = new THREE.WebGLRenderer({
+                antialias: true,
+                preserveDrawingBuffer: true,
+                alpha: false,
+                powerPreference: "high-performance"
             });
-            if (lblProgress) lblProgress.innerText = "✅ Baked successfully!";
+            bakeRenderer.setPixelRatio(1);
+            bakeRenderer.setSize(outW, outH, false);
+            bakeRenderer.shadowMap.enabled = true;
+            bakeRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            if (THREE.sRGBEncoding !== undefined) bakeRenderer.outputEncoding = THREE.sRGBEncoding;
+            bakeRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            bakeRenderer.toneMappingExposure = viewportExposure;
+
+            for (let f = 0; f < totalFrames; f++) {
+                currentFrame = f;
+                if (cameraMatrices && cameraMatrices.length) {
+                    updateShotCameraPose(f);
+                }
+                evaluateAnimation();
+                try { updateCharactersAtFrame(); } catch (_) {}
+                updateActorTexture(f);
+                updateActorBillboardTransform();
+
+                cam.aspect = outW / outH;
+                cam.updateProjectionMatrix();
+                scene.updateMatrixWorld(true);
+                if (cam.parent) cam.parent.updateMatrixWorld(true);
+                cam.updateMatrixWorld(true);
+
+                if (overrideMat) scene.overrideMaterial = overrideMat;
+                bakeRenderer.render(scene, cam);
+                if (overrideMat) scene.overrideMaterial = null;
+
+                const b64 = bakeRenderer.domElement.toDataURL("image/png");
+                frames.push({ frame: f, image: b64 });
+
+                const pct = Math.round(((f + 1) / totalFrames) * 80);
+                if (fillProgress) fillProgress.style.width = pct + "%";
+                if (lblProgress) lblProgress.innerText = uiText("Rendering frame ", "Рендер кадра ") + (f + 1) + " / " + totalFrames + "...";
+                if (btnMonRender) btnMonRender.innerText = `⏳ ${f + 1}/${totalFrames}`;
+                if (f % 4 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+
+            // Upload in safe chunks of 30 frames to avoid 413 Payload Too Large or V8 JSON stringify freezes
+            const pid = (window.currentProject && (window.currentProject.id || window.currentProject.name)) || localStorage.getItem("vfx_last_project") || "New_Movie_Shot";
+            const fpsVal = (typeof projectFPS === "number" && projectFPS > 0) ? projectFPS : 24;
+            const CHUNK_SIZE = 30;
+            const manifestObj = exportManifest();
+            for (let startIdx = 0; startIdx < frames.length; startIdx += CHUNK_SIZE) {
+                const chunk = frames.slice(startIdx, startIdx + CHUNK_SIZE);
+                const isFirst = startIdx === 0;
+                const isLast = (startIdx + CHUNK_SIZE) >= frames.length;
+                const doneCount = Math.min(frames.length, startIdx + chunk.length);
+                const savePct = 80 + Math.round((doneCount / Math.max(1, frames.length)) * 20);
+                if (fillProgress) fillProgress.style.width = savePct + "%";
+                if (lblProgress) {
+                    lblProgress.innerText = isLast
+                        ? uiText("Compiling MP4 & adding to Gallery...", "Сборка MP4 и добавление в галерею...")
+                        : uiText(`Saving frames ${doneCount}/${frames.length}...`, `Сохранение кадров ${doneCount}/${frames.length}...`);
+                }
+                if (btnMonRender) btnMonRender.innerText = isLast ? "💾 MP4..." : `💾 ${doneCount}/${frames.length}`;
+                const resp = await fetch("/vfx/save_layout_batch", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        frames: chunk,
+                        manifest: isLast ? manifestObj : null,
+                        total_frames: totalFrames,
+                        fps: fpsVal,
+                        project_id: pid,
+                        clear_old: isFirst,
+                        compile_mp4: isLast
+                    })
+                });
+                if (!resp.ok) {
+                    const errTxt = await resp.text().catch(() => resp.statusText);
+                    throw new Error(`save_layout_batch failed (${resp.status}): ${errTxt}`);
+                }
+            }
+            lastBakeTimestamp = Date.now();
+            if (isBakedViewActive) {
+                updateBakedMonitorFrame(restoreFrame);
+            }
+            if (lblProgress) lblProgress.innerText = uiText("✅ Added to Gallery!", "✅ Добавлено в галерею!");
             const badge = document.getElementById("hdr-render-badge");
             if (badge) {
                 badge.innerText = "✅ Baked";
                 badge.className = "vfx-render-badge-pill vfx-badge-ready";
             }
+            if (typeof window.__vfxAddBakedLayoutToGallery === "function") {
+                await window.__vfxAddBakedLayoutToGallery({
+                    totalFrames: totalFrames,
+                    fps: fpsVal,
+                    bakeTime: lastBakeTimestamp
+                });
+            }
+            return {
+                status: "ok",
+                saved_count: frames.length,
+                total_frames: totalFrames
+            };
         } catch (e) {
-            alert(`Error baking layout: ${e}`);
+            console.error("[VFX Studio] Error baking layout:", e);
+            throw e;
         } finally {
+            cam.aspect = keepAspect;
+            cam.updateProjectionMatrix();
+            if (transformControls) transformControls.visible = prevTcVis;
+            hiddenNodes.forEach(n => { if (n) n.visible = true; });
+            currentFrame = restoreFrame;
+            onFrameChanged();
+            if (btnMonRender) {
+                btnMonRender.disabled = false;
+                btnMonRender.style.opacity = "1";
+                btnMonRender.innerHTML = origBtnText || `🎬 ${uiText('Render Camera', 'Рендер камеры')}`;
+            }
             setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1500);
+            if (bakeRenderer) {
+                try {
+                    const gl = bakeRenderer.getContext();
+                    bakeRenderer.dispose();
+                    if (gl && typeof gl.getExtension === "function") {
+                        const loseContext = gl.getExtension("WEBGL_lose_context");
+                        if (loseContext) loseContext.loseContext();
+                    }
+                } catch (_) {}
+            }
         }
     }
 
     const btnRenderLayoutTop = document.getElementById("btn-render-layout-top");
     if (btnRenderLayoutTop) btnRenderLayoutTop.onclick = bakeLayoutSequence;
+    const btnMonRenderCamera = document.getElementById("btn-mon-render-camera");
+    if (btnMonRenderCamera) btnMonRenderCamera.onclick = bakeLayoutSequence;
     window.__vfxBakeLayout = bakeLayoutSequence;
+
+    // Expose 3D Scene context for AI Director and studio context builder
+    window.__vfxGet3DSceneContext = () => {
+        const objs = [];
+        threeObjectsMap.forEach(o => {
+            if (!o || !o.userData) return;
+            objs.push({
+                id: o.userData.id,
+                name: o.userData.name || o.name || "Object",
+                type: o.userData.type || (characterRigs.has(o.userData.id) ? "skeleton" : (o.userData.isGLB ? "mesh" : "prop")),
+                visible: o.visible !== false
+            });
+        });
+        const activeCam = getActiveMonitorCamera();
+        const activeCamActor = getActiveMonitorCameraActor();
+        return {
+            level: (typeof activeScene3DId !== "undefined" && typeof mediaScenes3D !== "undefined")
+                ? ((mediaScenes3D.find(s => s.id === activeScene3DId) || {}).title || "Level 1: Main Stage")
+                : "Level 1: Main Stage",
+            camera: {
+                name: (activeCamActor && (activeCamActor.userData?.name || activeCamActor.name)) || (shotCamera && shotCamera.userData?.name) || "клинплейт",
+                frames: totalFrames,
+                currentFrame: currentFrame
+            },
+            objects: objs,
+            objectCount: objs.length,
+            hasSkeleton: objs.some(o => o.type === "skeleton" || o.type === "character" || characterRigs.has(o.id)),
+            hasMesh: objs.some(o => o.type === "mesh" || o.type === "glb"),
+            hasCamera: !isShotCameraDeleted && !!shotCamera
+        };
+    };
+
     const btnSideRender = document.getElementById("btn-start-layout-render-side");
     if (btnSideRender) btnSideRender.onclick = bakeLayoutSequence;
 
@@ -7780,11 +10591,27 @@ export async function initStandaloneLayoutStudio() {
             const contW = monitorFrameBox.clientWidth - 16;
             const contH = monitorFrameBox.clientHeight - 16;
             if (contW > 20 && contH > 20) {
+                const activeMonActor = getActiveMonitorCameraActor();
+                let monAspect = plateAspect;
+                let monW = plateWidth;
+                let monH = plateHeight;
+                if (activeMonActor && activeMonActor.userData) {
+                    const wVal = Number(activeMonActor.userData.imageWidth);
+                    const hVal = Number(activeMonActor.userData.imageHeight);
+                    if (wVal > 0 && hVal > 0) {
+                        monW = wVal;
+                        monH = hVal;
+                        const sq = Number(activeMonActor.userData.anamorphicSqueeze) || 1.0;
+                        monAspect = (wVal / hVal) * sq;
+                    } else if (activeMonActor.userData.camera && activeMonActor.userData.camera.aspect > 0) {
+                        monAspect = activeMonActor.userData.camera.aspect;
+                    }
+                }
                 let fitW = contW;
-                let fitH = fitW / plateAspect;
+                let fitH = fitW / monAspect;
                 if (fitH > contH) {
                     fitH = contH;
-                    fitW = fitH * plateAspect;
+                    fitW = fitH * monAspect;
                 }
                 const targetW = Math.floor(fitW);
                 const targetH = Math.floor(fitH);
@@ -7796,6 +10623,10 @@ export async function initStandaloneLayoutStudio() {
                     lastMonitorGateW = targetW;
                     lastMonitorGateH = targetH;
                     monitorNeedsRender = true;
+                }
+                const aspectBadge = document.getElementById("monitor-aspect-badge");
+                if (aspectBadge) {
+                    aspectBadge.innerText = `${monW}×${monH} (${monAspect.toFixed(2)}:1)`;
                 }
             }
         }
@@ -7853,6 +10684,8 @@ export async function initStandaloneLayoutStudio() {
             }
         });
 
+        updateDefaultRigForUserLights();
+
         // Update bounding box selection & keyframe highlight helpers
         selectionBoxHelpers.forEach((helper, actor) => {
             if (helper && actor && helper.visible) {
@@ -7869,12 +10702,6 @@ export async function initStandaloneLayoutStudio() {
         renderAxisCompass();
 
         // 2. Render Right Bottom Viewport: Shot Camera Film Gate
-        // Skip re-rendering the 2nd WebGL context when flying flyCamera or when nothing in the scene changed!
-        const isFlyingFreeCam = (ueMouseMode !== null || isRmbHeld) && activeCamera === flyCamera && !isPlaying;
-        if (isFlyingFreeCam && !monitorNeedsRender) {
-            return;
-        }
-
         const emptyWatermark = document.getElementById("monitor-empty-watermark");
         const paneMon = document.getElementById("pane-cam-monitor");
         const targetCam = getActiveMonitorCamera();
@@ -7885,9 +10712,13 @@ export async function initStandaloneLayoutStudio() {
                 if (emptyWatermark && emptyWatermark.style.display !== "none") emptyWatermark.style.display = "none";
                 if (monitorCanvas.style.display !== "block") monitorCanvas.style.display = "block";
 
-                if (!monitorNeedsRender && !isPlaying && activeCamera !== shotCamera) {
+                const nowMs = performance.now();
+                // Responsive monitor refresh: render immediately if explicitly flagged or playing,
+                // or throttle to ~30 FPS (33ms) so Orbit manipulation, environment, and materials never freeze!
+                if (!monitorNeedsRender && !isPlaying && (nowMs - lastMonitorRenderTime < 33)) {
                     return;
                 }
+                lastMonitorRenderTime = nowMs;
                 monitorNeedsRender = false;
 
                 const expectedW = Math.round(gw * monitorRenderer.getPixelRatio());
@@ -7928,6 +10759,10 @@ export async function initStandaloneLayoutStudio() {
                     if (obj.userData?.isCameraProxy && obj.visible) {
                         hiddenNodes.push(obj);
                         obj.visible = false;
+                    }
+                    if (obj.userData?.lightGizmo && obj.userData.lightGizmo.visible) {
+                        hiddenNodes.push(obj.userData.lightGizmo);
+                        obj.userData.lightGizmo.visible = false;
                     }
                 });
                 if (cursor3DGroup && cursor3DGroup.visible) {
@@ -7994,6 +10829,12 @@ export async function initStandaloneLayoutStudio() {
         const dtMs = lastAnimFrameTs > 0 ? Math.min(50, Math.max(4, now - lastAnimFrameTs)) : 16.667;
         lastAnimFrameTs = now;
 
+        if (customActorCutoutMediaType === "video" && customActorCutoutTex && customActorCutoutVideo) {
+            if (isPlaying) {
+                customActorCutoutTex.needsUpdate = true;
+                monitorNeedsRender = true;
+            }
+        }
         if (isPlaying) {
             const is2DActive = document.getElementById("vfx-2d-media-stage") !== null;
             if (is2DActive) {
@@ -8117,7 +10958,7 @@ export async function initStandaloneLayoutStudio() {
             getCoordSpace: () => transformControls.space,
             onBakeLayout: bakeLayoutSequence,
             onSaveScene3D: saveManifestToServer,
-            onExportChan: () => window.open("/vfx/export_chan", "_blank"),
+            onExportChan: () => window.open(getChanUrl(), "_blank"),
             onAddDefaultCamera: (preset) => createDefaultCameraTrajectory(preset),
             onSetCameraKeyframe: (f) => setCameraKeyframe(f),
             getHasCameraTrack: () => (Array.isArray(cameraMatrices) && cameraMatrices.length > 0) || Boolean(getActiveMonitorCamera()),
@@ -8150,10 +10991,21 @@ export async function initStandaloneLayoutStudio() {
                 selectObject(obj || null, isMulti);
             },
             onAddFreeCamera: (nameOverride = "") => addFreeCamera(nameOverride),
+            onAddLight: (subType = "sun", opts = {}) => addSceneLight(subType, opts, true),
+            onUpdateLightProps: (patch = {}, recordUndo = false) => updateLightActor(selectedObject, patch, recordUndo),
             onSpawnPrimitive: (primType = "box", nameOverride = "") => {
                 const normType = String(primType).toLowerCase();
                 if (normType.includes("cam")) {
                     return addFreeCamera(nameOverride);
+                }
+                if (normType === "sun" || normType === "light_sun") {
+                    return addSceneLight("sun", { name: nameOverride || undefined }, true);
+                }
+                if (normType === "point" || normType === "light_point" || normType === "light") {
+                    return addSceneLight("point", { name: nameOverride || undefined }, true);
+                }
+                if (normType === "area" || normType === "light_area") {
+                    return addSceneLight("area", { name: nameOverride || undefined }, true);
                 }
                 const isPlane = normType.includes("plane") || normType.includes("floor");
                 const finalType = isPlane ? "plane" : normType;
@@ -8243,6 +11095,9 @@ export async function initStandaloneLayoutStudio() {
                 }
                 if (selectedObject.userData.type === "camera") {
                     applyCameraOptics(selectedObject, true);
+                }
+                if (selectedObject.userData.type === "light") {
+                    rebuildLightInternals(selectedObject);
                 }
                 updateOutliner();
                 selectedObject.updateMatrixWorld(true);

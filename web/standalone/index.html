@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KESHIKI (景色) VFX AI Studio — Minimalist Edition</title>
+    <title>KESHIKI (景色) VFX AI Studio — Technology Preview v0.1</title>
     <link rel="icon" type="image/png" sizes="64x64" href="/vfx/studio/favicon.png?v=3">
     <link rel="icon" type="image/x-icon" href="/vfx/studio/favicon.ico?v=3">
     <link rel="shortcut icon" href="/vfx/studio/favicon.ico?v=3">
@@ -97,7 +97,7 @@
     <script src="/extensions/ComfyUI-VFX-Suite/lib/three.min.js"></script>
     <script src="/extensions/ComfyUI-VFX-Suite/lib/fflate.min.js"></script>
     <script src="/extensions/ComfyUI-VFX-Suite/lib/OrbitControls.js"></script>
-    <script src="/extensions/ComfyUI-VFX-Suite/lib/TransformControls.js"></script>
+    <script src="/extensions/ComfyUI-VFX-Suite/lib/TransformControls.js?v=2"></script>
     <script src="/extensions/ComfyUI-VFX-Suite/lib/OBJLoader.js"></script>
     <script src="/extensions/ComfyUI-VFX-Suite/lib/GLTFLoader.js"></script>
     <script src="/extensions/ComfyUI-VFX-Suite/lib/FBXLoader.js"></script>
@@ -106,7 +106,7 @@
     <div id="studio-app-root"></div>
 
     <script type="module">
-        import { initStandaloneLayoutStudio } from "/vfx/studio/standalone_studio.js";
+        import { initStandaloneLayoutStudio } from "/vfx/studio/standalone_studio.js?v=2.5.9";
         if (document.readyState === "loading") {
             window.addEventListener("DOMContentLoaded", () => initStandaloneLayoutStudio());
         } else {

@@ -1,0 +1,33 @@
+{
+  "id": "preset_layout_to_render_dubit",
+  "name": "Complete Movie Shot: 3D Layout → LTX-2.5 → DubIt",
+  "name_ru": "Полный кадр: 3D Лейаут → LTX Рендер → DubIt Дубляж",
+  "description": "Превращает черновой 3D-лейаут в кинокадр и накладывает точный дубляж речи.",
+  "stages": [
+    {
+      "id": "stage_1",
+      "title": "LTX-2.5 Layout-to-Render",
+      "stage_type": "ltx25_layout_to_render",
+      "workflow": "api/video_fx/ltx25_ic_lora_v2v.json",
+      "inputs": {
+        "source_video": "",
+        "ref_image": "",
+        "prompt": "Photorealistic cinematic movie shot, dramatic sunset lighting"
+      }
+    },
+    {
+      "id": "stage_2",
+      "title": "DubIt Speech Lip-Sync",
+      "stage_type": "ltx23_dubit",
+      "workflow": "voice/ltx23_dubit.json",
+      "inputs": {
+        "source_video": {
+          "from_stage": "stage_1",
+          "output_key": "video"
+        },
+        "audio": "",
+        "prompt": "talking expressively and naturally"
+      }
+    }
+  ]
+}

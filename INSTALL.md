@@ -9,27 +9,64 @@ KESHIKI is a ComfyUI custom node pack with its own studio UI. It runs fully loca
 - [Git](https://git-scm.com/) (the installer uses it to fetch the node packs below).
 - Optional: [Ollama](https://ollama.com/) for the AI Director chat (any local chat model, e.g. `ollama pull qwen3:8b`).
 
-## Install
+## Installation Modes
 
+You can choose either of two setup strategies:
+
+### Option A: Install into Existing ComfyUI (Recommended for integrated setups)
+If you already have a working ComfyUI setup and want KESHIKI alongside your existing custom nodes:
 1. Put this folder into `ComfyUI/custom_nodes/`:
-   ```
+   ```bash
    cd ComfyUI/custom_nodes
    git clone <this repository> ComfyUI-VFX-Suite
    ```
-2. Run `install.bat` from that folder (or `python install.py` with the Python that runs ComfyUI).
-   It will:
-   - add the node packs KESHIKI uses (skipped if you already have them):
-     ComfyUI-LTXVideo, comfyui_controlnet_aux, ComfyUI-DepthAnythingV2, ComfyUI-VideoHelperSuite,
-     ComfyUI-segment-anything-2, ComfyUI-CorridorKey;
-   - install the Python packages from `requirements.txt`;
-   - download COLMAP 3.13 (CUDA, ~258 MB) and GLOMAP 1.2.0 (CUDA, ~73 MB) into `tools/colmap` and `tools/glomap`
-     for camera tracking (GLOMAP's global mapper on COLMAP's features gives the most accurate solves);
-   - list which models are present and where the missing ones go.
-3. Models: run `.\install.bat --download-models core` to fetch the core set (~40 GB), or download the files
+2. Run `install.bat` inside `ComfyUI-VFX-Suite/` (it targets your ComfyUI embedded or active Python environment automatically).
+3. The installer installs packages from `requirements.txt` into your existing ComfyUI Python.
+
+### Option B: Clean Dedicated Environment (Recommended for competition / zero-conflict setups)
+If you want complete isolation to prevent third-party node library conflicts:
+1. Create a clean dedicated Python 3.12 environment:
+   ```bash
+   conda create -n keshiki_vfx python=3.12 -y
+   conda activate keshiki_vfx
+   ```
+2. Install PyTorch 2.6.0 with CUDA 12.4:
+   ```bash
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+   ```
+3. Install KESHIKI core requirements:
+   ```bash
+   cd ComfyUI/custom_nodes/ComfyUI-VFX-Suite
+   pip install -r requirements.txt
+   ```
+4. Point `keshiki_local.json` to this environment:
+   ```json
+   {
+     "comfy_dir": "path/to/ComfyUI",
+     "python": "path/to/miniconda3/envs/keshiki_vfx/python.exe"
+   }
+   ```
+5. Launch via `run_keshiki_studio.bat`.
+
+> **Note on third-party custom nodes**: If other node packs in your `custom_nodes` folder require older dependencies (e.g. `bitsandbytes`, `piexif`), ComfyUI will simply report `(IMPORT FAILED)` for those unrelated nodes and proceed. KESHIKI's own nodes, pipelines, and AI Director are completely self-contained and run without hindrance.
+
+## Standard Dependencies
+
+KESHIKI relies on standard, modern open-source vision and AI packages (all specified in `requirements.txt`):
+- **Deep Learning Runtime**: PyTorch 2.6.0+cu124, torchvision, torchaudio
+- **Computer Vision & 3D Math**: OpenCV (`opencv-python`), `scikit-image`, `scipy`, `pillow`, `trimesh`, `plyfile`
+- **Spatial Tracking & Segmentation**: `pycolmap` (COLMAP 3.13), `open3d`, `ultralytics` (YOLOv8 segmentation)
+- **Generative Diffusion**: `diffusers`, `transformers`, `accelerate`, `safetensors`, `sentencepiece`, `timm`
+- **Agent Orchestration**: `ollama`, `pydantic` (local LLM control)
+
+## Setup Steps
+
+1. Run `.\install.bat` (or `python install.py`) to download COLMAP and GLOMAP binaries into `tools/`.
+2. Models: run `.\install.bat --download-models core` to fetch the core set (~40 GB), or download the files
    listed by the installer yourself. Already have them elsewhere? Point ComfyUI at that folder with
    `extra_model_paths.yaml`. `.\install.bat --check` re-checks without changing anything.
-4. Start ComfyUI as usual and open **http://127.0.0.1:8188/vfx/studio/**
-   (or use `run_keshiki_studio.bat`, which starts ComfyUI and opens the studio in an app window).
+3. Start ComfyUI and open **http://127.0.0.1:8188/vfx/studio/**
+   (or launch via `run_keshiki_studio.bat`, which starts ComfyUI and opens the studio window).
 
 ## Model groups
 

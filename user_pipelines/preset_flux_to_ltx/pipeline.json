@@ -1,0 +1,31 @@
+{
+  "id": "preset_flux_to_ltx",
+  "name": "Scene Creation: FLUX.3 → LTX-2.5 Video",
+  "name_ru": "Создание сцены: FLUX.3 Текст → LTX-2.5 Видео",
+  "description": "Генерирует фотореалистичный кадр по промпту и превращает его в динамичный кинематографичный видеоролик.",
+  "stages": [
+    {
+      "id": "stage_1",
+      "title": "FLUX.3 Text-to-Image",
+      "stage_type": "flux_t2i",
+      "workflow": "api/storyboard/flux3_klein_t2i.json",
+      "inputs": {
+        "prompt": "Cinematic heroic portrait of a wanderer in glowing sunset, volumetric light, 8k"
+      }
+    },
+    {
+      "id": "stage_2",
+      "title": "LTX-2.5 Image-to-Video",
+      "stage_type": "ltx25_i2v",
+      "workflow": "api/video_gen/ltx25_i2v.json",
+      "inputs": {
+        "start_image": {
+          "from_stage": "stage_1",
+          "output_key": "image"
+        },
+        "prompt": "Dynamic camera push in, atmospheric wind and subtle movement",
+        "length": 49
+      }
+    }
+  ]
+}

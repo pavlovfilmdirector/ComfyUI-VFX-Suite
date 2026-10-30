@@ -27,6 +27,7 @@ import shutil
 import re
 import base64
 import logging
+from typing import Optional, List, Dict, Any
 
 try:
     import cv2
@@ -331,7 +332,7 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
     custom_path allows the user to specify any folder on any disk (e.g. D:\\Projects\\MyFilm).
     """
     if mode == "sandbox" and not name:
-        name = "Песочница (Быстрый старт)"
+        name = "Sandbox (Quick Start)"
         project_id = "sandbox_playground"
 
     pid = project_id or _sanitize_id(name)
@@ -353,18 +354,37 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
 
     meta_file = os.path.join(p_dir, "project.json")
     if os.path.exists(meta_file):
+        data = None
         try:
             with open(meta_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                content = f.read().strip()
+                while content.endswith("}}"):
+                    content = content[:-1]
+                data = json.loads(content)
+        except Exception as _e:
+            _log_suppressed(_e)
+            import glob
+            for a in sorted(glob.glob(os.path.join(p_dir, "autosaves", "autosave_*.json")), key=os.path.getmtime, reverse=True):
+                try:
+                    with open(a, "r", encoding="utf-8") as af:
+                        data = json.load(af)
+                        break
+                except Exception:
+                    pass
+        if data:
             data["updated_at"] = time.time()
             data["path"] = p_dir
             data["folders"] = {sub: os.path.join(p_dir, sub) for sub in PROJECT_SUBDIRS}
-            with open(meta_file, "w", encoding="utf-8") as f:
+            if not data.get("chatHistory"):
+                ch = get_project_chat_history(pid)
+                if ch:
+                    data["chatHistory"] = ch
+            tmp_meta = meta_file + ".tmp"
+            with open(tmp_meta, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_meta, meta_file)
             register_project(pid, p_dir, name=data.get("name", name), mode=data.get("mode", mode))
             return data
-        except Exception as _e:
-            _log_suppressed(_e)
 
     # Initialize default structured project state
     initial_state = {
@@ -384,10 +404,10 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
             "cards": [
                 {
                     "id": "shot_01",
-                    "title": "Кадр 1: Завязка",
+                    "title": "Shot 1: Opening Scene",
                     "x": 120,
                     "y": 140,
-                    "story_note": "Герой стоит на краю неоновой крыши под дождем и смотрит на голограмму города.",
+                    "story_note": "Protagonist standing on rain-slicked rooftop edge looking at giant city hologram.",
                     "flux_prompt": "Cinematic wide shot, cyberpunk protagonist standing on rain-slicked rooftop edge looking at giant city hologram, moody teal and orange lighting, 35mm anamorphic lens",
                     "image_url": "",
                     "character_id": "char_cyber_stalker",
@@ -395,10 +415,10 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
                 },
                 {
                     "id": "shot_02",
-                    "title": "Кадр 2: Крупный план и реплика",
+                    "title": "Shot 2: Close-up & Dialogue",
                     "x": 520,
                     "y": 140,
-                    "story_note": "Камера плавно наезжает на лицо героя, он произносит ключевую фразу.",
+                    "story_note": "Camera pushes in smoothly on protagonist face as key dialogue line is spoken.",
                     "flux_prompt": "Close-up portrait of cyberpunk protagonist in rain, neon reflections on wet skin, intense expression, shallow depth of field, 85mm prime lens",
                     "image_url": "",
                     "character_id": "char_cyber_stalker",
@@ -422,10 +442,10 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
         "compositing": {
             "view_mode": "layers",  # 'layers' (Layer Stack) or 'nodes' (Node Graph)
             "layers": [
-                {"id": "lyr_fx", "name": "Атмосфера / Передний план (LTX Alpha)", "type": "fx", "blend": "Screen", "opacity": 0.85, "visible": True},
-                {"id": "lyr_actor", "name": "Главный Персонаж (CorridorKey + Липсинг)", "type": "fg", "blend": "Normal", "opacity": 1.0, "visible": True},
-                {"id": "lyr_mid", "name": "3D Объекты сцены (Layout Render)", "type": "3d", "blend": "Normal", "opacity": 1.0, "visible": True},
-                {"id": "lyr_bg", "name": "Генеративный Фон (LTX-2.5 Environment)", "type": "bg", "blend": "Normal", "opacity": 1.0, "visible": True}
+                {"id": "lyr_fx", "name": "Atmosphere / Foreground (LTX Alpha)", "type": "fx", "blend": "Screen", "opacity": 0.85, "visible": True},
+                {"id": "lyr_actor", "name": "Protagonist (CorridorKey + Lipsync)", "type": "fg", "blend": "Normal", "opacity": 1.0, "visible": True},
+                {"id": "lyr_mid", "name": "3D Scene Context (Layout Render)", "type": "3d", "blend": "Normal", "opacity": 1.0, "visible": True},
+                {"id": "lyr_bg", "name": "Cinematic Background (LTX-2.5 Environment)", "type": "bg", "blend": "Normal", "opacity": 1.0, "visible": True}
             ],
             "nodes": [
                 {"id": "nd_plate", "title": "Actor Plate (CorridorKey)", "type": "input", "x": 80, "y": 80, "outs": ["nd_relight"]},
@@ -456,23 +476,119 @@ def save_project_state(project_id: str, state_updates: dict) -> dict:
     pid = _sanitize_id(project_id)
     p_dir = get_project_dir(pid)
     meta_file = os.path.join(p_dir, "project.json")
+    current = None
     if os.path.exists(meta_file):
-        with open(meta_file, "r", encoding="utf-8") as f:
-            current = json.load(f)
-    else:
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                while content.endswith("}}"):
+                    content = content[:-1]
+                current = json.loads(content)
+        except Exception:
+            import glob
+            for a in sorted(glob.glob(os.path.join(p_dir, "autosaves", "autosave_*.json")), key=os.path.getmtime, reverse=True):
+                try:
+                    with open(a, "r", encoding="utf-8") as af:
+                        current = json.load(af)
+                        break
+                except Exception:
+                    pass
+    if not current:
         current = create_or_open_project(project_id, project_id=project_id)
 
     for k, v in state_updates.items():
         current[k] = v
+    if "chatHistory" in state_updates:
+        save_project_chat_history(pid, state_updates["chatHistory"])
     current["updated_at"] = time.time()
     current["path"] = p_dir
     current["folders"] = {sub: os.path.join(p_dir, sub) for sub in PROJECT_SUBDIRS}
 
-    with open(meta_file, "w", encoding="utf-8") as f:
+    tmp_meta = meta_file + ".tmp"
+    with open(tmp_meta, "w", encoding="utf-8") as f:
         json.dump(current, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_meta, meta_file)
 
     register_project(pid, p_dir, name=current.get("name", pid), mode=current.get("mode", "production"))
     return current
+
+
+def get_project_chat_history(project_id: str) -> list:
+    """Load persistent chat history for the project from chat_history.json or project.json."""
+    pid = _sanitize_id(project_id)
+    p_dir = get_project_dir(pid)
+    chat_file = os.path.join(p_dir, "chat_history.json")
+    if os.path.exists(chat_file):
+        try:
+            with open(chat_file, "r", encoding="utf-8") as f:
+                hist = json.load(f)
+                if isinstance(hist, list):
+                    return hist
+        except Exception as _e:
+            _log_suppressed(_e)
+    meta_file = os.path.join(p_dir, "project.json")
+    if os.path.exists(meta_file):
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                hist = meta.get("chatHistory") or meta.get("chat_history")
+                if isinstance(hist, list):
+                    return hist
+        except Exception as _e:
+            _log_suppressed(_e)
+    return []
+
+
+def save_project_chat_history(project_id: str, history: list) -> bool:
+    """Save persistent chat history for the project to chat_history.json and sync to project.json."""
+    pid = _sanitize_id(project_id)
+    p_dir = get_project_dir(pid)
+    os.makedirs(p_dir, exist_ok=True)
+    trimmed = history[-200:] if isinstance(history, list) else []
+    chat_file = os.path.join(p_dir, "chat_history.json")
+    try:
+        with open(chat_file, "w", encoding="utf-8") as f:
+            json.dump(trimmed, f, indent=2, ensure_ascii=False)
+    except Exception as _e:
+        _log_suppressed(_e)
+        return False
+    meta_file = os.path.join(p_dir, "project.json")
+    if os.path.exists(meta_file):
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            meta["chatHistory"] = trimmed
+            meta["updated_at"] = time.time()
+            with open(meta_file, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2, ensure_ascii=False)
+        except Exception as _e:
+            _log_suppressed(_e)
+    return True
+
+
+def clear_project_chat_history(project_id: str) -> bool:
+    """Clear chat history file and remove chatHistory from project metadata."""
+    pid = _sanitize_id(project_id)
+    p_dir = get_project_dir(pid)
+    chat_file = os.path.join(p_dir, "chat_history.json")
+    if os.path.exists(chat_file):
+        try:
+            os.remove(chat_file)
+        except Exception as _e:
+            _log_suppressed(_e)
+    meta_file = os.path.join(p_dir, "project.json")
+    if os.path.exists(meta_file):
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if "chatHistory" in meta or "chat_history" in meta:
+                meta.pop("chatHistory", None)
+                meta.pop("chat_history", None)
+                with open(meta_file, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2, ensure_ascii=False)
+        except Exception as _e:
+            _log_suppressed(_e)
+    return True
 
 
 def save_project_autosave(project_id: str, state: dict, max_autosaves: int = 10) -> dict:
@@ -651,7 +767,7 @@ def add_global_character(char_data: dict) -> list:
 
     new_entry = {
         "id": cid,
-        "name": char_data.get("name", "Новый Персонаж"),
+        "name": char_data.get("name", "New Character"),
         "trigger_word": char_data.get("trigger_word", f"{cid}_vfx"),
         "lora_flux": f"flux_{cid}.safetensors",
         "lora_ltx": f"ltx25_{cid}.safetensors",
@@ -683,7 +799,7 @@ def add_global_voice(voice_data: dict) -> list:
     vid = voice_data.get("id") or f"voice_{int(time.time())}"
     new_v = {
         "id": vid,
-        "name": voice_data.get("name", "Пользовательский голос"),
+        "name": voice_data.get("name", "Custom Voice"),
         "engine": voice_data.get("engine", "edge_tts"),
         "voice_code": voice_data.get("voice_code", "dmitry"),
         "lang": voice_data.get("lang", "ru"),
@@ -892,7 +1008,7 @@ def add_global_location(loc_data: dict) -> list:
 
     new_entry = {
         "id": lid,
-        "name": loc_data.get("name", "Новая Локация"),
+        "name": loc_data.get("name", "New Location"),
         "trigger_word": loc_data.get("trigger_word", f"{lid}_vfx"),
         "lora_flux": f"flux_{lid}.safetensors",
         "lora_ltx": f"ltx25_{lid}.safetensors",
@@ -1114,4 +1230,182 @@ def delete_location_lora(loc_id: str) -> dict:
                 except Exception as _e:
                     _log_suppressed(_e)
     return {"status": "deleted", "loc_id": loc_id, "locations": locs}
+
+
+def _get_comfyui_output_dir() -> Optional[str]:
+    try:
+        import folder_paths
+        if hasattr(folder_paths, "get_output_directory"):
+            return folder_paths.get_output_directory()
+    except Exception:
+        pass
+    for cand in (
+        r"B:\StabilityMatrix2\ComfyUI\output",
+        r"B:\ComfyUI\output",
+        r"C:\ComfyUI\output"
+    ):
+        if os.path.isdir(cand):
+            return cand
+    return None
+
+
+def delete_project_asset(project_id: str, asset_id: str = None, url: str = None, filename: str = None, sub: str = None) -> dict:
+    """
+    Permanently deletes an asset from a project:
+    1. Removes the physical file from the project directory on disk (storyboard, source_video, audio, etc.).
+    2. Removes any associated layers directory (projects/<project_id>/layers/<asset_id>).
+    3. Cleans up references in project.json (mediaImages1D, mediaVideos2D, mediaAudio, mediaScenes3D, mediaTexts, mediaSplats).
+    """
+    pid = _sanitize_id(project_id)
+    p_dir = get_project_dir(pid)
+    removed_files = []
+
+    # 1. Determine file paths to delete on disk
+    subpath_candidates = []
+    url_fn = None
+    url_sub = None
+    if url and "?" in url:
+        try:
+            from urllib.parse import parse_qs, urlparse
+            pq = parse_qs(urlparse(url).query)
+            if "filename" in pq and pq["filename"]:
+                url_fn = pq["filename"][0]
+            if "subfolder" in pq and pq["subfolder"]:
+                url_sub = pq["subfolder"][0]
+        except Exception:
+            pass
+
+    target_fn = url_fn or (os.path.basename(filename) if filename and filename != "view" else None)
+    target_sub = sub or url_sub or ""
+
+    if target_sub and target_fn:
+        subpath_candidates.append(os.path.join(target_sub, target_fn))
+    if url:
+        pattern = f"/vfx/project_file/{pid}/"
+        if pattern in url:
+            rel = url.split(pattern, 1)[1].split("?")[0]
+            subpath_candidates.append(rel)
+    if target_fn:
+        for s in ("storyboard", "source_video", "audio", "characters", "locations", "splats", "vfx_renders", "exports"):
+            subpath_candidates.append(os.path.join(s, target_fn))
+
+    if url and not target_fn:
+        url_fn_raw = os.path.basename(url.split("?")[0])
+        if url_fn_raw and "." in url_fn_raw and url_fn_raw != "view":
+            for s in ("storyboard", "source_video", "audio", "characters", "locations", "splats", "vfx_renders", "exports"):
+                subpath_candidates.append(os.path.join(s, url_fn_raw))
+
+    seen = set()
+    for sp in subpath_candidates:
+        if sp in seen:
+            continue
+        seen.add(sp)
+        target = os.path.normpath(os.path.join(p_dir, sp))
+        if os.path.commonpath([p_dir, target]) == p_dir and os.path.isfile(target):
+            try:
+                os.remove(target)
+                removed_files.append(sp)
+            except Exception as _e:
+                _log_suppressed(_e)
+
+    # 1b. Check and delete from ComfyUI output directory if asset is a generated output
+    if target_fn:
+        try:
+            out_base = _get_comfyui_output_dir()
+            if out_base and os.path.isdir(out_base):
+                for s_cand in (target_sub, "keshiki", ""):
+                    c_target = os.path.normpath(os.path.join(out_base, s_cand or "", target_fn))
+                    if os.path.commonpath([out_base, c_target]) == out_base and os.path.isfile(c_target):
+                        try:
+                            os.remove(c_target)
+                            removed_files.append(f"comfyui_output/{s_cand}/{target_fn}" if s_cand else f"comfyui_output/{target_fn}")
+                        except Exception as _e:
+                            _log_suppressed(_e)
+        except Exception as _e:
+            _log_suppressed(_e)
+
+    # 2. Check layers directory
+    if asset_id:
+        layers_dir = os.path.normpath(os.path.join(p_dir, "layers", str(asset_id)))
+        if os.path.commonpath([p_dir, layers_dir]) == p_dir and os.path.isdir(layers_dir):
+            try:
+                shutil.rmtree(layers_dir, ignore_errors=True)
+                removed_files.append(f"layers/{asset_id}")
+            except Exception as _e:
+                _log_suppressed(_e)
+
+    # 3. Clean up project.json
+    meta_file = os.path.join(p_dir, "project.json")
+    if os.path.exists(meta_file):
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                while content.endswith("}}"):
+                    content = content[:-1]
+                data = json.loads(content)
+
+            def _match(item):
+                if not isinstance(item, dict):
+                    return False
+                if asset_id and str(item.get("id")) == str(asset_id):
+                    return True
+                if url:
+                    item_u = item.get("url") or item.get("videoUrl") or item.get("audioUrl") or item.get("glbUrl") or item.get("ply_url")
+                    if item_u:
+                        if item_u == url:
+                            return True
+                        if "/view?" in item_u and "/view?" in url:
+                            try:
+                                from urllib.parse import parse_qs, urlparse
+                                q1 = parse_qs(urlparse(item_u).query).get("filename", [""])[0]
+                                q2 = parse_qs(urlparse(url).query).get("filename", [""])[0]
+                                if q1 and q2 and q1 == q2:
+                                    return True
+                            except Exception:
+                                pass
+                        elif "?" not in item_u and "?" not in url and item_u.split("?")[0] == url.split("?")[0]:
+                            return True
+                if target_fn:
+                    item_fn = item.get("filename")
+                    if not item_fn:
+                        raw_u = str(item.get("url") or item.get("videoUrl") or item.get("audioUrl") or "")
+                        if "filename=" in raw_u:
+                            try:
+                                from urllib.parse import parse_qs, urlparse
+                                item_fn = parse_qs(urlparse(raw_u).query).get("filename", [""])[0]
+                            except Exception:
+                                pass
+                        if not item_fn:
+                            b = os.path.basename(raw_u.split("?")[0])
+                            if b != "view":
+                                item_fn = b
+                    if item_fn and item_fn == target_fn:
+                        return True
+                return False
+
+            changed = False
+            for key in ("mediaImages1D", "mediaVideos2D", "mediaAudio", "mediaScenes3D", "mediaTexts", "mediaSplats"):
+                if key in data and isinstance(data[key], list):
+                    orig_len = len(data[key])
+                    data[key] = [x for x in data[key] if not _match(x)]
+                    if len(data[key]) != orig_len:
+                        changed = True
+
+            if changed:
+                data["updated_at"] = time.time()
+                tmp_meta = meta_file + ".tmp"
+                with open(tmp_meta, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_meta, meta_file)
+        except Exception as _e:
+            _log_suppressed(_e)
+
+    return {
+        "success": True,
+        "deleted": True,
+        "project_id": pid,
+        "asset_id": asset_id,
+        "removed_files": removed_files
+    }
+
 
