@@ -31,8 +31,10 @@ No cloud APIs are used. Every model runs on your own GPU and is tuned for 24 GB 
 All three recipes were run on real footage (1920×1088) with an RTX 3090 Ti (24 GB):
 
 - **New background, same person.** SAM 3.1 mask → depth → a FLUX.3 Klein first frame of the new place → LTX union-control on depth (97 frames in one pass, about 2 min) → composite with harmonize and light wrap → refine-details.
+  - 🎬 Example output: [`projects/sandbox_playground/exports/bg_swap_winter_onepass.mp4`](projects/sandbox_playground/exports/bg_swap_winter_onepass.mp4)
 - **New character, same background.** LTX clean-plate → DWPose → a Klein first frame (scene + skeleton + character reference) → LTX union-control on pose → SAM 3.1 mask of the new character → composite over the clean plate.
 - **Character driven by 3D animation.** A Mixamo animation on the mannequin, a set blocked out with primitives and an orbit camera → pose and environment renders → LTX layout-to-render plus union-control on pose.
+  - 🎬 Example output: [`projects/sandbox_playground/exports/capoeira_park_dual_lora.mp4`](projects/sandbox_playground/exports/capoeira_park_dual_lora.mp4)
 
 Lessons learned are written into the guide. For example, depth control does not hold a face, so use pose only when the character must stay recognisable. Two stacked IC-LoRAs fit 49 frames per run on 24 GB.
 

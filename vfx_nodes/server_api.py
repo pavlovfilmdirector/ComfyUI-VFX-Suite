@@ -658,7 +658,7 @@ def register_server_routes():
 
             updates = data.get("updates", {})
 
-            proj = save_project_state(pid, updates)
+            proj = await asyncio.to_thread(save_project_state, pid, updates)
 
             return add_cors_headers(web.json_response(proj))
 
@@ -684,7 +684,7 @@ def register_server_routes():
 
             custom_path = str(data.get("custom_path", "")).strip() or None
 
-            proj = save_project_as(source_pid, new_name, state, custom_path=custom_path)
+            proj = await asyncio.to_thread(save_project_as, source_pid, new_name, state, custom_path=custom_path)
 
             return add_cors_headers(web.json_response(proj))
 
@@ -708,7 +708,7 @@ def register_server_routes():
 
             max_saves = int(data.get("max_autosaves", 10))
 
-            res = save_project_autosave(pid, state, max_saves)
+            res = await asyncio.to_thread(save_project_autosave, pid, state, max_saves)
 
             return add_cors_headers(web.json_response(res))
 

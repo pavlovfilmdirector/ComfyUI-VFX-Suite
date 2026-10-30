@@ -1,6 +1,6 @@
 // Keshiki (景色) 3D VFX Studio — Autonomous Cinema & Generative AI Studio
 // Dual Viewport, 6DoF Cinema Camera Navigation, 3-Point Snapping, Keyframing & Baking
-import { initStudioArchitecture } from "/vfx/studio/studio_tabs_controller.js?v=2.5.9";
+import { initStudioArchitecture } from "/vfx/studio/studio_tabs_controller.js?v=2.6.0";
 import { projectObject3DBBoxToPlateCrop } from "/vfx/studio/modules/ue5_viewport_utils.js";
 
 export async function initStandaloneLayoutStudio() {
@@ -2196,7 +2196,10 @@ let lastMonitorRenderTime = 0;
     let customActorCutoutAspect = null;
     let customActorCutoutTex = null;
     let customActorCutoutVideo = null;
+    let customActorCutoutCanvas = null;
     let customActorCutoutMediaType = "none"; // "image" | "video" | "none"
+    let pendingActorSeekTime = null;
+    let isBakingLayout = false;
 
     const actorMaterial = new THREE.MeshBasicMaterial({
         transparent: true,
@@ -2215,6 +2218,23 @@ let lastMonitorRenderTime = 0;
         return /\.(mp4|webm|mov|mkv|m4v|ogv)(\?|$)/i.test(s) || url.startsWith("data:video/") || url.startsWith("blob:");
     }
 
+    function syncActorVideoCanvas() {
+        if (!customActorCutoutVideo || !customActorCutoutCanvas || !customActorCutoutTex) return false;
+        const vid = customActorCutoutVideo;
+        if (vid.readyState < 2 || !vid.videoWidth || !vid.videoHeight) return false;
+        if (customActorCutoutCanvas.width !== vid.videoWidth || customActorCutoutCanvas.height !== vid.videoHeight) {
+            customActorCutoutCanvas.width = vid.videoWidth;
+            customActorCutoutCanvas.height = vid.videoHeight;
+        }
+        const ctx = customActorCutoutCanvas.getContext("2d");
+        if (!ctx) return false;
+        ctx.clearRect(0, 0, customActorCutoutCanvas.width, customActorCutoutCanvas.height);
+        ctx.drawImage(vid, 0, 0, customActorCutoutCanvas.width, customActorCutoutCanvas.height);
+        customActorCutoutTex.needsUpdate = true;
+        actorMaterial.needsUpdate = true;
+        return true;
+    }
+
     function setCustomActorCutout(url, name = "", forceType = null) {
         if (!url) return;
 
@@ -2231,6 +2251,8 @@ let lastMonitorRenderTime = 0;
             try { customActorCutoutTex.dispose(); } catch (_) {}
             customActorCutoutTex = null;
         }
+        customActorCutoutCanvas = null;
+        pendingActorSeekTime = null;
 
         const isVid = forceType ? (forceType === "video") : isVideoMedia(url, name);
         customActorCutoutMediaType = isVid ? "video" : "image";
@@ -2256,18 +2278,12 @@ let lastMonitorRenderTime = 0;
             vid.src = url;
 
             customActorCutoutVideo = vid;
+            const cvs = document.createElement("canvas");
+            cvs.width = 1920;
+            cvs.height = 1080;
+            customActorCutoutCanvas = cvs;
 
-            const onMeta = () => {
-                if (vid.videoWidth && vid.videoHeight) {
-                    customActorCutoutAspect = vid.videoWidth / vid.videoHeight;
-                    updateActorBillboardTransform();
-                    renderStudioViewports();
-                }
-            };
-            vid.addEventListener("loadedmetadata", onMeta);
-            vid.load();
-
-            const vTex = new THREE.VideoTexture(vid);
+            const vTex = new THREE.CanvasTexture(cvs);
             vTex.minFilter = THREE.LinearFilter;
             vTex.magFilter = THREE.LinearFilter;
             vTex.format = THREE.RGBAFormat;
@@ -2275,8 +2291,40 @@ let lastMonitorRenderTime = 0;
             actorMaterial.map = vTex;
             actorMaterial.needsUpdate = true;
 
-            const fps = projectFPS || 24;
-            vid.currentTime = currentFrame / fps;
+            const onFrameDecoded = () => {
+                if (customActorCutoutVideo !== vid) return;
+                if (syncActorVideoCanvas()) {
+                    monitorNeedsRender = true;
+                    if (!isBakingLayout) {
+                        renderStudioViewports();
+                    }
+                }
+                if (!isBakingLayout && pendingActorSeekTime !== null && !vid.seeking) {
+                    const nextT = pendingActorSeekTime;
+                    pendingActorSeekTime = null;
+                    if (Math.abs(vid.currentTime - nextT) > 0.002) {
+                        try { vid.currentTime = nextT; } catch (_) {}
+                    }
+                }
+            };
+
+            const onMeta = () => {
+                if (vid.videoWidth && vid.videoHeight) {
+                    customActorCutoutAspect = vid.videoWidth / vid.videoHeight;
+                    cvs.width = vid.videoWidth;
+                    cvs.height = vid.videoHeight;
+                    updateActorBillboardTransform();
+                    onFrameDecoded();
+                }
+            };
+            vid.addEventListener("loadedmetadata", onMeta);
+            vid.addEventListener("loadeddata", onFrameDecoded);
+            vid.addEventListener("seeked", onFrameDecoded);
+            vid.addEventListener("timeupdate", onFrameDecoded);
+            vid.load();
+
+            const fps = projectFPS || 25;
+            try { vid.currentTime = currentFrame / fps; } catch (_) {}
 
             updateActorCutoutUI();
             updateActorBillboardTransform();
@@ -2414,34 +2462,112 @@ let lastMonitorRenderTime = 0;
         }
 
         if (customActorCutoutMediaType === "video" && customActorCutoutVideo) {
-            const fps = projectFPS || 24;
-            const targetTime = frameIdx / fps;
-            if (customActorCutoutVideo.duration && isFinite(customActorCutoutVideo.duration)) {
-                const loopedTime = targetTime % customActorCutoutVideo.duration;
-                if (Math.abs(customActorCutoutVideo.currentTime - loopedTime) > 0.05) {
-                    customActorCutoutVideo.currentTime = loopedTime;
+            if (!customActorCutoutVideo.paused && !isPlaying) {
+                try { customActorCutoutVideo.pause(); } catch (_) {}
+            }
+            const fps = (typeof projectFPS === "number" && projectFPS > 0) ? projectFPS : 25;
+            const rawTime = frameIdx / fps;
+            const dur = (customActorCutoutVideo.duration && isFinite(customActorCutoutVideo.duration) && customActorCutoutVideo.duration > 0)
+                ? customActorCutoutVideo.duration
+                : 0;
+            const targetTime = dur > 0 ? Math.min(Math.max(0, dur - 0.004), rawTime % dur) : rawTime;
+            if (Math.abs(customActorCutoutVideo.currentTime - targetTime) > 0.002) {
+                if (customActorCutoutVideo.seeking) {
+                    pendingActorSeekTime = targetTime;
+                } else {
+                    pendingActorSeekTime = null;
+                    try { customActorCutoutVideo.currentTime = targetTime; } catch (_) {}
                 }
             } else {
-                customActorCutoutVideo.currentTime = targetTime;
-            }
-            if (customActorCutoutTex) {
-                customActorCutoutTex.needsUpdate = true;
+                syncActorVideoCanvas();
             }
         }
     }
 
+    async function updateActorTextureAsync(frameIdx, timeoutMs = 750) {
+        if (!isActorProjectionVisible || !customActorCutoutTex) {
+            actorBillboard.visible = false;
+            return;
+        }
+        actorBillboard.visible = true;
+        if (actorMaterial.map !== customActorCutoutTex) {
+            actorMaterial.map = customActorCutoutTex;
+            actorMaterial.needsUpdate = true;
+        }
+        if (customActorCutoutMediaType !== "video" || !customActorCutoutVideo) {
+            return;
+        }
+        const vid = customActorCutoutVideo;
+        if (!vid.paused) {
+            try { vid.pause(); } catch (_) {}
+        }
+        pendingActorSeekTime = null;
+
+        // Wait for video metadata if still loading
+        if (vid.readyState < 1) {
+            await new Promise(resolve => {
+                let done = false;
+                const finish = () => {
+                    if (done) return;
+                    done = true;
+                    vid.removeEventListener("loadedmetadata", finish);
+                    vid.removeEventListener("loadeddata", finish);
+                    vid.removeEventListener("error", finish);
+                    resolve();
+                };
+                vid.addEventListener("loadedmetadata", finish, { once: true });
+                vid.addEventListener("loadeddata", finish, { once: true });
+                vid.addEventListener("error", finish, { once: true });
+                setTimeout(finish, timeoutMs);
+            });
+        }
+
+        const fps = (typeof projectFPS === "number" && projectFPS > 0) ? projectFPS : 25;
+        const rawTime = frameIdx / fps;
+        const dur = (vid.duration && isFinite(vid.duration) && vid.duration > 0) ? vid.duration : 0;
+        const targetTime = dur > 0 ? Math.min(Math.max(0, dur - 0.004), rawTime % dur) : rawTime;
+
+        if (Math.abs(vid.currentTime - targetTime) > 0.002 || vid.seeking) {
+            await new Promise(resolve => {
+                let done = false;
+                const finish = () => {
+                    if (done) return;
+                    done = true;
+                    vid.removeEventListener("seeked", finish);
+                    vid.removeEventListener("error", finish);
+                    resolve();
+                };
+                vid.addEventListener("seeked", finish, { once: true });
+                vid.addEventListener("error", finish, { once: true });
+                setTimeout(finish, timeoutMs);
+                try {
+                    vid.currentTime = targetTime;
+                } catch (_) {
+                    finish();
+                }
+            });
+        }
+
+        // Wait a short decode settle timeout so the VP9/H264 hardware frame buffer is 100% ready
+        await new Promise(r => setTimeout(r, 65));
+        syncActorVideoCanvas();
+    }
+
     function updateActorBillboardTransform() {
         if (!isActorProjectionVisible || !customActorCutoutTex) return;
+        const refCam = (!isShotCameraDeleted && shotCamera) ? shotCamera : (getActiveMonitorCamera() || shotCamera);
+        refCam.updateMatrixWorld(true);
         const dir = new THREE.Vector3();
-        shotCamera.getWorldDirection(dir);
-        actorBillboard.position.copy(shotCamera.position).addScaledVector(dir, actorDistance);
-        actorBillboard.quaternion.copy(shotCamera.quaternion);
+        refCam.getWorldDirection(dir);
+        actorBillboard.position.copy(refCam.position).addScaledVector(dir, actorDistance);
+        actorBillboard.quaternion.copy(refCam.quaternion);
 
-        const vFovRad = THREE.MathUtils.degToRad(shotCamera.fov);
+        const vFovRad = THREE.MathUtils.degToRad(refCam.fov);
         const planeHeight = 2.0 * actorDistance * Math.tan(vFovRad / 2.0);
         const aspect = (customActorCutoutAspect && customActorCutoutAspect > 0) ? customActorCutoutAspect : plateAspect;
         const planeWidth = planeHeight * aspect;
         actorBillboard.scale.set(planeWidth, planeHeight, 1);
+        actorBillboard.updateMatrixWorld(true);
     }
 
     function updateShotCameraPose(frameIdx) {
@@ -5798,135 +5924,142 @@ let lastMonitorRenderTime = 0;
         if (fillProgress) fillProgress.style.width = "10%";
         if (lblProgress) lblProgress.innerText = uiText("Projecting 3D OpenPose...", "Проекция 3D OpenPose...");
 
-        const src = { ...(window.__vfxSceneSource || {}), ...(opts.video ? { video: opts.video, startFrame: opts.startFrame || 0 } : {}) };
-        const activeVid = typeof window.__vfxGetActiveVideoId === "function" ? window.__vfxGetActiveVideoId() : null;
-        if (!src.video) {
-            src.video = activeVid || (typeof activeVideoId !== "undefined" && activeVideoId ? activeVideoId : null);
-        }
-        if (!src.video) {
-            const vidList = (typeof mediaVideos2D !== "undefined" && Array.isArray(mediaVideos2D)) ? mediaVideos2D : [];
-            const existingVid = vidList.find(v => v && v.id && v.id !== "live_video_render");
-            if (existingVid) {
-                src.video = existingVid.id;
-            } else {
-                const autoVidId = "vid_3d_stage";
-                const autoVid = {
-                    id: autoVidId,
-                    title: "3D Stage Pose Sequence",
-                    badge: "3D STAGE",
-                    type: "html5",
-                    width: opts.width || plateWidth || 1280,
-                    height: opts.height || plateHeight || 720,
-                    fps: 24,
-                    total_frames: opts.frames || totalFrames || 49
-                };
-                if (Array.isArray(mediaVideos2D)) mediaVideos2D.unshift(autoVid);
-                src.video = autoVidId;
-                if (typeof activeVideoId !== "undefined") activeVideoId = autoVidId;
+        try {
+            const isSyntheticVidId = (id) => !id || id === "baked_layout_sequence" || id === "live_video_render" || String(id).startsWith("vid_3d_");
+            const src = { ...(window.__vfxSceneSource || {}), ...(opts.video ? { video: opts.video, startFrame: opts.startFrame || 0 } : {}) };
+            if (isSyntheticVidId(src.video)) src.video = null;
+            const activeVid = typeof window.__vfxGetActiveVideoId === "function" ? window.__vfxGetActiveVideoId() : null;
+            if (!src.video && !isSyntheticVidId(activeVid)) {
+                src.video = activeVid;
             }
-        }
-        const chars = [...threeObjectsMap.values()].filter(o => o.userData.type === "character" && o.visible !== false && characterRigs.has(o.userData.id)
-            && (!opts.only || opts.only.includes(o.userData.id)));
-        if (!chars.length) {
-            if (cardProgress) cardProgress.style.display = "none";
-            throw new Error(uiText("Add a character or skeleton first (👤+)", "Сначала добавьте скелет или персонажа (👤+)"));
-        }
-
-        const candidateCams = [
-            (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : null,
-            getActiveMonitorCamera(),
-            shotCamera,
-            flyCamera
-        ].filter((c, idx, arr) => c && arr.indexOf(c) === idx);
-        if (!candidateCams.length) {
-            if (cardProgress) cardProgress.style.display = "none";
-            throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
-        }
-
-        const keepFrame = currentFrame;
-        let frames = [], visible = 0, dbg = null;
-        const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
-        const nFrames = opts.frames || totalFrames || 49;
-
-        for (const cam of candidateCams) {
-            const keepAspect = cam.aspect;
-            frames = [];
-            visible = 0;
-            dbg = null;
-            try {
-                cam.aspect = outW / outH;
-                cam.updateProjectionMatrix();
-                for (let f = 0; f < nFrames; f++) {
-                    currentFrame = f;
-                    if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
-                    evaluateAnimation();
-                    scene.updateMatrixWorld(true);
-                    updateCharactersAtFrame();
-                    scene.updateMatrixWorld(true);
-                    if (cam.parent) cam.parent.updateMatrixWorld(true);
-                    cam.updateMatrixWorld(true);
-                    const people = [];
-                    chars.forEach(o => {
-                        const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
-                        people.push(pts.map(v => {
-                            if (!v) return null;
-                            const n = v.clone().project(cam);
-                            if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
-                            if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
-                            visible++;
-                            return [+((n.x + 1) / 2).toFixed(5), +((1 - n.y) / 2).toFixed(5)];
-                        }));
-                    });
-                    frames.push({ frame: (src.startFrame || 0) + f, people });
+            if (!src.video) {
+                const vidList = (typeof mediaVideos2D !== "undefined" && Array.isArray(mediaVideos2D)) ? mediaVideos2D : [];
+                const existingVid = vidList.find(v => v && v.id && !isSyntheticVidId(v.id) && !v.hasAlpha && v.badge !== "ALPHA" && v.badge !== "BAKED")
+                    || vidList.find(v => v && v.id && !isSyntheticVidId(v.id));
+                if (existingVid) {
+                    src.video = existingVid.id;
+                } else {
+                    const autoVidId = "vid_3d_stage";
+                    const autoVid = {
+                        id: autoVidId,
+                        title: "3D Stage Pose Sequence",
+                        badge: "3D STAGE",
+                        type: "html5",
+                        width: opts.width || plateWidth || 1280,
+                        height: opts.height || plateHeight || 720,
+                        fps: projectFPS || 25,
+                        total_frames: opts.frames || totalFrames || 49
+                    };
+                    if (Array.isArray(mediaVideos2D)) mediaVideos2D.unshift(autoVid);
+                    src.video = autoVidId;
+                    if (typeof activeVideoId !== "undefined") activeVideoId = autoVidId;
                 }
-            } finally {
-                cam.aspect = keepAspect;
-                cam.updateProjectionMatrix();
-                currentFrame = keepFrame;
-                onFrameChanged();
             }
-            if (visible > 0) break;
-        }
+            const chars = [...threeObjectsMap.values()].filter(o => o.userData.type === "character" && o.visible !== false && characterRigs.has(o.userData.id)
+                && (!opts.only || opts.only.includes(o.userData.id)));
+            if (!chars.length) {
+                throw new Error(uiText("Add a character or skeleton first (👤+)", "Сначала добавьте скелет или персонажа (👤+)"));
+            }
 
-        if (opts.dryRun) {
-            if (cardProgress) cardProgress.style.display = "none";
-            return { visible, frames: frames.length, debug: dbg, keypoints: frames };
-        }
-        if (!visible) {
-            if (cardProgress) cardProgress.style.display = "none";
-            throw new Error(uiText("Characters are not in the camera view — place them in front of the camera", "Персонажи не попадают в кадр камеры — разместите их перед камерой"));
-        }
+            const candidateCams = [
+                (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : null,
+                getActiveMonitorCamera(),
+                shotCamera,
+                flyCamera
+            ].filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+            if (!candidateCams.length) {
+                throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
+            }
 
-        if (fillProgress) fillProgress.style.width = "60%";
-        if (lblProgress) lblProgress.innerText = uiText("Rendering OpenPose frames...", "Отрисовка кадров OpenPose...");
-        const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
-        const payload = { name: `Pose from 3D (${chars.map(o => o.userData.name).join(", ")})`.slice(0, 80), width: outW, height: outH, frames };
-        const r = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/pose_from_3d`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        }).then(x => x.json());
-        if (r.error) {
-            if (cardProgress) cardProgress.style.display = "none";
-            throw new Error(r.error);
+            const keepFrame = currentFrame;
+            let frames = [], visible = 0, dbg = null;
+            const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
+            const nFrames = opts.frames || totalFrames || 49;
+
+            for (const cam of candidateCams) {
+                const keepAspect = cam.aspect;
+                frames = [];
+                visible = 0;
+                dbg = null;
+                try {
+                    cam.aspect = outW / outH;
+                    cam.updateProjectionMatrix();
+                    for (let f = 0; f < nFrames; f++) {
+                        currentFrame = f;
+                        if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
+                        evaluateAnimation();
+                        scene.updateMatrixWorld(true);
+                        try { updateCharactersAtFrame(); } catch (_) {}
+                        scene.updateMatrixWorld(true);
+                        if (cam.parent) cam.parent.updateMatrixWorld(true);
+                        cam.updateMatrixWorld(true);
+                        const people = [];
+                        chars.forEach(o => {
+                            const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
+                            people.push(pts.map(v => {
+                                if (!v) return null;
+                                const n = v.clone().project(cam);
+                                if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
+                                if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
+                                visible++;
+                                return [+((n.x + 1) / 2).toFixed(5), +((1 - n.y) / 2).toFixed(5)];
+                            }));
+                        });
+                        frames.push({ frame: (src.startFrame || 0) + f, people });
+                        if (f % 10 === 0) {
+                            const pct = 10 + Math.round(((f + 1) / Math.max(1, nFrames)) * 45);
+                            if (fillProgress) fillProgress.style.width = pct + "%";
+                            if (lblProgress) lblProgress.innerText = `${uiText("Projecting 3D OpenPose", "Проекция 3D OpenPose")} ${f + 1}/${nFrames}...`;
+                            await new Promise(r => setTimeout(r, 0));
+                        }
+                    }
+                } finally {
+                    cam.aspect = keepAspect;
+                    cam.updateProjectionMatrix();
+                    currentFrame = keepFrame;
+                    onFrameChanged();
+                }
+                if (visible > 0) break;
+            }
+
+            if (opts.dryRun) {
+                return { visible, frames: frames.length, debug: dbg, keypoints: frames };
+            }
+            if (!visible) {
+                throw new Error(uiText("Characters are not in the camera view — place them in front of the camera", "Персонажи не попадают в кадр камеры — разместите их перед камерой"));
+            }
+
+            if (fillProgress) fillProgress.style.width = "60%";
+            if (lblProgress) lblProgress.innerText = uiText("Rendering OpenPose frames...", "Отрисовка кадров OpenPose...");
+            const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
+            const payload = { name: `Pose from 3D (${chars.map(o => o.userData.name).join(", ")})`.slice(0, 80), width: outW, height: outH, frames };
+            const r = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/pose_from_3d`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }).then(x => x.json());
+            if (r.error) {
+                throw new Error(r.error);
+            }
+            if (activeVid && activeVid !== src.video && !isSyntheticVidId(activeVid)) {
+                try {
+                    await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(activeVid)}/pose_from_3d`, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (_) {}
+            }
+            if (fillProgress) fillProgress.style.width = "100%";
+            if (lblProgress) lblProgress.innerText = uiText("✅ OpenPose layer ready!", "✅ Слой позы OpenPose готов!");
+            if (typeof window.__vfxOn3DLayerExported === "function") {
+                try {
+                    await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: r.layer, frames: r.frames, kind: "pose" });
+                } catch (_) {}
+            }
+            logMsg(`✓ Pose layer «${r.layer.name}»: ${r.frames} frames on video ${src.video}`);
+            return r;
+        } finally {
+            setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
         }
-        if (activeVid && activeVid !== src.video && activeVid !== "baked_layout_sequence" && activeVid !== "live_video_render") {
-            try {
-                await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(activeVid)}/pose_from_3d`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-            } catch (_) {}
-        }
-        if (fillProgress) fillProgress.style.width = "100%";
-        if (lblProgress) lblProgress.innerText = uiText("✅ OpenPose layer ready!", "✅ Слой позы OpenPose готов!");
-        setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
-        if (typeof window.__vfxOn3DLayerExported === "function") {
-            try {
-                await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: r.layer, frames: r.frames, kind: "pose" });
-            } catch (_) {}
-        }
-        logMsg(`✓ Pose layer «${r.layer.name}»: ${r.frames} frames on video ${src.video}`);
-        return r;
     }
     window.__vfxPoseFrom3D = exportPoseLayerFrom3D;
 
@@ -5939,11 +6072,18 @@ let lastMonitorRenderTime = 0;
         if (fillProgress) fillProgress.style.width = "5%";
         if (lblProgress) lblProgress.innerText = uiText("Rendering 3D pass...", "Рендер 3D-слоя через камеру...");
 
+        const isSyntheticVidId = (id) => !id || id === "baked_layout_sequence" || id === "live_video_render" || String(id).startsWith("vid_3d_");
         const src = { ...(window.__vfxSceneSource || {}), ...(opts.video ? { video: opts.video, startFrame: opts.startFrame || 0 } : {}) };
+        if (isSyntheticVidId(src.video)) src.video = null;
         const activeVid = typeof window.__vfxGetActiveVideoId === "function" ? window.__vfxGetActiveVideoId() : null;
+        if (!src.video && !isSyntheticVidId(activeVid)) {
+            src.video = activeVid;
+        }
         if (!src.video) {
-            if (activeVid) src.video = activeVid;
-            else if (typeof activeVideoId !== "undefined" && activeVideoId) src.video = activeVideoId;
+            const vidList = (typeof mediaVideos2D !== "undefined" && Array.isArray(mediaVideos2D)) ? mediaVideos2D : [];
+            const existingVid = vidList.find(v => v && v.id && !isSyntheticVidId(v.id) && !v.hasAlpha && v.badge !== "ALPHA" && v.badge !== "BAKED")
+                || vidList.find(v => v && v.id && !isSyntheticVidId(v.id));
+            if (existingVid) src.video = existingVid.id;
         }
         if (!src.video) {
             if (cardProgress) cardProgress.style.display = "none";
@@ -6012,6 +6152,7 @@ let lastMonitorRenderTime = 0;
             if (res.error) throw new Error(res.error);
             layerId = res.layer.id; lastLayer = res.layer; sent += res.frames; batch = [];
         };
+        isBakingLayout = true;
         try {
             helpersToHide.forEach(h => { h.visible = false; });
             skelOnlyHelpers.forEach(h => { h.visible = true; });
@@ -6021,7 +6162,12 @@ let lastMonitorRenderTime = 0;
                 if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
                 evaluateAnimation();
                 scene.updateMatrixWorld(true);
-                updateCharactersAtFrame();
+                try { updateCharactersAtFrame(); } catch (_) {}
+                scene.children.forEach(o => {
+                    const isUserLight = o.userData?.type === "light" && o.visible !== false;
+                    if (isUserLight && o.userData?.lightGizmo) o.userData.lightGizmo.visible = false;
+                    if (!(o.isLight || isUserLight || charSet.has(o) || skelOnlyHelpers.has(o))) o.visible = false;
+                });
                 helpersToHide.forEach(h => { h.visible = false; });
                 skelOnlyHelpers.forEach(h => { h.visible = true; });
                 scene.updateMatrixWorld(true);
@@ -6037,6 +6183,7 @@ let lastMonitorRenderTime = 0;
             if (fillProgress) fillProgress.style.width = "100%";
             if (lblProgress) lblProgress.innerText = uiText("✅ 3D Render layer ready!", "✅ 3D-слой рендера готов!");
         } finally {
+            isBakingLayout = false;
             scene.remove(hemi); scene.remove(key);
             scene.overrideMaterial = keepOverride;
             scene.background = keepBg;
@@ -8061,11 +8208,7 @@ let lastMonitorRenderTime = 0;
             btnPlayPause.innerText = isPlaying ? "⏸ Pause" : "▶ Play";
         }
         if (customActorCutoutMediaType === "video" && customActorCutoutVideo) {
-            if (isPlaying) {
-                if (customActorCutoutVideo.paused) customActorCutoutVideo.play().catch(() => {});
-            } else {
-                if (!customActorCutoutVideo.paused) customActorCutoutVideo.pause();
-            }
+            if (!customActorCutoutVideo.paused) customActorCutoutVideo.pause();
         }
         if (typeof window.__vfxOnExternalPlayState === "function") {
             window.__vfxOnExternalPlayState(isPlaying);
@@ -10145,6 +10288,7 @@ let lastMonitorRenderTime = 0;
 
         // Dedicated offscreen WebGL renderer ensures full 16:9 canvas without editor sidebar letterboxing/cropping
         let bakeRenderer = null;
+        isBakingLayout = true;
         try {
             bakeRenderer = new THREE.WebGLRenderer({
                 antialias: true,
@@ -10167,8 +10311,37 @@ let lastMonitorRenderTime = 0;
                 }
                 evaluateAnimation();
                 try { updateCharactersAtFrame(); } catch (_) {}
-                updateActorTexture(f);
+
+                // Wait for Actor Cutout video plane frame seek & decode before rendering camera frame
+                await updateActorTextureAsync(f, 750);
                 updateActorBillboardTransform();
+
+                // Re-enforce hidden helpers synchronously right before render (in case rAF ran during await)
+                if (transformControls) transformControls.visible = false;
+                if (camFrustumHelper) camFrustumHelper.visible = false;
+                if (camBodyMesh) camBodyMesh.visible = false;
+                if (cameraPathLine) cameraPathLine.visible = false;
+                if (gridHelper) gridHelper.visible = false;
+                if (groundAxesHelper) groundAxesHelper.visible = false;
+                if (cursor3DGroup) cursor3DGroup.visible = false;
+                if (Array.isArray(selectionBoxHelpers)) {
+                    selectionBoxHelpers.forEach(h => { if (h) h.visible = false; });
+                }
+                if (typeof threeObjectsMap !== "undefined" && threeObjectsMap.forEach) {
+                    threeObjectsMap.forEach(obj => {
+                        if (obj.userData?.cameraHelper) obj.userData.cameraHelper.visible = false;
+                        if (obj.userData?.isCameraProxy) obj.visible = false;
+                        if (obj.userData?.lightGizmo) obj.userData.lightGizmo.visible = false;
+                    });
+                }
+                if (typeof characterRigs !== "undefined" && characterRigs.forEach) {
+                    characterRigs.forEach(rig => {
+                        if (rig && rig.helper) {
+                            const showB = rig.obj ? (rig.obj.visible !== false && rig.obj.userData?.showBones !== false) : false;
+                            rig.helper.visible = showB;
+                        }
+                    });
+                }
 
                 cam.aspect = outW / outH;
                 cam.updateProjectionMatrix();
@@ -10252,6 +10425,7 @@ let lastMonitorRenderTime = 0;
             console.error("[VFX Studio] Error baking layout:", e);
             throw e;
         } finally {
+            isBakingLayout = false;
             cam.aspect = keepAspect;
             cam.updateProjectionMatrix();
             if (transformControls) transformControls.visible = prevTcVis;
@@ -10835,14 +11009,16 @@ let lastMonitorRenderTime = 0;
                 monitorNeedsRender = true;
             }
         }
-        if (isPlaying) {
+        if (isPlaying && !isBakingLayout) {
             const is2DActive = document.getElementById("vfx-2d-media-stage") !== null;
             if (is2DActive) {
                 isPlaying = false;
                 if (btnPlayPause) btnPlayPause.innerText = "▶ Play";
             } else {
                 const playInterval = 1000.0 / Math.max(1.0, projectFPS);
-                if (now - lastPlayStepTime >= playInterval) {
+                const actorSeeking = isActorProjectionVisible && customActorCutoutMediaType === "video" && customActorCutoutVideo && customActorCutoutVideo.seeking;
+                const waitForActorDecode = actorSeeking && (now - lastPlayStepTime < 350);
+                if (!waitForActorDecode && (now - lastPlayStepTime >= playInterval)) {
                     lastPlayStepTime = now;
                     currentFrame = (currentFrame + 1) % totalFrames;
                     onFrameChanged();

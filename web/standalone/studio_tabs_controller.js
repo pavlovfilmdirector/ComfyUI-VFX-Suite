@@ -5662,9 +5662,15 @@ async function openNarrationEditor() {
 
             mediaImages1D = mediaImages1D.filter(i => !isPhantomSvg(i));
 
+            const stripHugeDataUri = (s) => (typeof s === "string" && s.startsWith("data:") && s.length > 150000) ? "" : s;
+
             const lite = mediaImages1D.map(i => ({
 
                 ...i,
+
+                url: stripHugeDataUri(i.url) || stripHugeDataUri(i.fallbackUrl) || "",
+
+                fallbackUrl: stripHugeDataUri(i.fallbackUrl) || "",
 
                 undoStack: undefined,
 
@@ -12051,13 +12057,36 @@ async function openNarrationEditor() {
 
 
 
+    function sanitizeChatMsgForStorage(m) {
+        if (!m || typeof m !== "object") return m;
+        const copy = { ...m };
+        if (typeof copy.image === "string" && copy.image.startsWith("data:") && copy.image.length > 150000) copy.image = "";
+        if (typeof copy.mediaUrl === "string" && copy.mediaUrl.startsWith("data:") && copy.mediaUrl.length > 150000) copy.mediaUrl = "";
+        if (Array.isArray(copy.images)) {
+            copy.images = copy.images.filter(u => !(typeof u === "string" && u.startsWith("data:") && u.length > 150000));
+        }
+        if (Array.isArray(copy.refs)) {
+            copy.refs = copy.refs.map(r => {
+                if (!r || typeof r !== "object") return r;
+                const rc = { ...r };
+                for (const k of Object.keys(rc)) {
+                    if (typeof rc[k] === "string" && rc[k].startsWith("data:") && rc[k].length > 150000) {
+                        rc[k] = "";
+                    }
+                }
+                return rc;
+            });
+        }
+        return copy;
+    }
+
     function saveProjectChatHistory(projId) {
 
         const pid = projId || (currentProject ? currentProject.id : "sandbox_playground");
 
         try {
 
-            const trimmed = chatHistory.slice(-200);
+            const trimmed = chatHistory.slice(-200).map(sanitizeChatMsgForStorage);
 
             localStorage.setItem(`vfx_proj_${pid}_chat_history`, JSON.stringify(trimmed));
 
@@ -13129,9 +13158,9 @@ async function openNarrationEditor() {
 
                 badge: i.badge,
 
-                url: i.url,
+                url: (typeof i.url === "string" && i.url.startsWith("data:") && i.url.length > 150000) ? ((typeof i.fallbackUrl === "string" && !i.fallbackUrl.startsWith("data:")) ? i.fallbackUrl : "") : i.url,
 
-                fallbackUrl: i.fallbackUrl,
+                fallbackUrl: (typeof i.fallbackUrl === "string" && i.fallbackUrl.startsWith("data:") && i.fallbackUrl.length > 150000) ? "" : i.fallbackUrl,
 
                 comment: i.comment,
 
@@ -13275,7 +13304,7 @@ async function openNarrationEditor() {
 
             assetFolders,
 
-            chatHistory: chatHistory.slice(-200)
+            chatHistory: chatHistory.slice(-200).map(sanitizeChatMsgForStorage)
 
         };
 
@@ -58954,12 +58983,20 @@ async function openNarrationEditor() {
     // Snapshot of the project for the agent: what exists, what is open, what each thing is.
 
     window.__vfxGetActiveVideoId = () => {
-        if (activeVideoId) return activeVideoId;
-        if (Array.isArray(mediaVideos2D) && mediaVideos2D.length) {
-            const base = mediaVideos2D.find(v => !v.hasAlpha && v.badge !== "ALPHA" && v.id !== "baked_layout_sequence" && v.id !== "live_video_render" && !String(v.id || "").startsWith("vid_3d_"));
-            return base ? base.id : mediaVideos2D[0].id;
+        const isSyntheticOrCutout = (v) => !v || !v.id || v.hasAlpha || v.badge === "ALPHA" || v.badge === "BAKED" || v.id === "baked_layout_sequence" || v.id === "live_video_render" || String(v.id || "").startsWith("vid_3d_");
+        if (activeVideoId) {
+            const activeObj = Array.isArray(mediaVideos2D) ? mediaVideos2D.find(v => v && v.id === activeVideoId) : null;
+            if (activeObj && !isSyntheticOrCutout(activeObj)) {
+                return activeVideoId;
+            }
         }
-        return null;
+        if (Array.isArray(mediaVideos2D) && mediaVideos2D.length) {
+            const base = mediaVideos2D.find(v => !isSyntheticOrCutout(v))
+                || mediaVideos2D.find(v => v && v.id && v.id !== "baked_layout_sequence" && v.id !== "live_video_render" && !String(v.id || "").startsWith("vid_3d_"));
+            if (base) return base.id;
+            return activeVideoId || mediaVideos2D[0].id;
+        }
+        return activeVideoId || null;
     };
 
     window.__vfxOn3DLayerExported = async ({ videoId, activeVid, layer, frames, kind } = {}) => {
