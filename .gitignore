@@ -8,6 +8,12 @@ output_cache/
 
 # Local user data & third-party binaries (not part of the repo)
 projects/*/
+!projects/sandbox_playground/
+projects/sandbox_playground/*
+!projects/sandbox_playground/exports/
+projects/sandbox_playground/exports/*
+!projects/sandbox_playground/exports/bg_swap_winter_onepass.mp4
+!projects/sandbox_playground/exports/capoeira_park_dual_lora.mp4
 projects/projects_registry.json
 global_library/**/dataset_*/
 tools/DLSS-Enhancer/
