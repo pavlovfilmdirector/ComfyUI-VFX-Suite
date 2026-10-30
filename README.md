@@ -38,6 +38,20 @@ All three recipes were run on real footage (1920×1088) with an RTX 3090 Ti (24 
 
 Lessons learned are written into the guide. For example, depth control does not hold a face, so use pose only when the character must stay recognisable. Two stacked IC-LoRAs fit 49 frames per run on 24 GB.
 
+## Demo shot: sci-fi bridge, 3D-driven robot, real actor
+
+🎬 [`projects/sandbox_playground/exports/scifi_bridge_robot_corridorkey.mp4`](projects/sandbox_playground/exports/scifi_bridge_robot_corridorkey.mp4) · 97 frames, 960×540, 25 fps, made fully on local open-weights models.
+
+A real live-action plate becomes a sci-fi scene. A plain room turns into a futuristic bridge, a box on the table turns into a holographic command console, and a 3D skeleton becomes a dancing robot. The actor stays real: he is keyed out and put back between the robot and the console, and at the end of the shot he puts his hand on the generated console.
+
+1. **3D blocking.** The set is blocked out with primitives (one box for the console, one for the floor and walls) and a mannequin with a Mixamo `Capoeira.fbx` animation. From this scene the studio renders two control passes per frame: an OpenPose skeleton and an RGB layout.
+2. **Control-pass cleanup.** The Mixamo root bone (hips to world origin) showed up in the pose pass as an extra limb, and the model drew a second character because of it. Removing that line and taking the actor and skeleton out of the layout pass gave one clean character.
+3. **First frame.** FLUX.3 Klein Edit makes a styled frame 0 (bridge, console, robot). A skeleton overlay checks that the robot sits exactly on the 3D pose.
+4. **Video.** LTX-2.5 22B with two stacked IC-LoRAs, layout-to-render plus union-control on pose, generates all 97 frames in one pass. The robot follows the 3D choreography and the set follows the 3D layout.
+5. **Actor composite.** CorridorKey (neural keying: despilled RGB + alpha) pulls the actor from the original plate. He is composited over the robot and under the console, with light wrap on the edges.
+
+Lesson: clean control passes matter more than the prompt. One stray bone was enough to create an extra person.
+
 ## Models
 
 | Role | Model | Notes |
@@ -99,4 +113,6 @@ KESHIKI uses no partner nodes and no closed APIs. Code paths for cloud services 
 
 ## License
 
-GPL-3.0 (same as ComfyUI). Bundled web libraries and every model keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Copyright (C) 2026 Alexey Pavlov.
+
+GPL-3.0 (same as ComfyUI), see [LICENSE](LICENSE). Bundled web libraries and every model keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
