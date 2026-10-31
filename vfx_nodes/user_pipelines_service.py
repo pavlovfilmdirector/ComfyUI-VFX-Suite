@@ -150,6 +150,132 @@ BUILTIN_STAGES = [
     }
 ]
 
+# Image edit + 2D video-layer job stages (the "3D layout → robot → CorridorKey actor" demo pipeline).
+# Stages with "video_job" run video_layers_service.start_job(kind, project, video_id, params) instead of a
+# ComfyUI prompt; their "layer" outputs are layer ids that later stages can take with from_stage.
+BUILTIN_STAGES += [
+    {
+        "id": "flux_edit",
+        "name": "FLUX.3 Klein Edit",
+        "title_ru": "FLUX.3 Klein Редактирование кадра",
+        "description": "Перерисовка картинки по промпту (например, первый кадр из 3D-лейаута + позы)",
+        "category": "image",
+        "icon": "🖌️",
+        "workflow": "api/storyboard/flux3_klein_edit.json",
+        "inputs": [
+            {"id": "image", "label": "Source Image", "label_ru": "Исходная картинка", "kind": "image"},
+            {"id": "prompt", "label": "Edit Prompt", "label_ru": "Промпт", "kind": "text", "default": ""},
+            {"id": "seed", "label": "Seed", "label_ru": "Сид", "kind": "number", "default": 428825},
+            {"id": "steps", "label": "Steps", "label_ru": "Шаги", "kind": "number", "default": 16},
+            {"id": "megapixels", "label": "Megapixels", "label_ru": "Мегапиксели", "kind": "number", "default": 1.0}
+        ],
+        "outputs": [
+            {"id": "image_url", "label": "Edited Image", "label_ru": "Картинка", "kind": "image"}
+        ]
+    },
+    {
+        "id": "vl_pose_cleanup",
+        "name": "3D Pose Cleanup (remove root bone)",
+        "title_ru": "Чистка позы из 3D (убрать root-кость)",
+        "description": "Убирает из рендера скелета длинные кости (root «бёдра → начало координат»), из-за которых появляется второй персонаж",
+        "category": "video_layers",
+        "icon": "🦴",
+        "video_job": "pose_cleanup",
+        "inputs": [
+            {"id": "video_id", "label": "Video ID", "label_ru": "ID видео", "kind": "text"},
+            {"id": "source_layer", "label": "Skeleton render layer", "label_ru": "Слой рендера скелета (id или video/id)", "kind": "text"},
+            {"id": "max_bone_px", "label": "Max bone length (px)", "label_ru": "Макс. длина кости (px)", "kind": "number", "default": 110},
+            {"id": "name", "label": "Layer name", "label_ru": "Имя слоя", "kind": "text", "default": "Pose from 3D (clean)"}
+        ],
+        "outputs": [{"id": "layer", "label": "Pose layer", "label_ru": "Слой позы", "kind": "layer"}]
+    },
+    {
+        "id": "vl_layout_cleanup",
+        "name": "3D Layout Cleanup (no actor / skeleton)",
+        "title_ru": "Чистка 3D-лейаута (без актёра и скелета)",
+        "description": "Убирает актёра и скелет из layout-прохода и делает гайд первого кадра (лейаут + поза)",
+        "category": "video_layers",
+        "icon": "🧱",
+        "video_job": "layout_cleanup",
+        "inputs": [
+            {"id": "video_id", "label": "Video ID", "label_ru": "ID видео", "kind": "text"},
+            {"id": "layout_source", "label": "Layout source", "label_ru": "Источник лейаута (layout_render или слой)", "kind": "text", "default": "layout_render"},
+            {"id": "skeleton_source", "label": "Skeleton render layer", "label_ru": "Слой рендера скелета", "kind": "text"},
+            {"id": "matte_layer", "label": "Actor matte layer", "label_ru": "Матт актёра (CorridorKey matte)", "kind": "text"},
+            {"id": "pose_layer", "label": "Clean pose layer", "label_ru": "Чистый слой позы", "kind": "layer"},
+            {"id": "name", "label": "Layer name", "label_ru": "Имя слоя", "kind": "text", "default": "3D Layout (clean)"}
+        ],
+        "outputs": [
+            {"id": "layer", "label": "Layout layer", "label_ru": "Слой лейаута", "kind": "layer"},
+            {"id": "image", "label": "First-frame guide", "label_ru": "Гайд первого кадра", "kind": "image"}
+        ]
+    },
+    {
+        "id": "vl_ltx_ic_lora",
+        "name": "LTX-2.5 IC-LoRA on layers (dual)",
+        "title_ru": "LTX-2.5 IC-LoRA по слоям (две LoRA)",
+        "description": "Генерация видео по слоям-контролам: layout-to-render + union-control (поза), с первым кадром",
+        "category": "video_layers",
+        "icon": "🎞️",
+        "video_job": "ltx_ic_lora",
+        "inputs": [
+            {"id": "video_id", "label": "Video ID", "label_ru": "ID видео", "kind": "text"},
+            {"id": "source_layer", "label": "Control layer 1", "label_ru": "Слой-контрол 1", "kind": "layer"},
+            {"id": "lora", "label": "IC-LoRA 1", "label_ru": "IC-LoRA 1", "kind": "text", "default": "layout-to-render"},
+            {"id": "source_layer2", "label": "Control layer 2", "label_ru": "Слой-контрол 2", "kind": "layer"},
+            {"id": "lora2", "label": "IC-LoRA 2", "label_ru": "IC-LoRA 2", "kind": "text", "default": "union-control"},
+            {"id": "ref_image", "label": "First frame", "label_ru": "Первый кадр", "kind": "image"},
+            {"id": "prompt", "label": "Prompt", "label_ru": "Промпт", "kind": "text", "default": ""},
+            {"id": "negative", "label": "Negative", "label_ru": "Негатив", "kind": "text", "default": ""},
+            {"id": "seed", "label": "Seed", "label_ru": "Сид", "kind": "number", "default": 44},
+            {"id": "start", "label": "Start frame", "label_ru": "Первый кадр (№)", "kind": "number", "default": 0},
+            {"id": "end", "label": "End frame", "label_ru": "Последний кадр (№)", "kind": "number", "default": 96},
+            {"id": "name", "label": "Layer name", "label_ru": "Имя слоя", "kind": "text", "default": "LTX IC-LoRA"}
+        ],
+        "outputs": [{"id": "layer", "label": "Generated layer", "label_ru": "Слой генерации", "kind": "layer"}]
+    },
+    {
+        "id": "vl_composite",
+        "name": "Composite on layers",
+        "title_ru": "Композит слоёв",
+        "description": "Актёр (fg) поверх фона (bg); alpha_source=fg берёт альфу из RGBA CorridorKey foreground",
+        "category": "video_layers",
+        "icon": "🧩",
+        "video_job": "composite",
+        "inputs": [
+            {"id": "video_id", "label": "Video ID", "label_ru": "ID видео", "kind": "text"},
+            {"id": "fg", "label": "Foreground layer", "label_ru": "Передний план (слой)", "kind": "text"},
+            {"id": "bg", "label": "Background layer", "label_ru": "Фон (слой)", "kind": "layer"},
+            {"id": "mask", "label": "Mask layer", "label_ru": "Маска (слой)", "kind": "text"},
+            {"id": "alpha_source", "label": "Alpha source (mask / fg)", "label_ru": "Источник альфы (mask / fg)", "kind": "text", "default": "mask"},
+            {"id": "despill", "label": "Despill (true / false)", "label_ru": "Деспилл (true / false)", "kind": "text", "default": "false"},
+            {"id": "erode", "label": "Erode", "label_ru": "Эрозия", "kind": "number", "default": 2},
+            {"id": "feather", "label": "Feather", "label_ru": "Растушёвка", "kind": "number", "default": 4},
+            {"id": "harmonize", "label": "Harmonize", "label_ru": "Гармонизация", "kind": "number", "default": 0},
+            {"id": "light_wrap", "label": "Light wrap", "label_ru": "Light wrap", "kind": "number", "default": 0},
+            {"id": "name", "label": "Layer name", "label_ru": "Имя слоя", "kind": "text", "default": "Composite"}
+        ],
+        "outputs": [{"id": "layer", "label": "Composite layer", "label_ru": "Слой композита", "kind": "layer"}]
+    },
+    {
+        "id": "vl_layer_to_video",
+        "name": "Layer → MP4",
+        "title_ru": "Слой → MP4",
+        "description": "Экспорт слоя в видео (можно задать размер, например 960×540)",
+        "category": "video_layers",
+        "icon": "📼",
+        "video_job": "layer_to_video",
+        "inputs": [
+            {"id": "video_id", "label": "Video ID", "label_ru": "ID видео", "kind": "text"},
+            {"id": "layer_id", "label": "Layer", "label_ru": "Слой", "kind": "layer"},
+            {"id": "width", "label": "Width (0 = plate)", "label_ru": "Ширина (0 = как плейт)", "kind": "number", "default": 0},
+            {"id": "height", "label": "Height (0 = plate)", "label_ru": "Высота (0 = как плейт)", "kind": "number", "default": 0}
+        ],
+        "outputs": [{"id": "video", "label": "Video", "label_ru": "Видео", "kind": "video"}]
+    },
+]
+VIDEO_JOB_STAGES = {s["id"]: s["video_job"] for s in BUILTIN_STAGES if s.get("video_job")}
+
 # Default Presets offered out of the box
 DEFAULT_PIPELINES = [
     {
@@ -405,6 +531,63 @@ def _resolve_asset_path(raw_path: str, project_id: str) -> str:
     return raw
 
 
+def _run_video_job_stage(job_id: str, project_id: str, kind: str, inputs: Dict[str, Any], title: str, log) -> Dict[str, Any]:
+    """Runs one 2D video-layer job and waits for it. Outputs: layer (id), image (path), video (path) + *_url."""
+    try:
+        from . import video_layers_service as vls
+    except ImportError:  # pragma: no cover
+        import video_layers_service as vls
+    params = dict(inputs)
+    vid = str(params.pop("video_id", "") or "").strip()
+    if not vid:
+        raise ProcessError(f"Stage '{title}': video_id is not set")
+    for k, v in list(params.items()):   # numbers typed in the UI arrive as strings
+        if isinstance(v, str) and re.fullmatch(r"-?\d+(\.\d+)?", v.strip()):
+            params[k] = float(v) if "." in v else int(v)
+    if kind in ("ltx_ic_lora", "ltx_alpha"):
+        free_memory(wait_s=1.0)
+    j = vls.start_job(kind, project_id, vid, params)
+    vjob = j.get("id")
+    log(f"  → 2D job '{kind}' started on {vid} ({vjob})")
+    last = ""
+    while True:
+        with _LOCK:
+            if _PIPELINE_JOBS.get(job_id, {}).get("cancelled"):
+                vls.cancel_job(vjob)
+                raise ProcessError("Pipeline cancelled by user")
+        st = vls.get_job(vjob)
+        msg = str(st.get("message") or "")
+        if msg and msg != last and st.get("status") == "running":
+            last = msg
+            with _LOCK:
+                _PIPELINE_JOBS[job_id]["stage_name"] = f"{title}: {msg}"
+        if st.get("status") == "done":
+            break
+        if st.get("status") in ("error", "cancelled", "not_found"):
+            raise ProcessError(f"Stage '{title}' failed: {st.get('message') or st.get('status')}")
+        time.sleep(1.5)
+
+    res = st.get("result") or {}
+    out: Dict[str, Any] = {"video_id": vid}
+    layer = res.get("layer")
+    if isinstance(layer, dict) and layer.get("id"):
+        out["layer"] = layer["id"]
+        log(f"  ✓ Layer: {layer['id']} ({layer.get('name', '')})")
+    if res.get("image"):
+        out["image"] = res["image"]
+    video = res.get("video")
+    if isinstance(video, dict) and video.get("url"):
+        out["video_url"] = video["url"]
+        try:
+            out["video"] = vls.resolve_media_path(video["url"])
+        except Exception:
+            out["video"] = video["url"]
+        log(f"  ✓ Video: {video['url']}")
+    if len(out) == 1:
+        raise ProcessError(f"Stage '{title}' completed but produced nothing")
+    return out
+
+
 def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[str, Any], initial_values: Dict[str, Any]):
     import folder_paths
 
@@ -457,6 +640,23 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
             for k, v in (initial_values.get(st_id) or {}).items():
                 if v not in (None, ""):
                     resolved_inputs[k] = v
+
+            # ${name} -> pipeline_def["variables"][name] (e.g. one video_id for every layer stage)
+            pvars = pipeline_def.get("variables") or {}
+            for k, v in list(resolved_inputs.items()):
+                if isinstance(v, str) and "${" in v:
+                    resolved_inputs[k] = re.sub(r"\$\{(\w+)\}", lambda m: str(pvars.get(m.group(1), m.group(0))), v)
+
+            # 2D video-layer job stage (no ComfyUI prompt of its own; the job may queue ComfyUI itself)
+            _st_type0 = stage.get("stage_type") or "custom"
+            vjob_kind = VIDEO_JOB_STAGES.get(_st_type0) or (resolved_inputs.pop("kind", None) if _st_type0 == "video_job" else None)
+            if vjob_kind:
+                stage_out = _run_video_job_stage(job_id, project_id, vjob_kind, resolved_inputs, st_title, log)
+                stage_artifacts[st_id] = stage_out
+                with _LOCK:
+                    _PIPELINE_JOBS[job_id]["stage_results"][st_id] = stage_out
+                log(f"✓ [{idx+1}/{total}] {st_title} completed successfully.")
+                continue
 
             st_wf = stage.get("workflow") or ""
             st_type = stage.get("stage_type") or "custom"
@@ -578,6 +778,14 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
                             inputs["value"] = p_val
                         elif "string" in inputs:
                             inputs["string"] = p_val
+
+                # Numeric sampler / scale settings (seed, steps, megapixels) when the stage sets them
+                for nk in ("seed", "steps", "megapixels"):
+                    if nk in inputs and resolved_inputs.get(nk) not in (None, "") and not isinstance(inputs[nk], list):
+                        try:
+                            inputs[nk] = float(resolved_inputs[nk]) if nk == "megapixels" else int(float(resolved_inputs[nk]))
+                        except (TypeError, ValueError):
+                            pass
 
                 # Image injection
                 if clean_img and (ctype == "LoadImage" or "load image" in meta_title or "start image" in meta_title):

@@ -1,0 +1,119 @@
+{
+  "id": "demo_scifi_robot_corridorkey",
+  "name": "Sci-Fi Bridge: 3D Layout → FLUX First Frame → LTX Dual IC-LoRA Robot → CorridorKey Actor",
+  "name_ru": "Sci-Fi мостик: 3D-лейаут → первый кадр FLUX → робот LTX (2 IC-LoRA) → актёр CorridorKey",
+  "description": "Демо-шот конкурса (New_Movie_Shot, 97 кадров, 960×540). 1) Чистка позы из 3D: убирается root-кость Mixamo, из-за которой появлялся второй персонаж. 2) Чистка 3D-лейаута: без актёра и скелета + гайд первого кадра. 3) FLUX.3 Klein Edit: первый кадр (мостик, консоль, робот точно на позе). 4) LTX-2.5: layout-to-render + union-control по позе. 5) Экспорт фона. 6) Композит актёра по RGBA CorridorKey foreground (деспилл, light wrap). 7) Экспорт финала 960×540. Для другого шота поменяйте video_id в variables и id слоёв в шагах 1, 2 и 6.",
+  "variables": {
+    "video_id": "vid_user_1793368003052_143x"
+  },
+  "stages": [
+    {
+      "id": "stage_pose",
+      "title": "Чистка позы из 3D (убрать root-кость)",
+      "stage_type": "vl_pose_cleanup",
+      "inputs": {
+        "video_id": "${video_id}",
+        "source_layer": "vid_user_1793317419079/vl_rgb_769e132e",
+        "max_bone_px": 110,
+        "start": 0,
+        "end": 96,
+        "name": "Pose from 3D (Robot Capoeira, clean)"
+      }
+    },
+    {
+      "id": "stage_layout",
+      "title": "Чистка 3D-лейаута + гайд первого кадра",
+      "stage_type": "vl_layout_cleanup",
+      "inputs": {
+        "video_id": "${video_id}",
+        "layout_source": "layout_render",
+        "skeleton_source": "vid_user_1793317419079/vl_rgb_769e132e",
+        "matte_layer": "vl_matte_f0741b97",
+        "pose_layer": {"from_stage": "stage_pose", "output_key": "layer"},
+        "start": 0,
+        "end": 96,
+        "name": "3D Layout (Console only, clean)"
+      }
+    },
+    {
+      "id": "stage_first_frame",
+      "title": "FLUX.3 Klein Edit: первый кадр",
+      "stage_type": "flux_edit",
+      "workflow": "api/storyboard/flux3_klein_edit.json",
+      "inputs": {
+        "image": {"from_stage": "stage_layout", "output_key": "image"},
+        "prompt": "Transform this 3D layout into a photorealistic cinematic wide shot inside a futuristic sci-fi command center bridge. In the bottom foreground, transform the grey rectangular block into a sleek futuristic sci-fi command console desk with glowing cyan and amber 3D holographic interfaces matching the exact perspective of the block. In the exact position and size of the green stick figure in the center, place a single sleek humanoid sci-fi robot with articulated brushed-titanium and matte-black armor plates and a glowing cyan visor in the exact same pose. Transform the red floor and grey wall into a dark metallic sci-fi bridge floor and futuristic architectural wall panels with volumetric lighting.",
+        "seed": 428825,
+        "steps": 16,
+        "megapixels": 1.0
+      }
+    },
+    {
+      "id": "stage_ltx",
+      "title": "LTX-2.5: layout-to-render + union-control (поза)",
+      "stage_type": "vl_ltx_ic_lora",
+      "inputs": {
+        "video_id": "${video_id}",
+        "preset": "layout",
+        "needs": "first_frame",
+        "source_layer": {"from_stage": "stage_layout", "output_key": "layer"},
+        "lora": "layout-to-render",
+        "source_layer2": {"from_stage": "stage_pose", "output_key": "layer"},
+        "lora2": "union-control",
+        "lora2_strength": 1.0,
+        "lora2_attention": 1.0,
+        "ref_image": {"from_stage": "stage_first_frame", "output_key": "image_url"},
+        "ref_strength": 1.0,
+        "prompt": "A single sleek humanoid sci-fi robot made of brushed chrome and matte-black titanium armor plates with a glowing cyan optical visor performing dynamic capoeira martial arts dance movements in the center of a futuristic sci-fi command center bridge behind a glowing cyan holographic console desk. Only one metallic robot in the room, smooth camera tracking movement, volumetric lighting, photorealistic cinematic 35mm film.",
+        "negative": "human, person, woman, man, girl, boy, dancer, skin, flesh, hair, clothes, face, two robots, two people, two characters, duplicate, extra person, crowd, blurry",
+        "seed": 44,
+        "start": 0,
+        "end": 96,
+        "overlap": 1,
+        "name": "LTX Sci-Fi Bridge + Single Robot"
+      }
+    },
+    {
+      "id": "stage_bg_mp4",
+      "title": "Экспорт фона 960×540",
+      "stage_type": "vl_layer_to_video",
+      "inputs": {
+        "video_id": "${video_id}",
+        "layer_id": {"from_stage": "stage_ltx", "output_key": "layer"},
+        "width": 960,
+        "height": 540
+      }
+    },
+    {
+      "id": "stage_comp",
+      "title": "Композит актёра (CorridorKey RGBA)",
+      "stage_type": "vl_composite",
+      "inputs": {
+        "video_id": "${video_id}",
+        "fg": "vl_alpha_a7115f4d",
+        "bg": {"from_stage": "stage_ltx", "output_key": "layer"},
+        "mask": "vl_matte_f0741b97",
+        "alpha_source": "fg",
+        "despill": "true",
+        "erode": 0,
+        "feather": 0,
+        "harmonize": 0,
+        "light_wrap": 0.125,
+        "start": 0,
+        "end": 96,
+        "name": "Final Composite (CorridorKey + Single Robot)"
+      }
+    },
+    {
+      "id": "stage_final_mp4",
+      "title": "Экспорт финала 960×540",
+      "stage_type": "vl_layer_to_video",
+      "inputs": {
+        "video_id": "${video_id}",
+        "layer_id": {"from_stage": "stage_comp", "output_key": "layer"},
+        "width": 960,
+        "height": 540
+      }
+    }
+  ]
+}
