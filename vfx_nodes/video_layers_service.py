@@ -717,6 +717,12 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
         "fill": _job_fill, "render": _job_render, "video_cutout": _job_video_cutout, "layer_to_video": _job_layer_to_video,
         "mask_grow": _job_mask_grow, "merge_masks": _job_merge_masks, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame, "montage": _job_montage,
     }.get(kind)
+    if not fn and kind in ("pose_cleanup", "layout_cleanup"):   # control-pass cleanup (control_pass_service.py)
+        try:
+            from .control_pass_service import JOBS as _cp_jobs
+        except ImportError:  # pragma: no cover
+            from control_pass_service import JOBS as _cp_jobs
+        fn = _cp_jobs.get(kind)
     if not fn:
         raise ProcessError(f"Unknown 2D job '{kind}'")
     job_id = f"vjob_{uuid.uuid4().hex[:10]}"
@@ -1630,21 +1636,27 @@ def _job_composite(job_id, kind, pid, vid, p):
     fg: "plate" (the original footage) or a layer id; mask: a mask/matte layer (white = subject);
     bg: "plate" or a layer id. Soft edge: the mask is eroded a little and feathered, so the old background's
     fringe does not survive; a refine pass (e.g. the refine-details IC-LoRA) then blends lighting and edges.
-    Sizes follow the plate; layers of another size (LTX output) are resized."""
+    Sizes follow the plate; layers of another size (LTX output) are resized.
+    alpha_source="fg": take the alpha from the fg layer's own RGBA (e.g. CorridorKey foreground = despilled RGB +
+    alpha); the mask is then optional. despill=True clamps leftover green on the subject's edges."""
     info = _require_plate(vid)
     total = int(info["total_frames"])
     w, h = int(info.get("width", 1920)), int(info.get("height", 1080))
     fg_id, bg_id, mask_id = str(p.get("fg") or "plate"), str(p.get("bg") or "plate"), str(p.get("mask") or "")
-    if not mask_id:
+    alpha_from_fg = str(p.get("alpha_source") or "mask").lower() == "fg" and fg_id != "plate"
+    despill = str(p.get("despill", False)).lower() in ("1", "true", "yes")
+    if not mask_id and not alpha_from_fg:
         raise ProcessError("Choose the subject's mask layer")
     man = load_manifest(pid, vid)
     mlayer = next((l for l in man["layers"] if l["id"] == mask_id), None)
+    if alpha_from_fg:
+        mlayer = next((l for l in man["layers"] if l["id"] == fg_id), None) or {"id": fg_id, "type": "alpha"}
     if mlayer is None:
         raise ProcessError("Mask layer not found")
     erode, feather = int(p.get("erode", 2)), int(p.get("feather", 4))
     f0 = max(0, int(p.get("start", 0) or 0))
     f1 = min(total - 1, int(p.get("end", total - 1)))
-    layer = _add_layer(pid, vid, "rgb", p.get("name") or "Composite", extra={"source": "composite", "fg": fg_id, "bg": bg_id, "mask": mask_id})
+    layer = _add_layer(pid, vid, "rgb", p.get("name") or "Composite", extra={"source": "composite", "fg": fg_id, "bg": bg_id, "mask": mask_id, "alpha_source": "fg" if alpha_from_fg else "mask"})
     out_dir = _layer_dir(pid, vid, layer["id"])
 
     def rgb(src, i):
@@ -1706,6 +1718,8 @@ def _job_composite(job_id, kind, pid, vid, p):
             a = cv2.GaussianBlur(a, (0, 0), feather)
         fg = harmonized(fg)
         fgf = fg.astype(np.float32)
+        if despill:   # green can not be brighter than the max of red / blue
+            fgf[..., 1] = np.minimum(fgf[..., 1], np.maximum(fgf[..., 0], fgf[..., 2]) * 1.02)
         if light_wrap > 0:
             # light wrap: the blurred background glows into the subject near its edge
             edge = (a * (1.0 - cv2.GaussianBlur(a, (0, 0), 6 + 10 * light_wrap)))[..., None]
@@ -1974,7 +1988,15 @@ def _job_layer_to_video(job_id, kind, pid, vid, p):
                 yield (rgb.astype(np.float32) * a[..., None]).astype(np.uint8)
 
     out_path, url = _new_video_path(pid, layer.get("name") or "layer")
-    n = _encode_mp4(frames(), out_path, fps, w, h)
+    ow, oh = int(p.get("width") or 0), int(p.get("height") or 0)   # optional export size, e.g. 960x540
+    if ow > 0 and oh > 0 and (ow, oh) != (w, h):
+        def sized():
+            for fr in frames():
+                yield cv2.resize(fr, (ow, oh), interpolation=cv2.INTER_AREA)
+        n = _encode_mp4(sized(), out_path, fps, ow, oh)
+        w, h = ow, oh
+    else:
+        n = _encode_mp4(frames(), out_path, fps, w, h)
     return {"video": {"url": url, "frames": n, "fps": fps, "width": w, "height": h, "layer": layer["name"], "matte": as_matte}}
 
 

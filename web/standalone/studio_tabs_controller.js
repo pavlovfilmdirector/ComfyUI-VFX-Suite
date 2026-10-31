@@ -2718,7 +2718,7 @@ export function initStudioArchitecture(ctx) {
 
             const currentVal = currentInputs[inp.id];
 
-            const isMedia = ["image", "video", "audio", "mask", "3d"].includes(inp.kind);
+            const isMedia = ["image", "video", "audio", "mask", "3d", "layer"].includes(inp.kind);   // layer = 2D video-layer id from a previous stage
 
             const mList = media();
 
