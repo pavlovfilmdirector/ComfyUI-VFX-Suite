@@ -141,6 +141,10 @@ enables a local check that every model the workflows name is installed on this m
 
 KESHIKI uses no partner nodes and no closed APIs. Code paths for cloud services stay switched off unless you opt in with `KESHIKI_ALLOW_CLOUD=1`, and the studio never enables them by itself.
 
+## Credits
+
+Built with the help of AI coding assistants: Claude (Anthropic) and Google Antigravity.
+
 ## License
 
 Copyright (C) 2026 Alexey Pavlov.
