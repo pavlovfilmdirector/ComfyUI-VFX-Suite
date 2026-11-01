@@ -761,8 +761,10 @@ def register_server_routes():
                 from .deconstruct_service import get_project_deconstruction
             except (ImportError, ValueError):
                 from deconstruct_service import get_project_deconstruction
-            items = get_project_deconstruction(project_id)
-            return add_cors_headers(web.json_response({"items": items}))
+            info = get_project_deconstruction(project_id)
+            # the service returns {project_id, items, count}; the UI expects "items" to be the list itself
+            items = info.get("items", []) if isinstance(info, dict) else (info or [])
+            return add_cors_headers(web.json_response({"items": items if isinstance(items, list) else [], "count": len(items) if isinstance(items, list) else 0}))
 
         @routes.post("/vfx/projects/{project_id}/deconstruction/save")
         async def vfx_project_save_deconstruction(request):
@@ -6056,6 +6058,12 @@ def register_server_routes():
                     except Exception:
                         pass
 
+                if len(frames) > 0:
+                    try:
+                        with open(os.path.join(LAYOUT_RENDER_DIR, "owner.json"), "w", encoding="utf-8") as _of:
+                            json.dump({"project_id": _sanitize_id(str(payload.get("project_id"))) if payload.get("project_id") else ""}, _of)
+                    except Exception:
+                        pass
                 saved_count = 0
                 for item in frames:
                     if isinstance(item, dict):
@@ -6149,11 +6157,19 @@ def register_server_routes():
         async def get_layout_render_info(request):
 
             files = []
-
             if os.path.exists(LAYOUT_RENDER_DIR):
-
                 files = sorted([f for f in os.listdir(LAYOUT_RENDER_DIR) if f.startswith("frame_") and f.endswith(".png")])
-
+            # the bake cache is shared: show it only to the project that baked it (never leak into other projects)
+            want = _sanitize_id(request.query.get("project_id", "").strip()) if request.query.get("project_id", "").strip() else ""
+            if want and files:
+                owner = ""
+                try:
+                    with open(os.path.join(LAYOUT_RENDER_DIR, "owner.json"), "r", encoding="utf-8") as _of:
+                        owner = str(json.load(_of).get("project_id") or "")
+                except Exception:
+                    owner = ""
+                if owner != want:
+                    files = []
             return add_cors_headers(web.json_response({
 
                 "has_renders": len(files) > 0,

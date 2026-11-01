@@ -48,6 +48,30 @@ _JOBS = {}
 _JOBS_LOCK = threading.Lock()
 
 
+
+def _comfy_root() -> str:
+    """ComfyUI install folder on this machine (never a hard-coded path)."""
+    try:
+        import folder_paths
+        base = getattr(folder_paths, "base_path", "") or os.path.dirname(folder_paths.get_output_directory())
+        if base:
+            return base
+    except Exception:
+        pass
+    env = os.environ.get("COMFYUI_PATH", "")
+    if env:
+        return env
+    # custom_nodes/<this repo>/vfx_nodes -> ComfyUI
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
+def _comfy_output_dir() -> str:
+    try:
+        import folder_paths
+        return folder_paths.get_output_directory()
+    except Exception:
+        return os.path.join(_comfy_root(), "output")
+
 def _load_library_index():
     if os.path.exists(MESH3D_INDEX_PATH):
         try:
@@ -133,7 +157,7 @@ def check_comfy_trellis2_ready() -> bool:
     """
     Checks if ComfyUI has the required models installed for native Trellis2 / Pixal3D generation.
     """
-    comfy_dir = r"B:\StabilityMatrix2\ComfyUI"
+    comfy_dir = _comfy_root()
     needed = [
         os.path.join(comfy_dir, "models", "background_removal", "birefnet.safetensors"),
         os.path.join(comfy_dir, "models", "geometry_estimation", "moge_2_vitl_normal_fp16.safetensors"),
@@ -166,7 +190,7 @@ def seed_existing_glb_assets():
     changed = len(items) != len(raw_items)
 
     # 1. Scan ComfyUI output/3d directory (skip raw intermediate mesh_job3d_* files)
-    comfy_3d_out = r"B:\StabilityMatrix2\ComfyUI\output\3d"
+    comfy_3d_out = os.path.join(_comfy_output_dir(), "3d")
     if os.path.exists(comfy_3d_out) and os.path.isdir(comfy_3d_out):
         for fname in os.listdir(comfy_3d_out):
             if fname.lower().endswith(".glb") and not fname.lower().startswith("mesh_job3d_"):
@@ -282,7 +306,7 @@ def _resolve_input_image(image_source: str, prompt_hint: str = "3D Object") -> s
     """
     ts = int(time.time() * 1000)
     out_png = os.path.join(MESH3D_INPUTS_DIR, f"input_{ts}.png")
-    comfy_dir = r"B:\StabilityMatrix2\ComfyUI"
+    comfy_dir = _comfy_root()
 
     if not image_source:
         image_source = ""
@@ -434,7 +458,7 @@ def remove_background_image(image_source: str) -> dict:
     job_id = uuid.uuid4().hex[:8]
     cutout_filename = f"cutout_{job_id}.png"
     final_cutout_path = os.path.join(MESH3D_DIR, cutout_filename)
-    comfy_dir = r"B:\StabilityMatrix2\ComfyUI"
+    comfy_dir = _comfy_root()
 
     # Check if image is already a transparent RGBA with subject cutout
     try:
@@ -597,7 +621,7 @@ def _run_comfy_3d_generation(
     if "use_trellis2" not in p:
         p["use_trellis2"] = use_trellis2
 
-    comfy_dir = r"B:\StabilityMatrix2\ComfyUI"
+    comfy_dir = _comfy_root()
     comfy_input_dir = os.path.join(comfy_dir, "input")
     os.makedirs(comfy_input_dir, exist_ok=True)
     input_filename = f"mesh3d_input_{job_id}.png"

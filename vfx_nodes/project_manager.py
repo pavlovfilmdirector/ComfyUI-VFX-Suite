@@ -287,11 +287,19 @@ def list_projects() -> list:
             }
 
     # 2. Local PROJECTS_ROOT projects (fallback / discovery)
+    def _real(pth):
+        try:
+            return os.path.normcase(os.path.realpath(pth))
+        except Exception:
+            return os.path.normcase(os.path.abspath(pth))
+    seen_paths = {_real(v["path"]) for v in projects_map.values()}
     if os.path.exists(PROJECTS_ROOT):
         for item in os.listdir(PROJECTS_ROOT):
             p_dir = os.path.join(PROJECTS_ROOT, item)
             if os.path.isdir(p_dir) and item != "__pycache__":
                 clean_pid = _sanitize_id(item)
+                if _real(p_dir) in seen_paths:
+                    continue
                 if clean_pid not in projects_map:
                     meta_file = os.path.join(p_dir, "project.json")
                     if os.path.exists(meta_file):
@@ -336,6 +344,10 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
         project_id = "sandbox_playground"
 
     pid = project_id or _sanitize_id(name)
+    # A folder path passed as project_id ("Open folder" in the UI) must not become the id:
+    # ids end up in URLs (/vfx/projects/<id>/...) and localStorage keys.
+    if pid and any(ch in str(pid) for ch in ("/", "\\", ":")):
+        pid = _sanitize_id(os.path.basename(str(pid).strip().rstrip("\\/")) or str(name or ""))
 
     if custom_path and mode != "sandbox":
         c_clean = os.path.abspath(str(custom_path).strip().rstrip("\\/"))
@@ -372,6 +384,8 @@ def create_or_open_project(name: str, mode: str = "production", project_id: str 
                 except Exception:
                     pass
         if data:
+            if any(ch in str(data.get("id", "")) for ch in ("/", "\\", ":")):
+                data["id"] = pid
             data["updated_at"] = time.time()
             data["path"] = p_dir
             data["folders"] = {sub: os.path.join(p_dir, sub) for sub in PROJECT_SUBDIRS}
