@@ -276,6 +276,46 @@ BUILTIN_STAGES += [
 ]
 VIDEO_JOB_STAGES = {s["id"]: s["video_job"] for s in BUILTIN_STAGES if s.get("video_job")}
 
+# Inputs that point at project assets get a visual picker in My Pipelines (kind), and every confusing
+# input gets a one-line explanation (hint / hint_ru). Keys: "<stage id>.<input id>" or just "<input id>".
+_ASSET_KINDS = {"video_id": "video_id", "source_layer": "layer", "source_layer2": "layer", "layout_source": "layer",
+                "skeleton_source": "layer", "matte_layer": "layer", "pose_layer": "layer", "fg": "layer", "bg": "layer",
+                "mask": "layer", "layer_id": "layer"}
+_HINTS = {
+    "name": ("Name of the new layer in the 2D layers panel. Any text.",
+             "Как будет называться новый слой в панели слоёв 2D. Можно написать что угодно."),
+    "video_id": ("The project video this stage works on: its frames and layers.",
+                 "Видео проекта, с которым работает шаг: его кадры и слои."),
+    "vl_pose_cleanup.source_layer": ("Skeleton render from the 3D tab (3D → Pose to 2D).",
+                                     "Слой с рендером скелета из 3D (вкладка 3D → поза в 2D)."),
+    "layout_source": ("3D layout render: the last bake from the 3D tab, or any layout layer.",
+                      "Рендер 3D-лейаута: последний бейк из вкладки 3D или любой слой-лейаут."),
+    "skeleton_source": ("Optional. Skeleton layer whose lines are erased from the layout.",
+                        "Необязательно. Слой со скелетом: его линии стираются с лейаута."),
+    "matte_layer": ("Optional. Actor matte (e.g. CorridorKey): this area is erased from the layout.",
+                    "Необязательно. Маска актёра (например, CorridorKey): эта область стирается с лейаута."),
+    "pose_layer": ("Pose layer drawn over the first-frame guide.", "Слой позы, который рисуется поверх гайда первого кадра."),
+    "vl_ltx_ic_lora.source_layer": ("Control video for IC-LoRA 1 (layout, depth, mask…).",
+                                    "Видео-контроль для IC-LoRA 1 (лейаут, глубина, маска…)."),
+    "vl_ltx_ic_lora.source_layer2": ("Optional second control for IC-LoRA 2 (usually the pose).",
+                                     "Необязательно. Второй контроль для IC-LoRA 2 (обычно поза)."),
+    "lora": ("IC-LoRA file or short name (layout-to-render, union-control…).",
+             "Файл IC-LoRA или короткое имя (layout-to-render, union-control…)."),
+    "lora2": ("Second IC-LoRA (file or short name).", "Вторая IC-LoRA (файл или короткое имя)."),
+    "ref_image": ("Image used as frame 0 of the video.", "Картинка, которая станет нулевым кадром видео."),
+    "fg": ("Layer placed on top (e.g. the keyed actor).", "Слой поверх (например, вырезанный актёр)."),
+    "bg": ("Layer underneath (the new background).", "Слой снизу (новый фон)."),
+    "vl_composite.mask": ("Mask that cuts the foreground out.", "Маска, по которой вырезается передний план."),
+    "layer_id": ("Layer to export as MP4.", "Слой, который сохраняется в MP4."),
+}
+for _st in BUILTIN_STAGES:
+    for _inp in _st.get("inputs", []):
+        if _st.get("video_job") and _inp["id"] in _ASSET_KINDS:
+            _inp["kind"] = _ASSET_KINDS[_inp["id"]]
+        _h = _HINTS.get(f"{_st['id']}.{_inp['id']}") or _HINTS.get(_inp["id"])
+        if _h and "hint" not in _inp:
+            _inp["hint"], _inp["hint_ru"] = _h
+
 # Default Presets offered out of the box
 DEFAULT_PIPELINES = [
     {

@@ -2902,12 +2902,231 @@ export function initStudioArchitecture(ctx) {
 
 
 
+        // ---- Visual asset inputs: image / video / video_id / layer / 3d get a card with a thumbnail, a gallery picker and a preview ----
+        const ASSET_KINDS = ["image", "video", "video_id", "layer", "3d"];
+        const pipeVars = () => (currentPipe && currentPipe.variables) || {};
+        const resolveVars = (v) => typeof v === "string" ? v.replace(/\$\{(\w+)\}/g, (m, k) => (pipeVars()[k] ?? m)) : v;
+        const assetPid = () => encodeURIComponent(currentProject?.id || pid);
+        const vlStateCache = {};
+        const knownVideo = (vid) => (typeof mediaVideos2D !== "undefined" ? mediaVideos2D : []).find(v => v.id === vid);
+        const getVL = async (vid) => {
+            if (!vid || !knownVideo(vid)) return null;
+            if (!vlStateCache[vid]) vlStateCache[vid] = fetch(`/vfx/video/${assetPid()}/${encodeURIComponent(vid)}/state`).then(r => r.json()).catch(() => null);
+            return vlStateCache[vid];
+        };
+        let meshListCache = null;
+        const getMeshes = async () => (meshListCache = meshListCache || fetch("/vfx/mesh3d/list").then(r => r.json()).then(d => d.meshes || []).catch(() => []));
+        const layerFrameUrl = (vid, l) => {
+            const f = Array.isArray(l.keys) && l.keys.length ? l.keys[0] : Math.max(0, Math.floor((Number(l.frames) || 1) / 2));
+            return `/vfx/video/${assetPid()}/${encodeURIComponent(vid)}/frame/${encodeURIComponent(l.id)}/${f}`;
+        };
+        const plateUrl = (vid) => `/vfx/video/${assetPid()}/${encodeURIComponent(vid)}/frame/plate_raw/0`;
+        const LAYER_TYPE_RU = { pose: "поза", rgb: "картинка", matte: "матт", mask: "маска", paint: "рисунок", depth: "глубина", alpha: "альфа" };
+        // What a stored value means, for the card and the preview: { name, sub, thumb, view, isVideo, missing }
+        const describeAsset = async (kind, raw, stageVid) => {
+            if (raw && typeof raw === "object" && raw.from_stage) {
+                const i = (currentPipe?.stages || []).findIndex(s => (s.id || "") === raw.from_stage);
+                return { name: `🔗 ${uiText("Output of step", "Выход шага")} #${i + 1}`, sub: `${(currentPipe?.stages?.[i]?.title) || raw.from_stage} → ${raw.output_key}` };
+            }
+            const isVar = typeof raw === "string" && /^\$\{\w+\}$/.test(raw);
+            const val = resolveVars(raw);
+            if (!val) return { name: uiText("— not chosen —", "— не выбрано —"), sub: "" };
+            const varNote = isVar ? `${uiText("variable", "переменная")} ${raw} = ` : "";
+            if (kind === "video_id") {
+                const v = knownVideo(val);
+                return v ? { name: v.title || val, sub: varNote + val, thumb: plateUrl(val), view: v.videoUrl || plateUrl(val), isVideo: !!v.videoUrl }
+                         : { name: val, sub: varNote + uiText("not in this project", "нет в этом проекте"), missing: true };
+            }
+            if (kind === "layer") {
+                if (val === "layout_render") return { name: uiText("3D layout render (last bake)", "Рендер 3D-лейаута (последний бейк)"), sub: "layout_render" };
+                const [lvid, lid] = val.includes("/") ? val.split("/", 2) : [stageVid, val];
+                const st = await getVL(lvid);
+                const l = st?.layers?.find(x => x.id === lid);
+                if (!l) return { name: val, sub: lvid ? `${uiText("not found in video", "не найден в видео")} ${lvid}` : uiText("choose the video first", "сначала выберите видео"), missing: true };
+                const u = layerFrameUrl(lvid, l);
+                return { name: l.name || l.id, sub: `${LAYER_TYPE_RU[l.type] || l.type} · ${l.frames || 0} ${uiText("fr", "кадр.")} · ${lvid !== stageVid ? lvid + "/" : ""}${l.id}`, thumb: u, view: u };
+            }
+            if (kind === "image") {
+                const im = (typeof mediaImages1D !== "undefined" ? mediaImages1D : []).find(i => i.url === val || i.fallbackUrl === val || i.id === val);
+                return { name: im?.title || String(val).split("/").pop(), sub: im ? uiText("project image", "картинка проекта") : String(val).slice(0, 80), thumb: val, view: val };
+            }
+            if (kind === "video") {
+                const v = (typeof mediaVideos2D !== "undefined" ? mediaVideos2D : []).find(x => x.videoUrl === val || x.url === val);
+                return { name: v?.title || String(val).split("/").pop(), sub: String(val).slice(0, 80), view: val, isVideo: true, videoThumb: val };
+            }
+            if (kind === "3d") {
+                const m = (await getMeshes()).find(x => x.url === val || x.id === val);
+                return { name: m?.title || String(val).split("/").pop(), sub: m?.filename || String(val), thumb: m?.thumbnail || m?.preview || m?.textures?.albedo || "" };
+            }
+            return { name: String(val), sub: "" };
+        };
+        const thumbHtml = (d, h = 40) => d.videoThumb
+            ? `<video src="${esc(d.videoThumb)}#t=0.5" muted preload="metadata" style="width:100%; height:100%; object-fit:cover;"></video>`
+            : d.thumb ? `<img src="${esc(d.thumb)}" loading="lazy" style="width:100%; height:100%; object-fit:cover;" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🖼',style:'opacity:.4'}))">`
+            : `<span style="opacity:.45; font-size:${Math.round(h / 2.4)}px;">${d.missing ? "⚠" : "∅"}</span>`;
+        const stageVidOf = (sIdx) => resolveVars(currentPipe?.stages?.[sIdx]?.inputs?.video_id) || "";
+        const hydrateAssetCards = () => {
+            ov.querySelectorAll(".pipe-asset").forEach(async (card) => {
+                const sIdx = Number(card.dataset.stageIdx), inpId = card.dataset.inpId, kind = card.dataset.kind;
+                const raw = currentPipe?.stages?.[sIdx]?.inputs?.[inpId];
+                const d = await describeAsset(kind, raw, stageVidOf(sIdx));
+                if (!card.isConnected) return;
+                card.querySelector(".pa-thumb").innerHTML = thumbHtml(d);
+                card.querySelector(".pa-name").textContent = d.name;
+                card.querySelector(".pa-name").style.color = d.missing ? "#fca5a5" : "#e4e4e7";
+                card.querySelector(".pa-sub").textContent = d.sub || "";
+                const vb = card.querySelector(".pipe-asset-view");
+                if (vb) vb.style.display = d.view ? "" : "none";
+                card._desc = d;
+            });
+        };
+        const showAssetPreview = (d) => {
+            if (!d || !d.view) return;
+            const box = document.createElement("div");
+            box.style.cssText = "position: fixed; inset: 0; z-index: 100002; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: zoom-out;";
+            box.innerHTML = `${d.isVideo ? `<video src="${esc(d.view)}" controls autoplay loop muted style="max-width: 90vw; max-height: 80vh; border-radius: 6px;"></video>`
+                                         : `<img src="${esc(d.view)}" style="max-width: 90vw; max-height: 80vh; border-radius: 6px; background: #111;">`}
+                <div style="color: #e4e4e7; font-size: 12px;">${esc(d.name)} <span style="opacity: .55;">${esc(d.sub || "")}</span></div>`;
+            box.onclick = (e) => { if (e.target.tagName !== "VIDEO") box.remove(); };
+            box.addEventListener("keydown", e => e.stopPropagation());
+            document.body.appendChild(box);
+        };
+        // Gallery picker. Resolves with the value to store (string or {from_stage, output_key}) or undefined when cancelled.
+        const openAssetPicker = ({ kind, inp, sIdx, prevOutputs }) => new Promise(resolve => {
+            const box = document.createElement("div");
+            box.style.cssText = "position: fixed; inset: 50px; z-index: 100001; background: #0c0c0f; border: 1px solid #3f3f46; border-radius: 10px; display: flex; flex-direction: column; color: #f4f4f5; font-size: 11.5px; box-shadow: 0 30px 80px rgba(0,0,0,0.8);";
+            ["keydown", "wheel"].forEach(ev => box.addEventListener(ev, e => e.stopPropagation()));
+            document.body.appendChild(box);
+            const close = (v) => { box.remove(); resolve(v); };
+            let vidSel = (() => { const cur = resolveVars(currentPipe?.stages?.[sIdx]?.inputs?.[inp.id]); return (kind === "layer" && typeof cur === "string" && cur.includes("/")) ? cur.split("/")[0] : stageVidOf(sIdx); })();
+            const card = (val, d, extraStyle = "") => `
+                <button class="vfx-btn pa-pick" data-val='${esc(typeof val === "string" ? val : JSON.stringify(val))}' data-json="${typeof val === "string" ? "0" : "1"}"
+                    style="display:flex; flex-direction:column; gap:4px; padding:6px; text-align:left; background:#141418; border:1px solid #2a2a30; border-radius:6px; cursor:pointer; ${extraStyle}">
+                    <div style="width:100%; aspect-ratio:16/10; background:#000; border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center;">${thumbHtml(d, 60)}</div>
+                    <div style="font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(d.name)}</div>
+                    <div style="font-size:9.5px; opacity:.55; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(d.sub || "")}</div>
+                </button>`;
+            const draw = async () => {
+                const label = inp.label_ru || inp.label || inp.id;
+                const vids = (typeof mediaVideos2D !== "undefined" ? mediaVideos2D : []).filter(v => !v.isLivePlaceholder);
+                let items = "";
+                if (prevOutputs.length) {
+                    items += `<div style="grid-column: 1/-1; font-size:10px; color:#c084fc; font-weight:700; margin-top:2px;">${uiText("Outputs of earlier steps", "Выходы предыдущих шагов")}</div>`;
+                    items += prevOutputs.map(ep => card({ from_stage: ep.stage_id, output_key: ep.output_key },
+                        { name: `🔗 ${uiText("Step", "Шаг")} #${ep.stage_idx + 1}`, sub: `${ep.stage_title} → ${ep.output_key}` }, "border-color:#5b21b6;")).join("");
+                    items += `<div style="grid-column: 1/-1; font-size:10px; color:#a1a1aa; font-weight:700; margin-top:6px;">${uiText("Project files", "Файлы проекта")}</div>`;
+                }
+                if (kind === "video_id") {
+                    items += vids.map(v => card(v.id, { name: v.title || v.id, sub: v.id, thumb: plateUrl(v.id) })).join("") || `<div style="opacity:.6;">${uiText("No videos in this project", "В проекте нет видео")}</div>`;
+                } else if (kind === "layer") {
+                    if (inp.id === "layout_source") items += card("layout_render", { name: uiText("3D layout render (last bake)", "Рендер 3D-лейаута (последний бейк)"), sub: "layout_render" });
+                    const st = await getVL(vidSel);
+                    const layers = (st?.layers || []).filter(l => !String(l.name || "").startsWith("_"));
+                    const pre = vidSel && vidSel !== stageVidOf(sIdx) ? `${vidSel}/` : "";
+                    items += layers.map(l => card(pre + l.id, { name: l.name || l.id, sub: `${LAYER_TYPE_RU[l.type] || l.type} · ${l.frames || 0} ${uiText("fr", "кадр.")} · ${l.id}`, thumb: layerFrameUrl(vidSel, l) })).join("")
+                        || `<div style="opacity:.6;">${vidSel ? uiText("This video has no layers yet", "У этого видео пока нет слоёв") : uiText("Choose a video above", "Выберите видео сверху")}</div>`;
+                } else if (kind === "image") {
+                    const imgs = (typeof mediaImages1D !== "undefined" ? mediaImages1D : []).filter(i => !i.isLivePlaceholder && (i.url || i.fallbackUrl));
+                    items += imgs.map(i => card(i.url || i.fallbackUrl, { name: i.title || i.id, sub: i.badge || "", thumb: i.url || i.fallbackUrl })).join("") || `<div style="opacity:.6;">${uiText("No images in this project", "В проекте нет картинок")}</div>`;
+                } else if (kind === "video") {
+                    items += vids.filter(v => v.videoUrl || v.url).map(v => card(v.videoUrl || v.url, { name: v.title || v.id, sub: v.id, videoThumb: v.videoUrl || v.url })).join("") || `<div style="opacity:.6;">${uiText("No videos in this project", "В проекте нет видео")}</div>`;
+                } else if (kind === "3d") {
+                    const ms = await getMeshes();
+                    items += ms.map(m => card(m.url, { name: m.title || m.filename, sub: `${m.engine || ""} · ${m.size_mb || "?"} MB`, thumb: m.thumbnail || m.preview || m.textures?.albedo || "" })).join("") || `<div style="opacity:.6;">${uiText("The 3D library is empty", "3D-библиотека пуста")}</div>`;
+                }
+                const homeNote = currentPipe?.project_id && currentPipe.project_id !== currentProject?.id
+                    ? `<div style="font-size:10px; color:#fbbf24;">⚠ ${uiText(`This pipeline was made in «${currentPipe.project_id}». Open that project to see its videos and layers.`, `Пайплайн сделан в проекте «${currentPipe.project_id}». Откройте его, чтобы увидеть его видео и слои.`)}</div>` : "";
+                box.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #27272a;">
+                        <b style="font-size:12.5px;">📂 ${esc(label)}</b>
+                        ${kind === "layer" ? `<span style="opacity:.6;">${uiText("video:", "видео:")}</span>
+                            <select class="pa-vid" style="${fld} max-width:260px;">
+                                <option value="">—</option>
+                                ${vids.map(v => `<option value="${esc(v.id)}" ${v.id === vidSel ? "selected" : ""}>${esc(v.title || v.id)}</option>`).join("")}
+                            </select>` : ""}
+                        <span style="flex:1;"></span>
+                        <button class="vfx-btn pa-x" style="padding:3px 9px;">✕</button>
+                    </div>
+                    <div style="padding:6px 14px 0;">${homeNote}${inp.hint_ru || inp.hint ? `<div style="font-size:10.5px; opacity:.7;">${esc(uiText(inp.hint || "", inp.hint_ru || inp.hint || ""))}</div>` : ""}</div>
+                    <div style="flex:1; overflow:auto; padding:10px 14px; display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap:8px; align-content:start;">${items}</div>
+                    <div style="display:flex; gap:6px; align-items:center; padding:8px 14px; border-top:1px solid #27272a;">
+                        <span style="opacity:.6; font-size:10.5px;">${uiText("Or type an id / URL:", "Или вручную id / URL:")}</span>
+                        <input class="pa-manual" style="${fld} flex:1;" placeholder="${kind === "layer" ? "vl_rgb_… / video/vl_rgb_…" : kind === "video_id" ? "video id" : "/vfx/…"}">
+                        <button class="vfx-btn pa-manual-ok" style="padding:4px 10px;">OK</button>
+                    </div>`;
+                box.querySelector(".pa-x").onclick = () => close(undefined);
+                const vs = box.querySelector(".pa-vid");
+                if (vs) vs.onchange = () => { vidSel = vs.value; draw(); };
+                box.querySelectorAll(".pa-pick").forEach(b => { b.onclick = () => close(b.dataset.json === "1" ? JSON.parse(b.dataset.val) : b.dataset.val); });
+                box.querySelector(".pa-manual-ok").onclick = () => { const v = box.querySelector(".pa-manual").value.trim(); if (v) close(v); };
+            };
+            box.innerHTML = `<div style="padding:20px; opacity:.6;">${uiText("Loading…", "Загрузка…")}</div>`;
+            draw();
+        });
+        const eligibleOutputsFor = (inp, sIdx) => {
+            const out = [];
+            const all = currentPipe?.stages || [];
+            for (let i = 0; i < sIdx; i++) {
+                const prev = all[i];
+                const meta = builtinStages.find(b => b.id === prev.stage_type) || {};
+                const o = (meta.outputs || []).find(x => x.kind === inp.kind);
+                if (o) out.push({ stage_idx: i, stage_id: prev.id || `stage_${i + 1}`, stage_title: prev.title || meta.title_ru || `Stage ${i + 1}`, output_key: o.id });
+            }
+            return out;
+        };
+        const renderAssetControl = (inp, currentIdx) => `
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <span style="font-weight:600; font-size:10.5px; color:#e4e4e7;">${esc(inp.label_ru || inp.label)}</span>
+                ${inp.hint_ru || inp.hint ? `<span style="font-size:9.5px; opacity:.55; line-height:1.3;">${esc(uiText(inp.hint || "", inp.hint_ru || inp.hint || ""))}</span>` : ""}
+                <div class="pipe-asset" data-stage-idx="${currentIdx}" data-inp-id="${esc(inp.id)}" data-kind="${esc(inp.kind)}"
+                     style="display:flex; align-items:center; gap:8px; padding:5px; background:#0f0f11; border:1px solid #333; border-radius:5px;">
+                    <div class="pa-thumb" style="width:64px; height:40px; flex-shrink:0; background:#000; border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center;"><span style="opacity:.3;">…</span></div>
+                    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+                        <span class="pa-name" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">…</span>
+                        <span class="pa-sub" style="font-size:9.5px; opacity:.55; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                    </div>
+                    <button class="vfx-btn pipe-asset-view" title="${uiText("Preview", "Посмотреть")}" style="padding:4px 7px; display:none;">👁</button>
+                    <button class="vfx-btn pipe-asset-pick" title="${uiText("Choose from the gallery", "Выбрать из галереи")}" style="padding:4px 8px;">📂</button>
+                    ${inp.kind === "image" || inp.kind === "video" ? `<label class="vfx-btn" style="padding:4px 7px; cursor:pointer;" title="${uiText("Upload from disk", "Загрузить с диска")}">⤒<input class="stage-upload-file" data-stage-idx="${currentIdx}" data-inp-id="${esc(inp.id)}" type="file" style="display:none;"></label>` : ""}
+                    <button class="vfx-btn pipe-asset-clear" title="${uiText("Clear", "Очистить")}" style="padding:4px 7px;">✕</button>
+                </div>
+            </div>`;
+        const wireAssetControls = () => {
+            ov.querySelectorAll(".pipe-asset").forEach(cardEl => {
+                const sIdx = Number(cardEl.dataset.stageIdx), inpId = cardEl.dataset.inpId, kind = cardEl.dataset.kind;
+                const st = currentPipe?.stages?.[sIdx];
+                if (!st) return;
+                const meta = builtinStages.find(b => b.id === st.stage_type) || {};
+                const inp = (meta.inputs || []).find(x => x.id === inpId) || { id: inpId, kind };
+                const set = (v) => {
+                    st.inputs = st.inputs || {};
+                    const old = st.inputs[inpId];
+                    if (typeof old === "string" && /^\$\{\w+\}$/.test(old) && typeof v === "string" && v) {
+                        currentPipe.variables = currentPipe.variables || {};
+                        currentPipe.variables[old.slice(2, -1)] = v;     // a ${variable}: change it for every stage that uses it
+                    } else {
+                        st.inputs[inpId] = v;
+                    }
+                    if (inpId === "video_id") Object.keys(vlStateCache).forEach(k => delete vlStateCache[k]);
+                    render();
+                };
+                cardEl.querySelector(".pipe-asset-pick").onclick = async () => {
+                    const v = await openAssetPicker({ kind, inp, sIdx, prevOutputs: eligibleOutputsFor(inp, sIdx) });
+                    if (v !== undefined) set(v);
+                };
+                cardEl.querySelector(".pipe-asset-view").onclick = () => showAssetPreview(cardEl._desc);
+                cardEl.querySelector(".pipe-asset-clear").onclick = () => { if (st.inputs) { delete st.inputs[inpId]; render(); } };
+                cardEl.querySelector(".pa-thumb").onclick = () => showAssetPreview(cardEl._desc);
+            });
+            hydrateAssetCards();
+        };
         const renderInputControl = (inp, currentStage, currentIdx, allStages) => {
 
             const currentInputs = currentStage.inputs || {};
 
             const currentVal = currentInputs[inp.id];
 
+            if (ASSET_KINDS.includes(inp.kind)) return renderAssetControl(inp, currentIdx);
             const isMedia = ["image", "video", "audio", "mask", "3d", "layer"].includes(inp.kind);   // layer = 2D video-layer id from a previous stage
 
             const mList = media();
@@ -3020,7 +3239,7 @@ export function initStudioArchitecture(ctx) {
 
                   <div style="display:flex; flex-direction:column; gap:4px;">
 
-                    <span style="font-weight:600; font-size:10.5px; color:#e4e4e7;">${esc(inp.label_ru || inp.label)} <span style="opacity:.5; font-size:9.5px;">(text)</span></span>
+                    <span style="font-weight:600; font-size:10.5px; color:#e4e4e7;">${esc(inp.label_ru || inp.label)}</span>${inp.hint_ru || inp.hint ? `<span style="font-size:9.5px; opacity:.55; line-height:1.3;">${esc(uiText(inp.hint || "", inp.hint_ru || inp.hint || ""))}</span>` : ""}
 
                     <textarea class="stage-input-text" data-stage-idx="${currentIdx}" data-inp-id="${inp.id}" rows="2" style="${fld} width:100%; box-sizing:border-box; resize:vertical;">${esc(textVal)}</textarea>
 
@@ -3171,6 +3390,7 @@ export function initStudioArchitecture(ctx) {
 
 
         const wireEvents = () => {
+            wireAssetControls();
 
             // Close
 
