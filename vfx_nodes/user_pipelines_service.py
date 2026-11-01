@@ -457,12 +457,37 @@ def list_pipeline_jobs(project_id: Optional[str] = None, active_only: bool = Tru
     return jobs
 
 
+def _preflight_video_stages(project_id: str, pipeline_def: Dict[str, Any]) -> None:
+    """Fails fast with a clear message when a 2D video stage points at a video this project does not have."""
+    try:
+        from . import video_layers_service as vls
+    except ImportError:  # pragma: no cover
+        import video_layers_service as vls
+    pvars = pipeline_def.get("variables") or {}
+    home = pipeline_def.get("project_id")
+    for st in pipeline_def.get("stages", []):
+        if not VIDEO_JOB_STAGES.get(st.get("stage_type") or ""):
+            continue
+        vid = (st.get("inputs") or {}).get("video_id")
+        if not isinstance(vid, str) or not vid.strip():
+            continue
+        vid = re.sub(r"\$\{(\w+)\}", lambda m: str(pvars.get(m.group(1), m.group(0))), vid.strip())
+        if "${" in vid:
+            continue
+        info_path = os.path.join(vls.video_root(project_id, vid), "plate", "info.json")
+        if not os.path.isfile(info_path):
+            hint = f" This pipeline was made in project '{home}'." if home and home != project_id else ""
+            raise ProcessError(f"Video '{vid}' is not in project '{project_id}'.{hint} "
+                               f"Open the project that has this video, or set video_id and the layer ids to your own video.")
+
+
 def run_pipeline(project_id: str, pipeline_def: Dict[str, Any], initial_values: Optional[Dict[str, Any]] = None) -> str:
     """Executes all stages of the pipeline sequentially, passing outputs into downstream inputs."""
     job_id = f"pjob_{uuid.uuid4().hex[:10]}"
     stages = pipeline_def.get("stages", [])
     if not stages:
         raise ProcessError("Pipeline has no stages defined")
+    _preflight_video_stages(project_id, pipeline_def)
 
     with _LOCK:
         _PIPELINE_JOBS[job_id] = {

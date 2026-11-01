@@ -3553,6 +3553,27 @@ export function initStudioArchitecture(ctx) {
                 currentPipe.name_ru = currentPipe.name;
 
                 currentPipe.description = ov.querySelector("#pipe-desc-inp")?.value || "";
+                // A pipeline bound to a project (its videos and layers live there): offer to open that project first
+                const homePid = currentPipe.project_id;
+                if (homePid && homePid !== currentProject?.id) {
+                    showDeleteConfirmModal({
+                        title: uiText("Pipeline project", "Проект пайплайна"),
+                        message: uiText(
+                            `This pipeline works on videos and layers of the project «${homePid}».\nYou are in «${currentProject?.id || "—"}».\n\nOpen «${homePid}» and run it there?`,
+                            `Этот пайплайн работает с видео и слоями проекта «${homePid}».\nСейчас открыт «${currentProject?.id || "—"}».\n\nОткрыть «${homePid}» и запустить пайплайн там?`),
+                        icon: "folder-open", iconColor: "#a78bfa", confirmBg: "#6d28d9", confirmBorder: "#8b5cf6",
+                        confirmText: uiText("Open & run", "Открыть и запустить"),
+                        onConfirm: async () => {
+                            const sbx = homePid === "sandbox_playground";
+                            await selectProject(sbx ? { project_id: homePid, mode: "sandbox", name: "Sandbox Playground" } : { project_id: homePid });
+                            if (currentProject?.id !== homePid) { showToastNotification(uiText("Could not open the project", "Не удалось открыть проект"), true); return; }
+                            const again = ov.isConnected && ov.querySelector("#pipe-run-btn");
+                            if (again) again.click();
+                            else showToastNotification(uiText("Project opened: press Run again", "Проект открыт: нажмите «Запустить» ещё раз"));
+                        }
+                    });
+                    return;
+                }
 
 
 
@@ -3572,7 +3593,7 @@ export function initStudioArchitecture(ctx) {
 
                         headers: { "Content-Type": "application/json" },
 
-                        body: JSON.stringify({ project_id: pid, pipeline: currentPipe })
+                        body: JSON.stringify({ project_id: currentProject?.id || pid, pipeline: currentPipe })
 
                     }).then(r => r.json());
 

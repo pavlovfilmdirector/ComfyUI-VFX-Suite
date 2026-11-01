@@ -3,6 +3,7 @@
   "name": "Park Capoeira: 3D Layout + Pose → FLUX First Frame → LTX Dual IC-LoRA",
   "name_ru": "Капоэйра в парке: 3D-лейаут + поза → первый кадр FLUX → LTX (2 IC-LoRA)",
   "description": "Демо-шот из README (capoeira_park_dual_lora.mp4): аниме-девочка танцует капоэйру в парке на фоне скамейки, дерева и фонаря, камера облетает её по дуге. Запускать в проекте Sandbox Playground (видео capoeira_orbit, 81 кадр, 576×1024, 24 fps). Исходные слои — рендеры 3D-сцены: лейаут парка из примитивов без персонажа (vl_rgb_052fc23e) и поза манекена с анимацией Capoeira (vl_pose_5a25c04c). 1) Гайд первого кадра: лейаут + скелет на кадре 0. 2) FLUX.3 Klein Edit рисует первый кадр (сид 21). 3) LTX-2.5: layout-to-render по лейауту + union-control по позе (attention 0.8), первый кадр как референс, сид 42; с двумя IC-LoRA проход идёт кусками по 49 кадров с перекрытием. 4) Экспорт MP4 в размере плейта (ролик в README — склейка «3D-рендер | результат», её этот пайплайн не собирает). Для своего шота поменяйте video_id в variables и id слоёв в шагах 1 и 3.",
+  "project_id": "sandbox_playground",
   "variables": {
     "video_id": "capoeira_orbit"
   },
