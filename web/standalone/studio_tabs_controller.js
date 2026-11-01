@@ -3051,7 +3051,7 @@ export function initStudioArchitecture(ctx) {
                     <div style="flex:1; overflow:auto; padding:10px 14px; display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap:8px; align-content:start;">${items}</div>
                     <div style="display:flex; gap:6px; align-items:center; padding:8px 14px; border-top:1px solid #27272a;">
                         <span style="opacity:.6; font-size:10.5px;">${uiText("Or type an id / URL:", "Или вручную id / URL:")}</span>
-                        <input class="pa-manual" style="${fld} flex:1;" placeholder="${kind === "layer" ? "vl_rgb_… / video/vl_rgb_…" : kind === "video_id" ? "video id" : "/vfx/…"}">
+                        <input class="pa-manual" style="${fld} flex:1;" placeholder="${kind === "layer" ? "vl_rgb_… / video/vl_rgb_…" : kind === "video_id" ? "video id" : "URL"}">
                         <button class="vfx-btn pa-manual-ok" style="padding:4px 10px;">OK</button>
                     </div>`;
                 box.querySelector(".pa-x").onclick = () => close(undefined);
