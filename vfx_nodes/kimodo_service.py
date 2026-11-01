@@ -120,9 +120,11 @@ def _run(job_id, st, out_dir, stem, prompt, duration, seed, steps):
                 if not line:
                     continue
                 tail = (tail + [line])[-40:]
-                m = re.search(r"(\d+)%\|", line)          # tqdm diffusion progress
+                m = re.search(r"(\d+)%\|", line)          # tqdm progress
                 upd = {"log": tail}
-                if m:
+                if m and ("Fetching" in line or "Downloading" in line or "it/s]" in line and "B/s" in line):
+                    upd.update(message=f"Kimodo: downloading models (first run) {m.group(1)}%")
+                elif m:
                     upd.update(progress=min(95, 15 + int(int(m.group(1)) * 0.8)), message=f"Kimodo: diffusion {m.group(1)}%")
                 elif "Saving" in line:
                     upd.update(message="Kimodo: saving the motion…", progress=96)
@@ -154,9 +156,45 @@ def get_job(job_id: str) -> Dict[str, Any]:
         return dict(j) if j else {"status": "not_found"}
 
 
+def _kill_tree(pid: int) -> bool:
+    try:
+        import psutil
+        proc = psutil.Process(int(pid))
+        kids = proc.children(recursive=True)
+        for k in kids:
+            k.kill()
+        proc.kill()
+        return True
+    except Exception:  # noqa: BLE001
+        try:
+            os.kill(int(pid), 9)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+
 def cancel_job(job_id: str) -> Dict[str, Any]:
+    """Stops a Kimodo run at once (the process can sit silent for minutes while it downloads or loads models).
+    'pid_<n>' stops an orphaned Kimodo process by id, only if it runs Kimodo's own Python."""
     with _LOCK:
-        if job_id in _JOBS:
-            _JOBS[job_id]["cancelled"] = True
-            return {"status": "ok"}
+        j = _JOBS.get(job_id)
+        if j:
+            j["cancelled"] = True
+            pid = j.get("pid")
+        else:
+            pid = None
+    if pid:
+        _kill_tree(pid)
+        return {"status": "ok"}
+    m = re.fullmatch(r"pid_(\d+)", str(job_id))
+    if m:
+        try:
+            import psutil
+            proc = psutil.Process(int(m.group(1)))
+            py = os.path.normcase(os.path.abspath(kimodo_paths().get("python") or ""))
+            if py and os.path.normcase(os.path.abspath(proc.exe())) == py:
+                return {"status": "ok" if _kill_tree(proc.pid) else "error"}
+            return {"status": "refused", "reason": "not a Kimodo process"}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "error", "reason": str(e)}
     return {"status": "not_found"}
