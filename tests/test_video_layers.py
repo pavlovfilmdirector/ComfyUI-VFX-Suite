@@ -148,6 +148,7 @@ def test_resolve_ic_lora_file(vl, monkeypatch):
 
 def test_tracker_ground_plane_wall_rejection():
     """Verify that vertical walls in point cloud are rejected and camera remains upright at 1.55m."""
+    pytest.importorskip("scipy")
     from scipy.spatial.transform import Rotation
     o3d = pytest.importorskip("open3d")
 

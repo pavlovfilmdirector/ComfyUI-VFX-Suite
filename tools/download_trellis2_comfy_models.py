@@ -3,7 +3,7 @@ import sys
 import time
 import subprocess
 
-MODELS_DIR = r"B:\StabilityMatrix2\ComfyUI\models"
+MODELS_DIR = os.environ.get("COMFYUI_MODELS") or (sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "models"))  # <ComfyUI>/custom_nodes/<repo>/tools -> <ComfyUI>/models
 
 ITEMS = [
     {

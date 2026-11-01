@@ -11,6 +11,23 @@ from vfx_nodes.deconstruct_service import (
 )
 from vfx_nodes.deconstruct_node import VFXDeconstructNukeNode
 
+
+@pytest.fixture(autouse=True)
+def _isolated_projects(tmp_path, monkeypatch):
+    """Keep test projects out of the real projects/ folder."""
+    import vfx_nodes.deconstruct_service as ds
+    def _tmp_dir(pid):
+        d = tmp_path / "projects" / str(pid or "sandbox_playground")
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    monkeypatch.setattr(ds, "get_project_dir", _tmp_dir)
+    try:
+        import vfx_nodes.deconstruct_node as dn
+        if hasattr(dn, "get_project_dir"):
+            monkeypatch.setattr(dn, "get_project_dir", _tmp_dir)
+    except Exception:
+        pass
+
 def test_telemetry_service():
     telem = get_system_telemetry()
     assert isinstance(telem, dict)
@@ -91,6 +108,9 @@ def test_nuke_export(tmp_path):
     assert "cam_shot01" in nk_text or "Camera2" in nk_text
 
 def test_deconstruct_nuke_node():
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch, "zeros"):
+        pytest.skip("needs real torch")
     node = VFXDeconstructNukeNode()
     out = node.process(project_id="test_nuke_export_proj")
     assert isinstance(out, tuple)

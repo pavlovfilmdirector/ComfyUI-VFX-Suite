@@ -122,6 +122,7 @@ def test_template_models_installed_here(path):
 
 
 def test_inject_style_lora_inactive_when_empty():
+    pytest.importorskip("aiohttp")   # server_api needs ComfyUI's web stack
     from vfx_nodes.server_api import inject_style_lora
     t2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_t2v.json")
     with open(t2v_path, encoding="utf-8") as f:
@@ -138,6 +139,7 @@ def test_inject_style_lora_inactive_when_empty():
 
 
 def test_inject_style_lora_active_t2v():
+    pytest.importorskip("aiohttp")   # server_api needs ComfyUI's web stack
     from vfx_nodes.server_api import inject_style_lora
     t2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_t2v.json")
     with open(t2v_path, encoding="utf-8") as f:
@@ -160,6 +162,7 @@ def test_inject_style_lora_active_t2v():
 
 
 def test_inject_style_lora_active_i2v():
+    pytest.importorskip("aiohttp")   # server_api needs ComfyUI's web stack
     from vfx_nodes.server_api import inject_style_lora
     i2v_path = os.path.join(ROOT, "workflows", "api", "video_gen", "ltx25_i2v.json")
     with open(i2v_path, encoding="utf-8") as f:

@@ -169,3 +169,17 @@ def make_wav(path, seconds=1.0, sr=16000, freq=440.0):
 @pytest.fixture
 def fake_comfy(comfy_dirs):
     return FakeComfy(comfy_dirs)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_projects_registry(tmp_path, monkeypatch):
+    """Never let tests touch the real projects/projects_registry.json."""
+    try:
+        pm = load("project_manager")
+    except Exception:  # noqa: BLE001
+        yield
+        return
+    reg_dir = tmp_path / "_registry"
+    reg_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(pm, "PROJECTS_REGISTRY_FILE", str(reg_dir / "projects_registry.json"))
+    yield
