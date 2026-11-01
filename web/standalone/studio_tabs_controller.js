@@ -2464,7 +2464,8 @@ export function initStudioArchitecture(ctx) {
         try {
             if (pipeMon.jobId) return;
             const pid = currentProject?.id;
-            const r = await fetch(`/vfx/pipeline_jobs${pid ? `?project_id=${encodeURIComponent(pid)}` : ""}`).then(x => x.json());
+            const qs = pid ? `?project_id=${encodeURIComponent(pid)}` : "";
+            const r = await fetch("/vfx/pipeline_jobs" + qs).then(x => x.json());
             const job = (r.jobs || [])[0];
             if (job && job.id) { pipeMon.lastIdx = job.current_stage_idx ?? -1; pipeMonStart(job.id); pipeMon.lastIdx = job.current_stage_idx ?? -1; }
         } catch (_) {}
