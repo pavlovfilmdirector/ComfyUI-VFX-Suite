@@ -1764,6 +1764,33 @@ def register_server_routes():
 
 
 
+        # ---- Text-to-motion (NVIDIA Kimodo, separate environment) ----
+        @routes.get("/vfx/motion/kimodo/status")
+        async def vfx_kimodo_status(request):
+            from .kimodo_service import kimodo_status
+            return add_cors_headers(web.json_response(kimodo_status()))
+
+        @routes.post("/vfx/motion/kimodo/generate")
+        async def vfx_kimodo_generate(request):
+            from .kimodo_service import start_motion
+            try:
+                d = await request.json()
+                res = await asyncio.to_thread(start_motion, _sanitize_id(str(d.get("project_id") or "sandbox_playground")),
+                                              d.get("prompt", ""), d.get("duration", 5.0), d.get("seed"), d.get("steps"))
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.get("/vfx/motion/kimodo/job/{job_id}")
+        async def vfx_kimodo_job(request):
+            from .kimodo_service import get_job
+            return add_cors_headers(web.json_response(get_job(request.match_info["job_id"])))
+
+        @routes.post("/vfx/motion/kimodo/job/{job_id}/cancel")
+        async def vfx_kimodo_cancel(request):
+            from .kimodo_service import cancel_job
+            return add_cors_headers(web.json_response(cancel_job(request.match_info["job_id"])))
+
         @routes.get("/vfx/pipeline_jobs")
         async def vfx_pipeline_jobs(request):
             """Running pipeline jobs (the studio re-attaches its progress window after a reload)."""

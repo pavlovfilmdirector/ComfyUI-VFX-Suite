@@ -101,7 +101,9 @@ These tools need packages that clash with ComfyUI's, so KESHIKI runs them as sep
   "trellis_python": "D:/envs/trellis/python.exe",
   "hunyuan3d_root": "D:/Hunyuan3D-Omni",
   "hunyuan3d_python": "D:/envs/hunyuan3d/python.exe",
-  "ollama_models": "D:/Ollama/models"
+  "ollama_models": "D:/Ollama/models",
+  "kimodo_root": "D:/kimodo",
+  "kimodo_python": "D:/kimodo/venv/Scripts/python.exe"
 }
 ```
 
@@ -112,6 +114,15 @@ These tools need packages that clash with ComfyUI's, so KESHIKI runs them as sep
 - **TRELLIS.2** (image → 3D, mesh texturing): install Microsoft's TRELLIS.2 repo in its own environment and download
   `TRELLIS.2-4B` into `<trellis_root>/weights/microsoft/TRELLIS.2-4B`. KESHIKI calls `tools/trellis_runner.py` inside it.
 - **Depth Pro (optional depth engine):** clone `apple/ml-depth-pro`, run its `get_pretrained_models.sh` (→ `checkpoints/depth_pro.pt`, 1.9 GB) and set `depth_pro_root`. It runs in the ComfyUI env (needs `timm`). ~1 s/frame on a 24 GB GPU; sharp silhouettes and steady over time, but less relief inside faces than Depth Anything V2.
+- **Motion from text: NVIDIA Kimodo** (3D tab → ✨ next to the animation button). Clone
+  [nv-tlabs/kimodo](https://github.com/nv-tlabs/kimodo), create a venv inside it and `pip install -e .`
+  (it pins `transformers==5.1.0`, so it can't share ComfyUI's environment), then set `kimodo_root` (and `kimodo_python`
+  if the venv is not `<kimodo_root>/venv`). The models download on the first run. Its text encoder is
+  **Llama-3.1-8B-Instruct**: accept Meta's license on Hugging Face (`meta-llama/Llama-3.1-8B-Instruct`) and log in with
+  `huggingface-cli login` first. Needs about 17 GB of VRAM; KESHIKI unloads ComfyUI's models before each run. The motion
+  comes back as a BVH of the SOMA skeleton and is retargeted onto the selected character (KESHIKI mannequin, UE, Mixamo).
+  Licenses: code Apache-2.0, SOMA models NVIDIA Open Model License, text encoder Llama 3.1 Community License
+  ("Built with Llama").
 - **LoRA training**: see [docs/LORA_TRAINING.md](docs/LORA_TRAINING.md) (Linux / WSL2).
 
 ## Notes

@@ -584,12 +584,13 @@ export async function initStandaloneLayoutStudio() {
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <button class="vfx-btn" id="btn-add-skeleton" ${tipAttr('Add a skeleton without a mesh (UE mannequin bones) — animations from Mixamo / UE are retargeted onto it', 'Добавить скелет без меша (кости манекена UE) — на него ретаргетятся анимации Mixamo / UE')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="user-plus" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-import-anim" ${tipAttr('Character animation (FBX/GLB: Mixamo, UE) for the selected character — retargeted automatically', 'Анимация персонажа (FBX/GLB: Mixamo, UE) для выбранного персонажа — ретаргет автоматически')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="person-standing" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-kimodo-motion" ${tipAttr('Motion from text (NVIDIA Kimodo): describe an action, it is generated and put on the selected character', 'Движение по тексту (NVIDIA Kimodo): опишите действие, оно сгенерируется и встанет на выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#76b900;"><i data-lucide="sparkles" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-toggle-bones" ${tipAttr('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Characters -> 2D pose layer (OpenPose) on the tracked video, through the shot camera', 'Персонажи на 2D-слой позы (OpenPose) на трекнутом видео через камеру шота')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Characters rendered through the shot camera -> RGB layer on the tracked video', 'Рендер персонажей через камеру шота -> RGB-слой на видео')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
 
                         <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
-                        <input type="file" id="file-anim-input" accept=".fbx,.glb,.gltf" style="display:none;" />
+                        <input type="file" id="file-anim-input" accept=".fbx,.glb,.gltf,.bvh" style="display:none;" />
                         <select id="sel-anim-clip" class="vfx-interp-select" ${tipAttr('Animation clip from the file', 'Клип анимации из файла')} style="display:none; max-width:140px; height:24px; font-size:10px; padding:0 4px;"></select>
                         <button class="vfx-btn" id="btn-toggle-hips-motion" ${tipAttr('Toggle Hips Translation / Root Motion', 'Вкл/выкл перемещение таза (Root Motion)')} style="display:none; height:24px; font-size:10px; padding:0 6px; color:#f59e0b;">Hips: ON</button>
                         <button class="vfx-btn" id="btn-bake-root-motion" ${tipAttr('Bake Hips translation into Object Pivot keyframes', 'Запечь смещение таза в пивот объекта')} style="display:none; height:24px; font-size:10px; padding:0 6px; color:#38bdf8;">📌 Root to Pivot</button>
@@ -5706,11 +5707,107 @@ let lastMonitorRenderTime = 0;
         return root;
     }
 
+    // ---- BVH (motion capture text format; Kimodo exports its SOMA skeleton as BVH) -> { root, clips } ----
+    function parseBVH(text, clipName = "BVH") {
+        const tok = text.split(/\s+/).filter(Boolean);
+        let i = 0;
+        const next = () => tok[i++];
+        const expect = (w) => { const t = next(); if (t !== w) throw new Error(`BVH: expected ${w}, got ${t}`); };
+        const joints = [];
+        function readJoint(parent, isEnd) {
+            const name = isEnd ? `${parent.name}_end` : next();
+            expect("{");
+            const j = { name, parent, offset: [0, 0, 0], channels: [], children: [], isEnd };
+            for (;;) {
+                const t = next();
+                if (t === "OFFSET") j.offset = [parseFloat(next()), parseFloat(next()), parseFloat(next())];
+                else if (t === "CHANNELS") { const n = parseInt(next(), 10); for (let k = 0; k < n; k++) j.channels.push(next()); }
+                else if (t === "JOINT") j.children.push(readJoint(j, false));
+                else if (t === "End") { expect("Site"); j.children.push(readJoint(j, true)); }
+                else if (t === "}") break;
+                else if (t === undefined) throw new Error("BVH: unexpected end of hierarchy");
+            }
+            joints.push(j);
+            return j;
+        }
+        expect("HIERARCHY");
+        if (next() !== "ROOT") throw new Error("BVH: ROOT expected");
+        const rootJ = readJoint(null, false);
+        expect("MOTION"); expect("Frames:");
+        const nFrames = parseInt(next(), 10);
+        expect("Frame"); expect("Time:");
+        const dt = parseFloat(next()) || (1 / 30);
+        // channel order as written: depth-first from ROOT
+        const order = [];
+        (function walk(j) { if (!j.isEnd) { order.push(j); j.children.forEach(walk); } })(rootJ);
+        const nCh = order.reduce((n, j) => n + j.channels.length, 0);
+        const bones = new Map();
+        (function build(j, parentBone) {
+            if (j.isEnd) return;
+            const b = new THREE.Bone(); b.name = j.name;
+            b.position.set(j.offset[0], j.offset[1], j.offset[2]);
+            if (parentBone) parentBone.add(b);
+            bones.set(j, b);
+            j.children.forEach(c => build(c, b));
+        })(rootJ, null);
+        const times = new Float32Array(nFrames);
+        const posVals = new Map(), rotVals = new Map();
+        order.forEach(j => {
+            if (j.channels.some(c => /position$/i.test(c))) posVals.set(j, new Float32Array(nFrames * 3));
+            if (j.channels.some(c => /rotation$/i.test(c))) rotVals.set(j, new Float32Array(nFrames * 4));
+        });
+        const q = new THREE.Quaternion(), qa = new THREE.Quaternion();
+        const AX = { X: new THREE.Vector3(1, 0, 0), Y: new THREE.Vector3(0, 1, 0), Z: new THREE.Vector3(0, 0, 1) };
+        for (let f = 0; f < nFrames; f++) {
+            times[f] = f * dt;
+            order.forEach(j => {
+                const p = [j.offset[0], j.offset[1], j.offset[2]];
+                q.identity();
+                j.channels.forEach(c => {
+                    const v = parseFloat(tok[i++]);
+                    const ax = c[0].toUpperCase();
+                    if (/position$/i.test(c)) p["XYZ".indexOf(ax)] = v;
+                    else q.multiply(qa.setFromAxisAngle(AX[ax], v * Math.PI / 180));   // channel order = multiplication order
+                });
+                const pv = posVals.get(j); if (pv) pv.set(p, f * 3);
+                const rv = rotVals.get(j); if (rv) rv.set([q.x, q.y, q.z, q.w], f * 4);
+            });
+        }
+        if (!nCh) throw new Error("BVH: no channels");
+        const tracks = [];
+        posVals.forEach((v, j) => tracks.push(new THREE.VectorKeyframeTrack(`${j.name}.position`, times, v)));
+        rotVals.forEach((v, j) => tracks.push(new THREE.QuaternionKeyframeTrack(`${j.name}.quaternion`, times, v)));
+        const clip = new THREE.AnimationClip(clipName, nFrames * dt, tracks);
+        const root = new THREE.Group(); root.name = "BVH";
+        root.add(bones.get(rootJ));
+        root.updateMatrixWorld(true);
+        return { root, clips: [clip] };
+    }
+    // NVIDIA SOMA skeleton (Kimodo) -> UE mannequin. SOMA uses Mixamo-like names with a different meaning for
+    // the legs and spine (LeftLeg = thigh, LeftShin = calf; Spine1, Spine2, Chest), so it gets its own table.
+    const SOMA_TO_UE = {
+        Hips: "pelvis", Spine1: "spine_01", Spine2: "spine_02", Chest: "spine_03", Neck1: "neck_01", Neck2: "neck_02", Head: "head"
+    };
+    ["Left", "Right"].forEach(side => {
+        const s = side === "Left" ? "l" : "r";
+        Object.assign(SOMA_TO_UE, {
+            [`${side}Shoulder`]: `clavicle_${s}`, [`${side}Arm`]: `upperarm_${s}`, [`${side}ForeArm`]: `lowerarm_${s}`, [`${side}Hand`]: `hand_${s}`,
+            [`${side}Leg`]: `thigh_${s}`, [`${side}Shin`]: `calf_${s}`, [`${side}Foot`]: `foot_${s}`, [`${side}ToeBase`]: `ball_${s}`
+        });
+        for (let k = 1; k <= 3; k++) SOMA_TO_UE[`${side}HandThumb${k}`] = `thumb_0${k}_${s}`;
+        [["Index", "index"], ["Middle", "middle"], ["Ring", "ring"], ["Pinky", "pinky"]].forEach(([so, ue]) => {
+            for (let k = 2; k <= 4; k++) SOMA_TO_UE[`${side}Hand${so}${k}`] = `${ue}_0${k - 1}_${s}`;   // SOMA *1 = metacarpal
+        });
+    });
     function loadAnyModel(url, name) {
         if (url === MANNEQUIN_URL) return Promise.resolve({ root: buildMannequinSkeleton(), clips: [] });
         const ext = (String(name || url).split("?")[0].split(".").pop() || "").toLowerCase();
         return new Promise((resolve, reject) => {
-            if (ext === "fbx") {
+            if (ext === "bvh") {
+                fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+                    .then(t => resolve(parseBVH(t, String(name || url).split("/").pop().replace(/\.bvh.*$/i, ""))))
+                    .catch(reject);
+            } else if (ext === "fbx") {
                 if (!THREE.FBXLoader) return reject(new Error("THREE.FBXLoader is not available"));
                 new THREE.FBXLoader().load(url, (o) => resolve({ root: o, clips: o.animations || [] }), undefined, reject);
             } else {
@@ -5790,8 +5887,12 @@ let lastMonitorRenderTime = 0;
         const pivot = new THREE.Group(); pivot.rotation.x = Math.PI / 2; pivot.add(srcRoot); pivot.updateMatrixWorld(true);
         const pairs = [];
         const tgtNames = new Set(rig.bones.keys());
+        const isSoma = src.bones.has("LeftShin") || src.bones.has("RightShin");     // Kimodo / SOMA skeleton
+        const ueToTarget = {};                                                       // UE name -> this rig's bone (Mixamo rigs)
+        Object.entries(MIXAMO_TO_UE).forEach(([mx, ue]) => { if (tgtNames.has(mx)) ueToTarget[ue] = mx; });
         src.bones.forEach((sb, sn) => {
-            const tn = tgtNames.has(sn) ? sn : (toUEBone(sb.name) || MIXAMO_TO_UE[sn]);
+            const soma = isSoma ? SOMA_TO_UE[sn] : null;
+            const tn = soma ? (tgtNames.has(soma) ? soma : ueToTarget[soma]) : (isSoma ? null : (tgtNames.has(sn) ? sn : (toUEBone(sb.name) || MIXAMO_TO_UE[sn])));
             const tb = tn && rig.bones.get(tn);
             if (tb) pairs.push({ sn, tn, sb, tb });
         });
@@ -5883,7 +5984,7 @@ let lastMonitorRenderTime = 0;
         obj.userData.animUrl = url;
         // same skeleton (bone names match) -> play the clip directly; otherwise retarget
         const trackBones = new Set(clip.tracks.map(tr => canonBone(tr.name.split(".")[0])));
-        const direct = [...trackBones].filter(n => rig.bones.has(n)).length >= Math.max(6, trackBones.size * 0.7);
+        const direct = !trackBones.has("LeftShin") && [...trackBones].filter(n => rig.bones.has(n)).length >= Math.max(6, trackBones.size * 0.7);   // SOMA (Kimodo) always retargets
         if (direct) {
             const renamed = clip.clone();
             renamed.tracks.forEach(tr => { const [b, ...rest] = tr.name.split("."); const tb = rig.bones.get(canonBone(b)); if (tb) tr.name = [tb.name, ...rest].join("."); });
@@ -6940,6 +7041,77 @@ let lastMonitorRenderTime = 0;
             };
         }
         if (bones) bones.onclick = () => window.__vfxCharacters3D.toggleBones();
+        // ---- Motion from text: NVIDIA Kimodo (separate environment) -> BVH -> retargeted onto the character ----
+        const km = document.getElementById("btn-kimodo-motion");
+        if (km) km.onclick = async () => {
+            const toast = (en, ru, err) => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(en, ru), !!err); };
+            const st = await fetch("/vfx/motion/kimodo/status").then(r => r.json()).catch(() => ({ available: false }));
+            document.getElementById("vfx-kimodo-pop")?.remove();
+            const pop = document.createElement("div");
+            pop.id = "vfx-kimodo-pop";
+            pop.style.cssText = "position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 100001; width: 440px; max-width: 94vw; background: #111114; border: 1px solid #3f3f46; border-radius: 10px; color: #f4f4f5; font-size: 11.5px; box-shadow: 0 24px 70px rgba(0,0,0,.75); padding: 12px; display: flex; flex-direction: column; gap: 8px;";
+            ["keydown", "wheel", "mousedown"].forEach(ev => pop.addEventListener(ev, e => e.stopPropagation()));
+            const fld = "background:#0b0b0d; color:#e4e4e7; border:1px solid #333; border-radius:5px; font-size:11.5px; padding:6px 8px;";
+            pop.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <b style="font-size:12.5px;">✨ ${uiText("Motion from text", "Движение по тексту")}</b>
+                    <span style="font-size:9.5px; opacity:.55;">NVIDIA Kimodo</span>
+                    <span style="flex:1;"></span>
+                    <button class="vfx-btn" data-a="x" style="padding:2px 8px;">✕</button>
+                </div>
+                ${st.available ? "" : `<div style="color:#fca5a5; font-size:10.5px;">${uiText("Kimodo is not set up. Install it (see INSTALL.md) and set kimodo_root in keshiki_local.json.", "Kimodo не настроен. Установите его (см. INSTALL.md) и укажите kimodo_root в keshiki_local.json.")}</div>`}
+                <textarea data-k="prompt" rows="3" style="${fld} resize:vertical;" placeholder="A person dances capoeira, then sits down on a bench."></textarea>
+                <div style="font-size:9.5px; opacity:.55;">${uiText("English works best. Several sentences = several actions in a row.", "Лучше по-английски. Несколько предложений — несколько действий подряд.")}</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label>${uiText("Seconds", "Секунд")} <input data-k="dur" type="number" min="1" max="30" step="0.5" value="5" style="${fld} width:64px;"></label>
+                    <label>${uiText("Seed", "Сид")} <input data-k="seed" type="number" placeholder="${uiText("random", "случайно")}" style="${fld} width:90px;"></label>
+                    <span style="flex:1;"></span>
+                    <button class="vfx-btn vfx-btn-primary" data-a="go" ${st.available ? "" : "disabled"} style="padding:5px 14px;">${uiText("Generate", "Сгенерировать")}</button>
+                </div>
+                <div data-k="status" style="font-size:10.5px; opacity:.8; min-height:14px;"></div>
+                <div style="height:4px; background:rgba(255,255,255,.08); border-radius:99px; overflow:hidden;"><div data-k="bar" style="width:0%; height:100%; background:linear-gradient(90deg,#76b900,#c084fc);"></div></div>`;
+            document.body.appendChild(pop);
+            const q = (k) => pop.querySelector(`[data-k="${k}"]`);
+            let jobId = null;
+            pop.querySelector('[data-a="x"]').onclick = () => { if (jobId) fetch(`/vfx/motion/kimodo/job/${jobId}/cancel`, { method: "POST" }); pop.remove(); };
+            q("prompt").focus();
+            pop.querySelector('[data-a="go"]').onclick = async (e) => {
+                const prompt = q("prompt").value.trim();
+                if (!prompt) { q("prompt").focus(); return; }
+                const btn = e.currentTarget; btn.disabled = true;
+                const pid = (window.currentProject && window.currentProject.id) || "sandbox_playground";
+                const seed = q("seed").value === "" ? null : Number(q("seed").value);
+                const res = await fetch("/vfx/motion/kimodo/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ project_id: pid, prompt, duration: Number(q("dur").value) || 5, seed }) }).then(r => r.json()).catch(err => ({ error: err.message }));
+                if (res.error) { q("status").textContent = res.error; btn.disabled = false; return; }
+                jobId = res.job_id;
+                logMsg(`[Kimodo] "${prompt}" → ${jobId}`);
+                for (;;) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    if (!pop.isConnected) return;
+                    const j = await fetch(`/vfx/motion/kimodo/job/${jobId}`).then(r => r.json()).catch(() => null);
+                    if (!j) continue;
+                    q("status").textContent = j.message || "";
+                    q("bar").style.width = `${j.progress || 0}%`;
+                    if (j.status === "running") continue;
+                    jobId = null;
+                    if (j.status !== "done") { btn.disabled = false; toast(`Kimodo: ${j.error || j.status}`, `Kimodo: ${j.error || j.status}`, true); return; }
+                    try {
+                        let obj = selectedObject && selectedObject.userData.type === "character" ? selectedObject : null;
+                        if (!obj) obj = [...threeObjectsMap.values()].reverse().find(o => o.userData.type === "character") || null;
+                        if (!obj) obj = await window.__vfxCharacters3D.addSkeleton("Kimodo mannequin");
+                        await window.__vfxCharacters3D.animateUrl(j.bvh_url, obj.userData.id);
+                        q("status").textContent = uiText(`Done: applied to "${obj.userData.name}"`, `Готово: движение на «${obj.userData.name}»`);
+                        toast(`Motion applied to "${obj.userData.name}"`, `Движение на «${obj.userData.name}»`);
+                    } catch (err) {
+                        q("status").textContent = err.message;
+                        toast(`Motion: ${err.message}`, `Движение: ${err.message}`, true);
+                    }
+                    btn.disabled = false;
+                    return;
+                }
+            };
+        };
         const pb = document.getElementById("btn-pose-from-3d");
         if (pb) pb.onclick = () => {
             pb.disabled = true;
