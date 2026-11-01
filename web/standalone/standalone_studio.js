@@ -807,6 +807,7 @@ export async function initStandaloneLayoutStudio() {
         <div class="vfx-timeline-track-container" id="timeline-track-container" style="position: relative;">
             <input type="range" class="vfx-timeline-slider" id="timeline-slider" min="0" max="${totalFrames - 1}" value="${currentFrame}" />
             <div class="vfx-keyframe-markers" id="key-markers-track"></div>
+            <div id="camera-cuts-track" style="position: absolute; left: 0; right: 0; top: -14px; height: 12px; display: none; z-index: 6;"></div>
             <div id="timeline-marquee-box" style="position: absolute; display: none; background: rgba(56, 189, 248, 0.22); border: 1px solid #38bdf8; border-radius: 2px; pointer-events: none; z-index: 10;"></div>
         </div>
         <div class="vfx-timeline-controls">
@@ -826,6 +827,11 @@ export async function initStandaloneLayoutStudio() {
                     <span id="hud-frame-label">/ ${String(totalFrames).padStart(3, '0')}</span>
                 </span>
                 <div id="vfx-timeline-active-context-bar" style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;"></div>
+                <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 8px;">
+                    <select id="sel-camera-asset" ${tipAttr('Cameras of this level: pick one to look through it', 'Камеры уровня: выберите, чтобы смотреть через неё')} style="max-width: 140px; background: #0c0c10; color: #e4e4e7; border: 1px solid #333; border-radius: 3px; font-size: 10.5px; padding: 1px 3px;"></select>
+                    <button class="vfx-btn" id="btn-camera-cut" ${tipAttr('Camera cut: from the current frame on, the chosen camera is on air', 'Склейка камер: с текущего кадра в эфире выбранная камера')} style="padding: 2px 6px;">🎬 ${uiText('Cut', 'Склейка')}</button>
+                    <button class="vfx-btn" id="btn-camera-cut-del" ${tipAttr('Remove the camera cut at the current frame', 'Удалить склейку на текущем кадре')} style="padding: 2px 6px;">✂</button>
+                </span>
             </div>
             <div class="vfx-key-group">
                 <button class="vfx-btn" id="btn-context-key" ${tipAttr('Bind character, location, storyboard or action to frame (K)', 'Привязать персонажа, локацию, раскадровку или действие к кадру (K)')} style="padding: 2px 8px; font-weight: 500; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25);">🔗 + Key Context (K)</button>
@@ -4310,6 +4316,11 @@ let lastMonitorRenderTime = 0;
             }
             return selectedObject;
         }
+        {
+            let cutCam = null;                              // camera cuts on the timeline decide who is on air
+            try { cutCam = cutActorAt(currentFrame); } catch (_) {}
+            if (cutCam) return cutCam;
+        }
         if (lastActiveFreeCamGroup && threeObjectsMap.has(lastActiveFreeCamGroup.userData?.id)) {
             return lastActiveFreeCamGroup;
         }
@@ -4325,6 +4336,119 @@ let lastMonitorRenderTime = 0;
         return null;
     }
 
+    // ---- CAMERA ASSETS + CAMERA CUTS -------------------------------------------------------------------
+    // Every camera in the scene (free cameras + the tracked shot camera) is an asset of the level. A long animation
+    // can be cut between them on the timeline: a cut at frame F means "from F on, look through camera C".
+    // Cuts are stored on the cameras themselves (userData.cutFrames), so they travel with the scene manifest;
+    // the shot camera's cuts are kept per project in localStorage.
+    var SHOT_CAM_ID = "__shot__";   // var/function: may be read before this line runs during init
+    function cutPid() { return (window.currentProject && window.currentProject.id) || "sandbox_playground"; }
+    function shotCutFrames() {
+        try { return JSON.parse(localStorage.getItem(`vfx_3d_shot_cuts_${cutPid()}`) || "[]"); } catch (_) { return []; }
+    }
+    function setShotCutFrames(arr) {
+        try { localStorage.setItem(`vfx_3d_shot_cuts_${cutPid()}`, JSON.stringify(arr)); } catch (_) {}
+    }
+    function listCameraAssets() {
+        const out = [];
+        if (!isShotCameraDeleted && shotCamera) out.push({ id: SHOT_CAM_ID, name: uiText("Shot camera (track)", "Камера шота (трек)"), actor: shotCamera });
+        threeObjectsMap.forEach(o => { if (o.userData?.type === "camera" && o.userData.camera) out.push({ id: o.userData.id, name: o.userData.name || "Camera", actor: o }); });
+        return out;
+    }
+    function camActorById(id) {
+        if (id === SHOT_CAM_ID) return (!isShotCameraDeleted && shotCamera) ? shotCamera : null;
+        const o = threeObjectsMap.get(id);
+        return (o && o.userData?.type === "camera") ? o : null;
+    }
+    function camIdOfActor(a) { return a === shotCamera ? SHOT_CAM_ID : (a?.userData?.id || null); }
+    function cameraObjOf(a) { return !a ? null : (a === shotCamera ? shotCamera : (a.userData?.camera || null)); }
+    function getCameraCuts() {
+        const cuts = shotCutFrames().map(f => ({ frame: +f, camId: SHOT_CAM_ID }));
+        threeObjectsMap.forEach(o => {
+            if (o.userData?.type === "camera" && Array.isArray(o.userData.cutFrames)) o.userData.cutFrames.forEach(f => cuts.push({ frame: +f, camId: o.userData.id }));
+        });
+        return cuts.filter(c => Number.isFinite(c.frame)).sort((a, b) => a.frame - b.frame);
+    }
+    // the camera that is "on air" at frame f (null when the timeline has no cuts)
+    function cutActorAt(f) {
+        const cuts = getCameraCuts();
+        if (!cuts.length) return null;
+        let c = cuts[0];
+        for (const k of cuts) { if (k.frame <= f) c = k; else break; }
+        return camActorById(c.camId);
+    }
+    function addCameraCut(frame, actor) {
+        const id = camIdOfActor(actor);
+        if (!id) return false;
+        removeCameraCut(frame, false);
+        if (id === SHOT_CAM_ID) setShotCutFrames([...shotCutFrames(), frame]);
+        else actor.userData.cutFrames = [...(actor.userData.cutFrames || []), frame].sort((a, b) => a - b);
+        afterCutsChanged();
+        return true;
+    }
+    function removeCameraCut(frame, refresh = true) {
+        setShotCutFrames(shotCutFrames().filter(f => +f !== frame));
+        threeObjectsMap.forEach(o => { if (Array.isArray(o.userData?.cutFrames)) o.userData.cutFrames = o.userData.cutFrames.filter(f => +f !== frame); });
+        if (refresh) afterCutsChanged();
+    }
+    function afterCutsChanged() {
+        try { syncSceneData(); } catch (_) {}
+        renderCameraCutsTrack();
+        try { renderStudioViewports(); } catch (_) {}
+    }
+    var CUT_COLORS = ["#f59e0b", "#38bdf8", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#fb7185", "#22d3ee"];
+    function renderCameraCutsTrack() {
+        const track = document.getElementById("camera-cuts-track");
+        const sel = document.getElementById("sel-camera-asset");
+        const cams = listCameraAssets();
+        const colorOf = (id) => CUT_COLORS[Math.max(0, cams.findIndex(c => c.id === id)) % CUT_COLORS.length];
+        if (sel) {
+            const cur = camIdOfActor(cutActorAt(currentFrame) || getActiveMonitorCameraActor());
+            sel.innerHTML = cams.map(c => `<option value="${c.id}" ${c.id === cur ? "selected" : ""}>📹 ${String(c.name).replace(/</g, "&lt;")}</option>`).join("")
+                || `<option value="">${uiText("no cameras", "нет камер")}</option>`;
+        }
+        if (!track) return;
+        const cuts = getCameraCuts();
+        track.style.display = cuts.length ? "block" : "none";
+        if (!cuts.length) { track.innerHTML = ""; return; }
+        const span = Math.max(1, totalFrames - 1);
+        track.innerHTML = cuts.map((c, i) => {
+            const end = i + 1 < cuts.length ? cuts[i + 1].frame : totalFrames - 1;
+            const from = i === 0 ? 0 : c.frame;
+            const a = camActorById(c.camId);
+            const name = a ? (a === shotCamera ? uiText("Shot", "Шот") : (a.userData.name || "Camera")) : "?";
+            const col = colorOf(c.camId);
+            return `<div class="cam-cut-seg" data-frame="${c.frame}" data-cam="${c.camId}" title="${uiText("Camera", "Камера")}: ${name} · ${from}–${end} ${uiText("(click: go to cut, right-click: delete cut)", "(клик: перейти к склейке, правый клик: удалить склейку)")}"
+                style="position:absolute; top:0; bottom:0; left:${(from / span) * 100}%; width:${Math.max(0.4, ((end - from) / span) * 100)}%;
+                background:${col}33; border-left:2px solid ${col}; color:${col}; font-size:9px; line-height:12px; padding-left:3px; overflow:hidden; white-space:nowrap; cursor:pointer; box-sizing:border-box;">📹 ${name.replace(/</g, "&lt;")}</div>`;
+        }).join("");
+        track.querySelectorAll(".cam-cut-seg").forEach(seg => {
+            seg.onclick = (e) => { e.stopPropagation(); setTimelineFrameFromCuts(+seg.dataset.frame); };
+            seg.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); removeCameraCut(+seg.dataset.frame); };
+        });
+    }
+    function setTimelineFrameFromCuts(f) {
+        currentFrame = Math.max(0, Math.min(totalFrames - 1, f));
+        const sl = document.getElementById("timeline-slider"); if (sl) sl.value = currentFrame;
+        try { onFrameChanged(); } catch (_) {}
+    }
+    window.__vfxCameraCuts = { list: listCameraAssets, cuts: getCameraCuts, add: addCameraCut, remove: removeCameraCut, at: cutActorAt, render: renderCameraCutsTrack };
+    {
+        const sel = document.getElementById("sel-camera-asset");
+        if (sel) {
+            sel.onfocus = () => renderCameraCutsTrack();
+            sel.onchange = () => { const a = camActorById(sel.value); if (a) { try { selectObject(a); } catch (_) {} renderStudioViewports(); } };
+        }
+        const bc = document.getElementById("btn-camera-cut");
+        if (bc) bc.onclick = () => {
+            const a = camActorById(sel?.value) || getActiveMonitorCameraActor();
+            if (!a) { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("Add a camera first", "Сначала добавьте камеру"), true); return; }
+            addCameraCut(currentFrame, a);
+            if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Cut at frame ${currentFrame}: ${a === shotCamera ? "shot camera" : a.userData.name}`, `Склейка на кадре ${currentFrame}: ${a === shotCamera ? "камера шота" : a.userData.name}`));
+        };
+        const bd = document.getElementById("btn-camera-cut-del");
+        if (bd) bd.onclick = () => removeCameraCut(currentFrame);
+    }
     function getActiveMonitorCamera() {
         const actor = getActiveMonitorCameraActor();
         if (!actor) return null;
@@ -6073,6 +6197,12 @@ let lastMonitorRenderTime = 0;
                 shotCamera,
                 flyCamera
             ].filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+            // camera cuts on the timeline (or an explicit camera): each frame is seen through the camera on air
+            const forcedCam = opts.cameraId ? cameraObjOf(camActorById(opts.cameraId)) : null;
+            const cutsOn = !forcedCam && getCameraCuts().length > 0;
+            if (forcedCam) candidateCams.splice(0, candidateCams.length, forcedCam);
+            else if (cutsOn) { const c0 = cameraObjOf(cutActorAt(0)); if (c0) candidateCams.splice(0, candidateCams.length, c0); }
+            const camAspects = new Map();
             if (!candidateCams.length) {
                 throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
             }
@@ -6082,8 +6212,9 @@ let lastMonitorRenderTime = 0;
             const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
             const nFrames = opts.frames || totalFrames || 49;
 
-            for (const cam of candidateCams) {
+            for (let cam of candidateCams) {
                 const keepAspect = cam.aspect;
+                const cam0 = cam;
                 frames = [];
                 visible = 0;
                 dbg = null;
@@ -6092,6 +6223,13 @@ let lastMonitorRenderTime = 0;
                     cam.updateProjectionMatrix();
                     for (let f = 0; f < nFrames; f++) {
                         currentFrame = f;
+                        if (cutsOn) {
+                            const cf = cameraObjOf(cutActorAt(f));
+                            if (cf && cf !== cam) {
+                                if (cf !== cam0 && !camAspects.has(cf)) camAspects.set(cf, cf.aspect);
+                                cam = cf; cam.aspect = outW / outH; cam.updateProjectionMatrix();
+                            }
+                        }
                         if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
                         evaluateAnimation();
                         scene.updateMatrixWorld(true);
@@ -6120,8 +6258,10 @@ let lastMonitorRenderTime = 0;
                         }
                     }
                 } finally {
+                    cam = cam0;
                     cam.aspect = keepAspect;
                     cam.updateProjectionMatrix();
+                    camAspects.forEach((a, c) => { c.aspect = a; c.updateProjectionMatrix(); });
                     currentFrame = keepFrame;
                     onFrameChanged();
                 }
@@ -6195,7 +6335,11 @@ let lastMonitorRenderTime = 0;
             if (cardProgress) cardProgress.style.display = "none";
             throw new Error(uiText("No target video in project", "В проекте нет целевого видео"));
         }
-        const cam = (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : (getActiveMonitorCamera() || shotCamera);
+        const forcedCam = opts.cameraId ? cameraObjOf(camActorById(opts.cameraId)) : null;
+        const cutsOn = !forcedCam && getCameraCuts().length > 0;
+        let cam = forcedCam || (cutsOn ? cameraObjOf(cutActorAt(0)) : null)
+            || ((!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : (getActiveMonitorCamera() || shotCamera));
+        const cam0 = cam, camAspects = new Map();
         if (!cam) {
             if (cardProgress) cardProgress.style.display = "none";
             throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
@@ -6265,6 +6409,13 @@ let lastMonitorRenderTime = 0;
             cam.aspect = outW / outH; cam.updateProjectionMatrix();
             for (let f = 0; f < nFrames; f++) {
                 currentFrame = f;
+                if (cutsOn) {
+                    const cf = cameraObjOf(cutActorAt(f));
+                    if (cf && cf !== cam) {
+                        if (cf !== cam0 && !camAspects.has(cf)) camAspects.set(cf, cf.aspect);
+                        cam = cf; cam.aspect = outW / outH; cam.updateProjectionMatrix();
+                    }
+                }
                 if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
                 evaluateAnimation();
                 scene.updateMatrixWorld(true);
@@ -6294,7 +6445,9 @@ let lastMonitorRenderTime = 0;
             scene.overrideMaterial = keepOverride;
             scene.background = keepBg;
             keepVis.forEach((v, o) => { o.visible = v; });
+            cam = cam0;
             cam.aspect = keepAspect; cam.updateProjectionMatrix();
+            camAspects.forEach((a, c) => { c.aspect = a; c.updateProjectionMatrix(); });
             currentFrame = keepFrame; onFrameChanged();
             setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
             r.dispose();
@@ -8722,6 +8875,11 @@ let lastMonitorRenderTime = 0;
             inpCurrentFrame.value = String(currentFrame);
         }
         hudFrameLabel.innerText = `Frame: [ ${String(currentFrame).padStart(3, '0')} / ${totalFrames} ]`;
+        {   // camera cuts: keep the camera picker on the camera that is on air
+            const selCam = document.getElementById("sel-camera-asset");
+            const onAir = selCam && document.activeElement !== selCam ? cutActorAt(currentFrame) : null;
+            if (onAir) selCam.value = camIdOfActor(onAir);
+        }
         if (cameraMatrices && cameraMatrices.length > 0) {
             updateShotCameraPose(currentFrame);
         }
@@ -9364,6 +9522,7 @@ let lastMonitorRenderTime = 0;
     }
 
     function updateKeyframeMarkers() {
+        try { renderCameraCutsTrack(); } catch (_) {}
         if (!keyMarkersTrack) return;
         keyMarkersTrack.innerHTML = "";
 
@@ -10024,6 +10183,7 @@ let lastMonitorRenderTime = 0;
             fitMode: obj.userData.fitMode || (obj.userData.type === "glb" ? "native" : "stretch"),
             pivotOffset: Array.isArray(obj.userData.pivotOffset) ? [...obj.userData.pivotOffset] : undefined,
             camConv: obj.userData.type === "camera" ? true : undefined,
+            cutFrames: obj.userData.type === "camera" && Array.isArray(obj.userData.cutFrames) && obj.userData.cutFrames.length ? [...obj.userData.cutFrames] : undefined,
             focalMm: obj.userData.type === "camera" ? (obj.userData.focalMm ?? 35) : undefined,
             sensorPreset: obj.userData.type === "camera" ? (obj.userData.sensorPreset || "full_frame") : undefined,
             sensorWidthMm: obj.userData.type === "camera" ? (obj.userData.sensorWidthMm ?? 36.0) : undefined,
@@ -10216,6 +10376,7 @@ let lastMonitorRenderTime = 0;
                 if (camGroup.userData.camera) camGroup.userData.camera.updateMatrixWorld(true);
                 if (item.color) camGroup.userData.color = item.color;
                 if (item.focalMm !== undefined) camGroup.userData.focalMm = item.focalMm;
+                if (Array.isArray(item.cutFrames)) camGroup.userData.cutFrames = item.cutFrames.map(Number).filter(Number.isFinite);
                 if (item.sensorPreset !== undefined) camGroup.userData.sensorPreset = item.sensorPreset;
                 if (item.sensorWidthMm !== undefined) camGroup.userData.sensorWidthMm = item.sensorWidthMm;
                 if (item.sensorHeightMm !== undefined) camGroup.userData.sensorHeightMm = item.sensorHeightMm;
@@ -10442,7 +10603,9 @@ let lastMonitorRenderTime = 0;
         }
 
         const targetCamActor = getActiveMonitorCameraActor();
-        const cam = getActiveMonitorCamera() || ((!isShotCameraDeleted && shotCamera) ? shotCamera : null);
+        const cutsOn = getCameraCuts().length > 0;      // camera cuts: each frame through the camera on air
+        let cam = (cutsOn ? cameraObjOf(cutActorAt(0)) : null) || getActiveMonitorCamera() || ((!isShotCameraDeleted && shotCamera) ? shotCamera : null);
+        const cam0 = cam, camAspects = new Map();
         if (!cam) {
             console.warn("[VFX Studio] No camera available to bake layout");
             if (cardProgress) cardProgress.style.display = "none";
@@ -10490,6 +10653,10 @@ let lastMonitorRenderTime = 0;
 
             for (let f = 0; f < totalFrames; f++) {
                 currentFrame = f;
+                if (cutsOn) {
+                    const cf = cameraObjOf(cutActorAt(f));
+                    if (cf && cf !== cam) { if (cf !== cam0 && !camAspects.has(cf)) camAspects.set(cf, cf.aspect); cam = cf; }
+                }
                 if (cameraMatrices && cameraMatrices.length) {
                     updateShotCameraPose(f);
                 }
@@ -10610,6 +10777,8 @@ let lastMonitorRenderTime = 0;
             throw e;
         } finally {
             isBakingLayout = false;
+            cam = cam0;
+            camAspects.forEach((a, c) => { c.aspect = a; c.updateProjectionMatrix(); });
             cam.aspect = keepAspect;
             cam.updateProjectionMatrix();
             if (transformControls) transformControls.visible = prevTcVis;
