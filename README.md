@@ -52,6 +52,36 @@ A real live-action plate becomes a sci-fi scene. A plain room turns into a futur
 
 Lesson: clean control passes matter more than the prompt. One stray bone was enough to create an extra person.
 
+## My Pipelines: one-button shots
+
+**My Pipelines** chains several workflows into one run. The outputs of one stage become the inputs of the next, so a whole shot starts with one button. Pipelines are stored as `user_pipelines/<id>/pipeline.json`. You can open, edit and run them from the My Pipelines panel, or call `POST /vfx/pipelines/run`.
+
+Each stage has a `stage_type`, such as `flux_edit`, `vl_layout_cleanup`, `vl_pose_cleanup`, `vl_ltx_ic_lora`, `vl_composite` or `vl_layer_to_video`, and a set of `inputs`. An input can be a fixed value, `${variable}` from the pipeline's `variables`, or a link to an earlier stage written as `{"from_stage": "stage_id", "output_key": "layer" | "image" | "image_url" | "video"}`.
+
+Two demo shots ship as pipelines:
+
+| Pipeline | Shot |
+|---|---|
+| `demo_capoeira_park_dual_lora` | An anime girl dances capoeira in a park, in front of a bench, a tree and a street lamp, while the camera orbits around her (`capoeira_park_dual_lora.mp4`) |
+| `demo_scifi_robot_corridorkey` | The sci-fi bridge with a 3D-driven robot and a real actor (`scifi_bridge_robot_corridorkey.mp4`) |
+
+### Park capoeira, step by step (`demo_capoeira_park_dual_lora`)
+
+The input is a 3D scene. The park is blocked out with primitives (lawn, bench, tree, street lamp), a mannequin plays the Mixamo `Capoeira` animation, and an orbit camera circles it (81 frames, 576×1024, 24 fps). From the 3D tab the studio renders two layers on the video `capoeira_orbit`: the **park layout without the character** and the **OpenPose skeleton** of the mannequin. The pipeline does the rest:
+
+1. **First-frame guide** (`vl_layout_cleanup`). The skeleton is drawn over frame 0 of the layout.
+2. **First frame** (`flux_edit`, FLUX.3 Klein Edit, seed 21, 16 steps, 1 MP). The skeleton becomes the anime girl in exactly the same pose. The grey shapes become a wooden bench, an oak, a street lamp, a lawn and the sky, at the same positions and camera angle.
+3. **Video** (`vl_ltx_ic_lora`, LTX-2.5 22B distilled, seed 42). Two IC-LoRAs are stacked: **layout-to-render** on the layout and **union-control** on the pose (attention 0.8), with the frame from step 2 as the first-frame guide. With two IC-LoRAs on 24 GB, the clip is generated in 49-frame passes that overlap and cross-fade.
+4. **Export** (`vl_layer_to_video`). The new layer is saved as an MP4.
+
+The prompts, seeds and LoRA settings are the ones that made the example clip. A rerun gives the same first frame pixel for pixel. The video is close to the example but not identical, because the 49-frame passes are now split differently. On an RTX 3090 Ti the whole pipeline takes about 7.5 minutes, of which the LTX stage takes 6.
+
+**Running it.** The repository ships only the finished clip, not the 3D renders this pipeline starts from. To run it on your own shot:
+
+1. Block out a set in the 3D tab and render two layers onto a video: a layout render without the character, and a pose render (OpenPose skeleton).
+2. In `pipeline.json`, set `video_id` in `variables` to that video, and put the two new layer ids in stages 1 and 3 (`layout_source` / `source_layer` for the layout, `pose_layer` / `source_layer2` for the pose).
+3. Rewrite the two prompts for your character and set, then press Run in **My Pipelines**.
+
 ## Models
 
 | Role | Model | Notes |
