@@ -435,6 +435,28 @@ def delete_pipeline(pipeline_id: str) -> Dict[str, Any]:
     return {"status": "ok", "deleted": pipeline_id}
 
 
+def _stage_view(stage_type: str, workflow: str = "") -> str:
+    """Which studio window shows this ComfyUI stage: image / video / mesh / audio / other."""
+    t = f"{stage_type} {workflow}".lower()
+    if any(k in t for k in ("trellis", "mesh", "3d")):
+        return "mesh"
+    if any(k in t for k in ("dubit", "a2v", "tts", "music", "audio")):
+        return "video" if "dubit" in t or "a2v" in t else "audio"
+    if any(k in t for k in ("ltx", "i2v", "t2v", "video", "layout_to_render")):
+        return "video"
+    if any(k in t for k in ("flux", "qwen", "image", "edit", "matte", "rembg", "t2i")):
+        return "image"
+    return "other"
+
+
+def list_pipeline_jobs(project_id: Optional[str] = None, active_only: bool = True) -> List[Dict[str, Any]]:
+    with _LOCK:
+        jobs = [copy.deepcopy(j) for j in _PIPELINE_JOBS.values()
+                if (not project_id or j.get("project_id") == project_id) and (not active_only or j.get("status") == "running")]
+    jobs.sort(key=lambda j: j.get("start_time", 0), reverse=True)
+    return jobs
+
+
 def run_pipeline(project_id: str, pipeline_def: Dict[str, Any], initial_values: Optional[Dict[str, Any]] = None) -> str:
     """Executes all stages of the pipeline sequentially, passing outputs into downstream inputs."""
     job_id = f"pjob_{uuid.uuid4().hex[:10]}"
@@ -548,6 +570,11 @@ def _run_video_job_stage(job_id: str, project_id: str, kind: str, inputs: Dict[s
         free_memory(wait_s=1.0)
     j = vls.start_job(kind, project_id, vid, params)
     vjob = j.get("id")
+    with _LOCK:
+        cs = _PIPELINE_JOBS.get(job_id, {}).get("current_stage")
+        if isinstance(cs, dict):
+            cs["vjob"] = vjob
+            cs["video_id"] = vid
     log(f"  → 2D job '{kind}' started on {vid} ({vjob})")
     last = ""
     while True:
@@ -650,6 +677,16 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
             # 2D video-layer job stage (no ComfyUI prompt of its own; the job may queue ComfyUI itself)
             _st_type0 = stage.get("stage_type") or "custom"
             vjob_kind = VIDEO_JOB_STAGES.get(_st_type0) or (resolved_inputs.pop("kind", None) if _st_type0 == "video_job" else None)
+            # What the studio should open for this stage (the UI shows the matching generation window)
+            with _LOCK:
+                _PIPELINE_JOBS[job_id]["current_stage"] = {
+                    "idx": idx, "id": st_id, "title": st_title, "stage_type": _st_type0,
+                    "view": "video_layer" if vjob_kind else _stage_view(_st_type0, stage.get("workflow") or ""),
+                    "video_id": str(resolved_inputs.get("video_id") or "") if vjob_kind else "",
+                    "vjob": None, "vjob_kind": vjob_kind or "",
+                    "prompt": str(resolved_inputs.get("prompt") or "")[:400],
+                    "started_at": time.time(),
+                }
             if vjob_kind:
                 stage_out = _run_video_job_stage(job_id, project_id, vjob_kind, resolved_inputs, st_title, log)
                 stage_artifacts[st_id] = stage_out
@@ -848,7 +885,10 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
             # 6. Extract stage outputs
             stage_out: Dict[str, Any] = {}
             stamp = time.strftime("%Y%m%d_%H%M%S")
-            for o in st.get("outputs", []):
+            _outs = st.get("outputs", []) or []
+            if any(o.get("type", "output") == "output" for o in _outs):
+                _outs = [o for o in _outs if o.get("type", "output") == "output"]   # temp previews never win over saved files
+            for o in _outs:
                 base = {"temp": folder_paths.get_temp_directory(), "input": folder_paths.get_input_directory()}.get(
                     o.get("type", "output"), folder_paths.get_output_directory())
                 src = os.path.join(base, o.get("subfolder", ""), o["filename"])

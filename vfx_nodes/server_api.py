@@ -1764,6 +1764,15 @@ def register_server_routes():
 
 
 
+        @routes.get("/vfx/pipeline_jobs")
+        async def vfx_pipeline_jobs(request):
+            """Running pipeline jobs (the studio re-attaches its progress window after a reload)."""
+            from .user_pipelines_service import list_pipeline_jobs as _pjobs
+            pid = request.query.get("project_id") or None
+            active = request.query.get("all") not in ("1", "true")
+            jobs = _pjobs(pid, active_only=active)
+            return add_cors_headers(web.json_response({"jobs": [{k: j.get(k) for k in ("id", "project_id", "pipeline_id", "pipeline_name", "status", "progress", "current_stage_idx", "total_stages", "stage_name", "current_stage", "start_time")} for j in jobs]}))
+
         @routes.get("/vfx/pipelines/job/{job_id}")
 
         async def vfx_pipelines_job(request):

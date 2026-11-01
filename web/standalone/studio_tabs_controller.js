@@ -2304,6 +2304,171 @@ export function initStudioArchitecture(ctx) {
 
     // Chain multiple ComfyUI workflows sequentially: output of Stage N automatically wires into Stage N+1.
 
+    // =========================================================================
+    // PIPELINE MONITOR: follows a running My Pipelines job even when its window is closed.
+    // At the start of every stage it opens the matching studio window (image -> 1D live stage, video job ->
+    // the 2D video with its job progress, ComfyUI video -> 2D live stage, mesh -> 3D) as a visible confirmation
+    // that the stage started. The user can switch away at any time; the next stage opens its window again.
+    // =========================================================================
+    const pipeMon = { jobId: null, timer: null, state: null, lastIdx: -1, cur: null, listeners: new Set(), busy: false };
+    window.__vfxPipelineMonitor = pipeMon;
+    const pipeEsc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    function pipeChip(j) {
+        let chip = document.getElementById("vfx-pipeline-chip");
+        if (!j) { if (chip) chip.remove(); return; }
+        if (!chip) {
+            chip = document.createElement("div");
+            chip.id = "vfx-pipeline-chip";
+            chip.style.cssText = "position: fixed; right: 16px; bottom: 34px; z-index: 99990; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: rgba(12,10,9,0.95); border: 1px solid #6d28d9; color: #ede9fe; font-size: 11px; box-shadow: 0 6px 24px rgba(0,0,0,0.6); max-width: 420px;";
+            document.body.appendChild(chip);
+        }
+        const running = j.status === "running";
+        const err = j.status === "error";
+        const pct = Math.max(0, Math.min(100, Number(j.progress) || 0));
+        const n = (j.current_stage_idx ?? 0) + 1;
+        chip.style.borderColor = err ? "#b91c1c" : running ? "#6d28d9" : "#065f46";
+        chip.innerHTML = `
+            <span style="font-size: 13px;">${running ? "⛓" : err ? "❌" : "✅"}</span>
+            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1;">
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${running
+                    ? `${uiText("Pipeline", "Пайплайн")} ${n}/${j.total_stages || "?"}: ${pipeEsc(j.stage_name || "")}`
+                    : err ? `${uiText("Pipeline error", "Ошибка пайплайна")}: ${pipeEsc(j.error || "")}`
+                    : j.status === "cancelled" ? uiText("Pipeline stopped", "Пайплайн остановлен") : uiText("Pipeline finished", "Пайплайн завершён")}</span>
+                ${running ? `<div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden;"><div style="width: ${pct}%; height: 100%; background: linear-gradient(90deg,#38bdf8,#c084fc);"></div></div>` : ""}
+            </div>
+            <button class="vfx-btn" data-a="open" style="padding: 3px 8px; font-size: 10.5px;">${uiText("Open", "Открыть")}</button>
+            ${running ? `<button class="vfx-btn" data-a="stop" title="${uiText("Stop pipeline", "Остановить пайплайн")}" style="padding: 3px 7px; font-size: 10.5px;">■</button>`
+                      : `<button class="vfx-btn" data-a="x" style="padding: 3px 7px; font-size: 10.5px;">✕</button>`}`;
+        chip.querySelector('[data-a="open"]').onclick = () => {
+            const ov = document.getElementById("vfx-mypipelines");
+            if (ov) ov.style.display = "flex"; else openMyPipelines({ pipeline_id: j.pipeline_id });
+        };
+        const stop = chip.querySelector('[data-a="stop"]');
+        if (stop) stop.onclick = () => pipeMon.jobId && fetch(`/vfx/pipelines/job/${pipeMon.jobId}/cancel`, { method: "POST" });
+        const x = chip.querySelector('[data-a="x"]');
+        if (x) x.onclick = () => chip.remove();
+    }
+    function pipeLiveNumbers(j, cs) {
+        if (!currentLiveGenState.active || !cs) return;
+        const el = Math.round((Date.now() - (cs.started_at ? cs.started_at * 1000 : currentLiveGenState.startTime)) / 1000);
+        const pct = Math.max(5, Math.min(95, Number(j.progress) || 0));
+        currentLiveGenState.pct = pct; currentLiveGenState.elapsed = el;
+        currentLiveGenState.stageTxt = `${uiText("Pipeline", "Пайплайн")} ${cs.idx + 1}/${j.total_stages}: ${j.stage_name || cs.title}`;
+        const q = (id) => document.getElementById(id);
+        if (q("live-stage-pct")) q("live-stage-pct").textContent = `${pct}%`;
+        if (q("live-stage-bar")) q("live-stage-bar").style.width = `${pct}%`;
+        if (q("live-stage-timer")) q("live-stage-timer").textContent = `${el}s`;
+        if (q("live-stage-desc")) q("live-stage-desc").textContent = currentLiveGenState.stageTxt;
+    }
+    async function pipeOpenStage(cs, j) {
+        const ov = document.getElementById("vfx-mypipelines");
+        if (ov) ov.style.display = "none";          // keep the pipeline window, show the work underneath
+        const label = `${uiText("Stage", "Этап")} ${cs.idx + 1}/${j.total_stages}: ${cs.title}`;
+        const live = (isVideo) => {
+            const pw = (typeof getPlateWidth === "function" ? getPlateWidth() : 0) || currentProject?.width || 1280;
+            const ph = (typeof getPlateHeight === "function" ? getPlateHeight() : 0) || currentProject?.height || 720;
+            currentLiveGenState = { active: true, isVideo, prompt: cs.prompt || cs.title, pct: 5, stageTxt: label, elapsed: 0,
+                promptId: null, startTime: Date.now(), projW: pw, projH: ph, pipelineJob: j.id };
+            window.__activeLiveGen = currentLiveGenState;
+        };
+        if (cs.view === "image") {
+            live(false);
+            mediaImages1D = mediaImages1D.filter(i => i.id !== "live_gpu_render");
+            mediaImages1D.unshift({ id: "live_gpu_render", title: `⚡ ${cs.title}`.slice(0, 40), badge: "RENDERING", isLivePlaceholder: true,
+                url: makeConceptSvgDataUri(uiText("GPU Generation...", "Генерация на GPU..."), cs.title, "#0b0f19", "#1e3a8a"), comment: cs.prompt || "" });
+            activeImageId = "live_gpu_render";
+            switchMainDimension("1D");
+        } else if (cs.view === "video") {
+            live(true);
+            mediaVideos2D = mediaVideos2D.filter(v => v.id !== "live_video_render");
+            mediaVideos2D.unshift({ id: "live_video_render", title: `⚡ ${cs.title}`.slice(0, 40), badge: "RENDERING", isLivePlaceholder: true,
+                type: "html5", videoUrl: "", comment: cs.prompt || "" });
+            activeVideoId = "live_video_render";
+            switchMainDimension("2D");
+        } else if (cs.view === "video_layer") {
+            if (cs.video_id && mediaVideos2D.some(v => v.id === cs.video_id)) activeVideoId = cs.video_id;
+            switchMainDimension("2D");
+        } else if (cs.view === "mesh") {
+            switchMainDimension("3D");
+        }
+        renderTopViewportBar();
+        renderMainViewport();
+        showToastNotification(`⛓ ${label}`);
+    }
+    function pipeCloseStage(cs, j) {
+        if (!cs) return;
+        const res = (j.stage_results || {})[cs.id] || {};
+        if (cs.view === "image") {
+            mediaImages1D = mediaImages1D.filter(i => i.id !== "live_gpu_render");
+            currentLiveGenState.active = false;
+            if (res.image_url) {
+                const item = { id: `img_pipe_${Date.now()}`, title: cs.title.slice(0, 40), badge: "GEN", url: res.image_url, fallbackUrl: null,
+                    comment: cs.prompt || "", generatedFrom: { pipeline: j.pipeline_id, stage: cs.id } };
+                mediaImages1D.unshift(item);
+                if (activeImageId === "live_gpu_render") activeImageId = item.id;
+                saveProject1DImages();
+            } else if (activeImageId === "live_gpu_render") activeImageId = mediaImages1D[0]?.id || null;
+            if (mainViewDim === "1D") { renderTopViewportBar(); renderMainViewport(); }
+        } else if (cs.view === "video") {
+            mediaVideos2D = mediaVideos2D.filter(v => v.id !== "live_video_render");
+            currentLiveGenState.active = false;
+            if (activeVideoId === "live_video_render") activeVideoId = mediaVideos2D[0]?.id || null;
+            if (typeof window.__vfxSyncGeneratedVideosToGallery === "function") { try { window.__vfxSyncGeneratedVideosToGallery(); } catch (_) {} }
+            if (mainViewDim === "2D") { renderTopViewportBar(); renderMainViewport(); }
+        }
+    }
+    async function pipeTick() {
+        if (!pipeMon.jobId || pipeMon.busy) return;
+        pipeMon.busy = true;
+        try {
+            const j = await fetch(`/vfx/pipelines/job/${pipeMon.jobId}`).then(r => r.json()).catch(() => null);
+            if (!j || j.status === "not_found") { if (j) { clearInterval(pipeMon.timer); pipeMon.jobId = null; pipeChip(null); } return; }
+            pipeMon.state = j;
+            const cs = j.current_stage || null;
+            if (j.status === "running" && cs && cs.idx !== pipeMon.lastIdx) {
+                pipeCloseStage(pipeMon.cur, j);
+                pipeMon.lastIdx = cs.idx;
+                pipeMon.cur = cs;
+                try { await pipeOpenStage(cs, j); } catch (e) { console.warn("[Pipeline] open stage view", e); }
+            } else if (cs) {
+                pipeMon.cur = cs;
+            }
+            if (j.status === "running" && cs && cs.view === "video_layer" && cs.vjob && typeof window.__vfxAttachVideoJob2D === "function") {
+                window.__vfxAttachVideoJob2D(cs.vjob, cs.vjob_kind, cs.video_id);
+            }
+            pipeLiveNumbers(j, cs);
+            pipeChip(j);
+            if (j.status !== "running") {
+                clearInterval(pipeMon.timer);
+                pipeCloseStage(pipeMon.cur, j);
+                pipeMon.cur = null;
+                if (j.status === "done") showToastNotification(uiText("Pipeline completed successfully!", "Пайплайн успешно завершен!"));
+                else if (j.status === "error") showToastNotification(uiText("Pipeline error: ", "Ошибка пайплайна: ") + (j.error || "failed"), true);
+                const done = pipeMon.jobId; pipeMon.jobId = null;
+                setTimeout(() => { if (!pipeMon.jobId && done) pipeChip(null); }, 20000);
+            }
+            pipeMon.listeners.forEach(fn => { try { fn(j); } catch (_) {} });
+        } finally {
+            pipeMon.busy = false;
+        }
+    }
+    function pipeMonStart(jobId) {
+        clearInterval(pipeMon.timer);
+        Object.assign(pipeMon, { jobId, state: null, lastIdx: -1, cur: null });
+        pipeMon.timer = setInterval(pipeTick, 2000);
+        pipeTick();
+    }
+    window.__vfxWatchPipelineJob = pipeMonStart;
+    // After a page reload: pick up a pipeline that is still running for this project
+    setTimeout(async () => {
+        try {
+            if (pipeMon.jobId) return;
+            const pid = currentProject?.id;
+            const r = await fetch(`/vfx/pipeline_jobs${pid ? `?project_id=${encodeURIComponent(pid)}` : ""}`).then(x => x.json());
+            const job = (r.jobs || [])[0];
+            if (job && job.id) { pipeMon.lastIdx = job.current_stage_idx ?? -1; pipeMonStart(job.id); pipeMon.lastIdx = job.current_stage_idx ?? -1; }
+        } catch (_) {}
+    }, 6000);
     async function openMyPipelines(prefill) {
 
         const pid = currentProject?.id || "sandbox_playground";
@@ -2351,6 +2516,20 @@ export function initStudioArchitecture(ctx) {
         let jobPollTimer = null;
 
         let jobState = null;
+        const pipeMonListener = (j) => {
+            if (!ov.isConnected) { pipeMon.listeners.delete(pipeMonListener); return; }
+            if (j.id !== activeJobId) return;
+            jobState = j;
+            isRunning = j.status === "running";
+            render();
+        };
+        pipeMon.listeners.add(pipeMonListener);
+        if (pipeMon.jobId && pipeMon.state && pipeMon.state.status === "running") {   // reopened while a pipeline runs
+            activeJobId = pipeMon.jobId;
+            jobState = pipeMon.state;
+            isRunning = true;
+            if (!selectedPipeId && pipeMon.state.pipeline_id) selectedPipeId = pipeMon.state.pipeline_id;
+        }
 
 
 
@@ -3401,48 +3580,9 @@ export function initStudioArchitecture(ctx) {
                     if (runRes.error) throw new Error(runRes.error);
 
                     activeJobId = runRes.job_id;
-
-
-
-                    // Start polling
-
-                    clearInterval(jobPollTimer);
-
-                    jobPollTimer = setInterval(async () => {
-
-                        try {
-
-                            const pollRes = await fetch(`/vfx/pipelines/job/${activeJobId}`).then(r => r.json());
-
-                            jobState = pollRes;
-
-                            if (pollRes.status === "done" || pollRes.status === "error" || pollRes.status === "cancelled") {
-
-                                isRunning = false;
-
-                                clearInterval(jobPollTimer);
-
-                                if (pollRes.status === "done") {
-
-                                    showToastNotification(uiText("Pipeline completed successfully!", "Пайплайн успешно завершен!"));
-
-                                } else if (pollRes.status === "error") {
-
-                                    showToastNotification("Pipeline error: " + (pollRes.error || "failed"), true);
-
-                                }
-
-                            }
-
-                            render();
-
-                        } catch (err) {
-
-                            console.error("[MyPipelines] Poll error", err);
-
-                        }
-
-                    }, 2000);
+                    // The global pipeline monitor polls the job, opens each stage's window and keeps the chip;
+                    // this window only mirrors its state (closing it does not stop anything).
+                    pipeMonStart(activeJobId);
 
                 } catch (err) {
 
@@ -5674,7 +5814,7 @@ async function openNarrationEditor() {
 
             const stripHugeDataUri = (s) => (typeof s === "string" && s.startsWith("data:") && s.length > 150000) ? "" : s;
 
-            const lite = mediaImages1D.map(i => ({
+            const lite = mediaImages1D.filter(i => !i.isLivePlaceholder).map(i => ({
 
                 ...i,
 
@@ -42418,6 +42558,26 @@ async function openNarrationEditor() {
         }
 
         window.__vfxRunVideoJob2D = runVideoJob2D;
+        // A job started elsewhere (My Pipelines, agent) on this video: show its progress in the layers panel
+        window.__vfxAttachVideoJob2D = async (jobId, kind, videoId) => {
+            if (!jobId || vlJob2D.id === jobId || vlJob2D.id) return;
+            if (videoId && String(videoId) !== String(vidObj.id)) return;
+            Object.assign(vlJob2D, { id: jobId, kind: kind || "job", message: "", progress: 0 });
+            if (wrapper.isConnected) renderVideoLayersPanel2D();
+            while (true) {
+                await new Promise(r => setTimeout(r, 1000));
+                if (!wrapper.isConnected) { vlJob2D.id = null; return; }
+                const st = await fetch(`/vfx/video/job/${jobId}`).then(r => r.json()).catch(() => null);
+                if (!st) continue;
+                Object.assign(vlJob2D, { message: st.message, progress: st.progress || 0 });
+                renderVideoLayersPanel2D();
+                if (st.status === "running") continue;
+                vlJob2D.id = null;
+                await refreshVideoState2D();
+                renderVideoLayersPanel2D();
+                return;
+            }
+        };
 
 
 
