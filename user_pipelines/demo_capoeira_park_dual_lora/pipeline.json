@@ -1,0 +1,73 @@
+{
+  "id": "demo_capoeira_park_dual_lora",
+  "name": "Park Capoeira: 3D Layout + Pose → FLUX First Frame → LTX Dual IC-LoRA",
+  "name_ru": "Капоэйра в парке: 3D-лейаут + поза → первый кадр FLUX → LTX (2 IC-LoRA)",
+  "description": "Демо-шот из README (capoeira_park_dual_lora.mp4): аниме-девочка танцует капоэйру в парке на фоне скамейки, дерева и фонаря, камера облетает её по дуге. Запускать в проекте Sandbox Playground (видео capoeira_orbit, 81 кадр, 576×1024, 24 fps). Исходные слои — рендеры 3D-сцены: лейаут парка из примитивов без персонажа (vl_rgb_052fc23e) и поза манекена с анимацией Capoeira (vl_pose_5a25c04c). 1) Гайд первого кадра: лейаут + скелет на кадре 0. 2) FLUX.3 Klein Edit рисует первый кадр (сид 21). 3) LTX-2.5: layout-to-render по лейауту + union-control по позе (attention 0.8), первый кадр как референс, сид 42; с двумя IC-LoRA проход идёт кусками по 49 кадров с перекрытием. 4) Экспорт MP4 в размере плейта (ролик в README — склейка «3D-рендер | результат», её этот пайплайн не собирает). Для своего шота поменяйте video_id в variables и id слоёв в шагах 1 и 3.",
+  "variables": {
+    "video_id": "capoeira_orbit"
+  },
+  "stages": [
+    {
+      "id": "stage_guide",
+      "title": "Гайд первого кадра: лейаут парка + скелет",
+      "stage_type": "vl_layout_cleanup",
+      "inputs": {
+        "video_id": "${video_id}",
+        "layout_source": "vl_rgb_052fc23e",
+        "pose_layer": "vl_pose_5a25c04c",
+        "erase_dark": "false",
+        "protect_bright": "false",
+        "start": 0,
+        "end": 80,
+        "name": "3D layout: park (guide)"
+      }
+    },
+    {
+      "id": "stage_first_frame",
+      "title": "FLUX.3 Klein Edit: первый кадр (девочка в парке)",
+      "stage_type": "flux_edit",
+      "workflow": "api/storyboard/flux3_klein_edit.json",
+      "inputs": {
+        "image": {"from_stage": "stage_guide", "output_key": "image"},
+        "prompt": "Replace the coloured stick-figure skeleton with a young anime girl with messy curly ash-brown hair and violet eyes, loose purple t-shirt, red shoulder bag on a strap, baggy black pants, black high-top sneakers, clean lineart anime style: she stands exactly where the skeleton is, in exactly its pose, limb positions and size. Turn the plain coloured 3D shapes into real objects: a wooden park bench, a leafy oak tree, a black street lamp, green lawn, clear blue sky, anime background art, keeping their positions, sizes and the camera angle. One coherent illustration in the same art style, no skeleton lines.",
+        "seed": 21,
+        "steps": 16,
+        "megapixels": 1.0
+      }
+    },
+    {
+      "id": "stage_ltx",
+      "title": "LTX-2.5: layout-to-render + union-control (поза)",
+      "stage_type": "vl_ltx_ic_lora",
+      "inputs": {
+        "video_id": "${video_id}",
+        "needs": "first_frame",
+        "source_layer": "vl_rgb_052fc23e",
+        "lora": "LTX-2.5\\ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+        "source_layer2": "vl_pose_5a25c04c",
+        "lora2": "LTX-2.3\\ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+        "lora2_strength": 1.0,
+        "lora2_attention": 0.8,
+        "ref_image": {"from_stage": "stage_first_frame", "output_key": "image_url"},
+        "ref_strength": 1.0,
+        "prompt": "Anime illustration. A young girl with messy curly ash-brown hair, loose purple t-shirt, red shoulder bag, baggy black pants and black high-top sneakers performs fluid capoeira moves on a green lawn in a sunny park, with a wooden bench, a leafy tree and a black street lamp behind her. The camera slowly arcs around her, always keeping her face visible. Consistent character, consistent background.",
+        "negative": "",
+        "seed": 42,
+        "start": 0,
+        "end": 80,
+        "name": "Park: layout-to-render + pose"
+      }
+    },
+    {
+      "id": "stage_mp4",
+      "title": "Экспорт MP4 (размер плейта 576×1024)",
+      "stage_type": "vl_layer_to_video",
+      "inputs": {
+        "video_id": "${video_id}",
+        "layer_id": {"from_stage": "stage_ltx", "output_key": "layer"},
+        "width": 0,
+        "height": 0
+      }
+    }
+  ]
+}
