@@ -161,6 +161,16 @@ export function initStudioArchitecture(ctx) {
         onUpdateLightProps
 
     } = ctx;
+    // Adapter for legacy `studioBridge.*` call sites (was never defined -> ReferenceError).
+    const studioBridge = {
+        replaceObjectWithGLB: (...a) => (typeof onReplaceObjectWithGLB === "function" ? onReplaceObjectWithGLB(...a) : null),
+        getSelectedObject: () => (typeof getSelectedObject === "function" ? getSelectedObject() : null),
+        capturePlateCropDataUrl: async () => {
+            if (typeof onCaptureSelectedObjectPlateCrop !== "function") return null;
+            try { const r = await onCaptureSelectedObjectPlateCrop(); return (r && r.dataUrl) || null; } catch (_) { return null; }
+        },
+        addSplatActor: (d) => (ctx.addSplatActor ? ctx.addSplatActor(d) : (window.__vfxAddSplatActor ? window.__vfxAddSplatActor(d) : null))
+    };
 
 
 
@@ -9533,7 +9543,9 @@ async function openNarrationEditor() {
 
         if (!hasLevel) {
 
-            const curManifest = (typeof onExportManifest === "function") ? onExportManifest() : [];
+            // the 3D scene may still hold the previous project's objects while the new one loads
+            const sceneIsOurs = !window.__vfxSceneOwner || window.__vfxSceneOwner === currentProject?.id;
+            const curManifest = (sceneIsOurs && typeof onExportManifest === "function") ? onExportManifest() : [];
 
             const objCount = (curManifest || []).length;
 
@@ -9779,7 +9791,7 @@ async function openNarrationEditor() {
 
         try {
 
-            const res = await fetch("/vfx/layout_render_info").then(r => r.json());
+            const res = await fetch(`/vfx/layout_render_info?project_id=${encodeURIComponent(currentProject?.id || "sandbox_playground")}`).then(r => r.json());
 
             if (!res || !res.has_renders || !res.count) return;
 
@@ -20968,7 +20980,7 @@ async function openNarrationEditor() {
 
             } else {
 
-                const pid = currentProjectId || (window.currentProject ? window.currentProject.id : "");
+                const pid = (currentProject && currentProject.id) || (window.currentProject ? window.currentProject.id : "");
 
                 const url = pid ? `/vfx/export_chan?project_id=${encodeURIComponent(pid)}` : "/vfx/export_chan";
 
@@ -37848,7 +37860,7 @@ async function openNarrationEditor() {
                     renderVideoLayersPanel2D();
                     updateVideoOverlays2D();
                 }
-                selectedPaintKeys2D = newPaintSel;
+                selectedPaintKeys2D.clear(); newPaintSel.forEach(k => selectedPaintKeys2D.add(k));
             }
 
             if (movedCount > 0) {
@@ -38127,6 +38139,9 @@ async function openNarrationEditor() {
 
                 const minF = Math.max(0, Math.min(maxF, Math.round((minBoxX / trackR.width) * maxF)));
                 const maxFBox = Math.max(0, Math.min(maxF, Math.round((maxBoxX / trackR.width) * maxF)));
+                const keysLayer = wrapper.querySelector("#vfx-2d-tl-keys-layer");
+                const countLbl = wrapper.querySelector("#lbl-2d-tl-keys-count");
+                if (!keysLayer) return;
 
                 // 1. Check Mask Keys
                 keysLayer.querySelectorAll(".vfx-2d-key-diamond").forEach(dEl => {
@@ -38508,7 +38523,7 @@ async function openNarrationEditor() {
 
             copy2DMaskKeys();
 
-            deleteSelectedOrCurrentMaskKeys();
+            deleteSelectedOrCurrent2DKeys();
 
         }
 
@@ -40026,6 +40041,7 @@ async function openNarrationEditor() {
             selected: null,
             selLayerIds: []
         };
+        window.__vfxVlState2D = vlState2D;
 
         const VL_COLORS = ["#f43f5e", "#38bdf8", "#a3e635", "#fbbf24", "#c084fc", "#fb923c", "#2dd4bf", "#f472b6"];
 
@@ -42715,7 +42731,7 @@ async function openNarrationEditor() {
 
             if (e.key === "Delete" || e.key === "Backspace") {
 
-                if (typeof deleteSelectedOrCurrent2DKeys === "function" ? deleteSelectedOrCurrent2DKeys() : deleteSelectedOrCurrentMaskKeys()) {
+                if (typeof deleteSelectedOrCurrent2DKeys === "function" ? deleteSelectedOrCurrent2DKeys() : false) {
 
                     e.preventDefault();
 
@@ -42743,7 +42759,7 @@ async function openNarrationEditor() {
 
                 e.preventDefault();
 
-                applyAudioState(curVolume > 0 ? curVolume : 0.8, !isMuted);
+                { const _v = document.getElementById("vfx-2d-html5-video"); if (_v) { _v.muted = !_v.muted; if (!_v.muted && _v.volume === 0) _v.volume = 0.8; } }
 
             } else if (e.key === "[" || e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
 
@@ -46123,9 +46139,9 @@ async function openNarrationEditor() {
 
                     window.removeEventListener("mouseup", onUp);
 
-                    if (Math.abs(card.x - origX) > 2 || Math.abs(card.y - origY) > 2) {
+                    if (Math.abs(node.x - origX) > 2 || Math.abs(node.y - origY) > 2) {
 
-                        pushStoryboardUndoSnapshot(uiText(`Move shot ${card.title}`, `Перемещение кадра ${card.title}`));
+                        pushStoryboardUndoSnapshot(uiText(`Move shot ${node.title || node.name || ""}`, `Перемещение кадра ${node.title || node.name || ""}`));
 
                         if (typeof saveCurrentProject === "function") saveCurrentProject();
 
@@ -47545,9 +47561,9 @@ async function openNarrationEditor() {
 
                     window.removeEventListener("mouseup", onUp);
 
-                    if (Math.abs(card.x - origX) > 2 || Math.abs(card.y - origY) > 2) {
+                    if (Math.abs(node.x - origX) > 2 || Math.abs(node.y - origY) > 2) {
 
-                        pushStoryboardUndoSnapshot(uiText(`Move shot ${card.title}`, `Перемещение кадра ${card.title}`));
+                        pushStoryboardUndoSnapshot(uiText(`Move shot ${node.title || node.name || ""}`, `Перемещение кадра ${node.title || node.name || ""}`));
 
                         if (typeof saveCurrentProject === "function") saveCurrentProject();
 
@@ -50242,7 +50258,7 @@ async function openNarrationEditor() {
 
                 if (targetItem) {
 
-                    const newR = setAssetRating(targetItem, targetType, r);
+                    const newR = (window.__vfxSetAssetRating || (() => null))(targetItem, targetType, r);
 
                     lastMsg.rating = newR;
 
@@ -58067,6 +58083,7 @@ async function openNarrationEditor() {
 
 
 
+            window.__vfxSaveCurrentSessionAsPipeline = (...a) => saveCurrentSessionAsPipeline(...a);
             async function saveCurrentSessionAsPipeline(pName, pDesc) {
 
                 const name = pName || prompt(uiText("Enter pipeline name:", "Введите название пайплайна:"), "Мой Пайплайн") || "Мой Пайплайн";
@@ -58075,7 +58092,7 @@ async function openNarrationEditor() {
 
                 const stages = [];
 
-                const chatItems = (projectChatMessages && Array.isArray(projectChatMessages)) ? projectChatMessages : [];
+                const chatItems = Array.isArray(chatHistory) ? chatHistory.map(m => ({ ...m, text: m.text || m.content || "" })) : [];
 
                 const has3D = chatItems.some(m => /3D|скелет|поз|сцен/i.test(m.text || ""));
 
@@ -58211,6 +58228,7 @@ async function openNarrationEditor() {
 
 
 
+            window.__vfxSaveStageAsUserTool = (...a) => saveStageAsUserTool(...a);
             async function saveStageAsUserTool(tName, tTab, tDesc) {
 
                 const name = tName || prompt(uiText("Enter tool name:", "Введите название инструмента:"), "Мой Инструмент") || "Мой Инструмент";
@@ -59174,13 +59192,13 @@ async function openNarrationEditor() {
 
         // If a dummy or non-existent source_layer was passed (e.g. 'mask_id_player'), resolve it to actual mask layer
 
-        if (p.source_layer && vlState2D?.layers?.length) {
+        if (p.source_layer && window.__vfxVlState2D?.layers?.length) {
 
-            const exists = vlState2D.layers.some(l => l.id === p.source_layer);
+            const exists = window.__vfxVlState2D.layers.some(l => l.id === p.source_layer);
 
             if (!exists) {
 
-                const mask = [...vlState2D.layers].reverse().find(l => l.type === "mask" || l.type === "matte");
+                const mask = [...window.__vfxVlState2D.layers].reverse().find(l => l.type === "mask" || l.type === "matte");
 
                 if (mask) p.source_layer = mask.id;
 
@@ -60352,11 +60370,11 @@ async function openNarrationEditor() {
 
             }
 
-            if (a === "rate_star") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return setAssetRating(targetItem, k.kind, "star"); }
+            if (a === "rate_star") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return (window.__vfxSetAssetRating || (() => null))(targetItem, k.kind, "star"); }
 
-            if (a === "rate_up") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return setAssetRating(targetItem, k.kind, "up"); }
+            if (a === "rate_up") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return (window.__vfxSetAssetRating || (() => null))(targetItem, k.kind, "up"); }
 
-            if (a === "rate_down") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return setAssetRating(targetItem, k.kind, "down"); }
+            if (a === "rate_down") { const targetItem = k.kind === "image" ? mediaImages1D.find(i => i.id === k.id) : mediaVideos2D.find(v => v.id === k.id); return (window.__vfxSetAssetRating || (() => null))(targetItem, k.kind, "down"); }
 
             if (a === "open") return openNode(k);
 
@@ -60876,7 +60894,7 @@ async function openNarrationEditor() {
 
                 const r = b.dataset.rate;
 
-                setAssetRating(it, a.kind, r);
+                (window.__vfxSetAssetRating || (() => null))(it, a.kind, r);
 
             };
 
@@ -60965,12 +60983,15 @@ window.__vfxDeconstructManager = {
             const res = await fetch(`/vfx/projects/${encodeURIComponent(pid)}/deconstruction`);
             if (res.ok) {
                 const data = await res.json();
-                this.items = data.items || [];
+                const list = Array.isArray(data.items) ? data.items : (Array.isArray(data.items?.items) ? data.items.items : []);
+                this.items = list;
                 this.loaded = true;
+                this.projectId = pid;
             }
         } catch (e) {
             console.error("DeconstructManager load error:", e);
         }
+        if (!this.loaded) { this.loaded = true; this.projectId = projectId || this.projectId; }   // never re-render in a loop on a failed load
         return this.items;
     },
     isItemAdded(sourceId) {
@@ -61929,7 +61950,7 @@ function renderActiveCustomTab() {
 
                                 if (targetItem) {
 
-                                    const newR = setAssetRating(targetItem, targetType, r);
+                                    const newR = (window.__vfxSetAssetRating || (() => null))(targetItem, targetType, r);
 
                                     item.rating = newR;
 
@@ -62089,7 +62110,7 @@ function renderActiveCustomTab() {
 
                     savePipeBtns.forEach(b => {
 
-                        b.onclick = () => saveCurrentSessionAsPipeline(item.title || item.card_id, item.text);
+                        b.onclick = () => (typeof window.__vfxSaveCurrentSessionAsPipeline === "function" ? window.__vfxSaveCurrentSessionAsPipeline(item.title || item.card_id, item.text) : showToastNotification(uiText("Send a message to the AI Director first", "Сначала отправьте сообщение ИИ-режиссёру"), true));
 
                     });
 
@@ -62097,7 +62118,7 @@ function renderActiveCustomTab() {
 
                     saveToolBtns.forEach(b => {
 
-                        b.onclick = () => saveStageAsUserTool(item.title || item.card_id, item.mode === "video" ? "video" : "photo", item.text);
+                        b.onclick = () => (typeof window.__vfxSaveStageAsUserTool === "function" ? window.__vfxSaveStageAsUserTool(item.title || item.card_id, item.mode === "video" ? "video" : "photo", item.text) : showToastNotification(uiText("Send a message to the AI Director first", "Сначала отправьте сообщение ИИ-режиссёру"), true));
 
                     });
 
@@ -63452,9 +63473,9 @@ function renderActiveCustomTab() {
                 }
             };
 
-            customTabPane.querySelector("#btn-mesh-crop-2d").onclick = () => {
+            customTabPane.querySelector("#btn-mesh-crop-2d").onclick = async () => {
                 if (studioBridge.capturePlateCropDataUrl) {
-                    const dataUrl = studioBridge.capturePlateCropDataUrl();
+                    const dataUrl = await studioBridge.capturePlateCropDataUrl();
                     if (dataUrl) {
                         setRefImage(dataUrl);
                         showToastNotification(uiText("Captured 2D plate crop as reference", "Вырезан 2D кадр в качестве референса"));
@@ -64541,13 +64562,13 @@ function renderActiveCustomTab() {
 
             if (btnCropPlate) {
 
-                btnCropPlate.onclick = () => {
+                btnCropPlate.onclick = async () => {
 
                     const statusEl = customTabPane.querySelector("#splat-tab-status");
 
                     if (studioBridge.capturePlateCropDataUrl) {
 
-                        const dataUrl = studioBridge.capturePlateCropDataUrl();
+                        const dataUrl = await studioBridge.capturePlateCropDataUrl();
 
                         if (dataUrl) {
 
@@ -64934,11 +64955,11 @@ function renderActiveCustomTab() {
             window.__vfxRerenderDeconstruct = () => renderActiveCustomTab();
 
             // Load deconstruction items if not yet cached
-            if (!window.__vfxDeconstructManager.loaded) {
+            if (!window.__vfxDeconstructManager.loaded || window.__vfxDeconstructManager.projectId !== curPid) {
                 window.__vfxDeconstructManager.load(curPid).then(() => renderActiveCustomTab());
             }
 
-            const items = window.__vfxDeconstructManager.items || [];
+            const items = Array.isArray(window.__vfxDeconstructManager.items) ? window.__vfxDeconstructManager.items : [];
             const activeCount = items.filter(it => it.enabled !== false).length;
 
             const getTypeBadge = (type) => {
@@ -65215,8 +65236,8 @@ function renderActiveCustomTab() {
                     });
 
                     // 2. 2D Video Layers
-                    if (typeof vlState2D !== "undefined" && Array.isArray(vlState2D.layers)) {
-                        vlState2D.layers.forEach(l => {
+                    if (window.__vfxVlState2D && Array.isArray(window.__vfxVlState2D.layers)) {
+                        window.__vfxVlState2D.layers.forEach(l => {
                             const isMask = l.type === "mask" || l.type === "matte";
                             candidates.push({
                                 id: l.id,

@@ -3244,6 +3244,7 @@ let lastMonitorRenderTime = 0;
     }
 
     async function loadSceneData(targetProj = null, options = {}) {
+        window.__vfxSceneOwner = "__loading__";
         try {
             const pid = targetProj
                 ? (targetProj.id || targetProj)
@@ -3437,11 +3438,14 @@ let lastMonitorRenderTime = 0;
                             }
                         } catch (_) {}
                     }
+                    window.__vfxSceneOwner = pid || "";
                     loadManifestObjects(listToLoad);
                 } catch (e) {
+                    window.__vfxSceneOwner = pid || "";
                     loadManifestObjects([]);
                 }
             }
+            window.__vfxSceneOwner = pid || "";
 
             // Restore persistent camera pose if previously positioned
             restoreFlyCameraPose();
@@ -3458,6 +3462,7 @@ let lastMonitorRenderTime = 0;
 
         } catch (e) {
             console.log("[VFX Studio] Scene data load note:", e);
+            window.__vfxSceneOwner = (window.currentProject && window.currentProject.id) || "";
         }
     }
 
@@ -5950,7 +5955,7 @@ let lastMonitorRenderTime = 0;
                         fps: projectFPS || 25,
                         total_frames: opts.frames || totalFrames || 49
                     };
-                    if (Array.isArray(mediaVideos2D)) mediaVideos2D.unshift(autoVid);
+                    if (typeof mediaVideos2D !== "undefined" && Array.isArray(mediaVideos2D)) mediaVideos2D.unshift(autoVid);
                     src.video = autoVidId;
                     if (typeof activeVideoId !== "undefined") activeVideoId = autoVidId;
                 }
@@ -8534,6 +8539,11 @@ let lastMonitorRenderTime = 0;
         monitorNeedsRender = true;
     }
 
+    // Baked-monitor view was removed; keep the flag so frame changes never throw (a throw here stopped the 3D redraw)
+    let isBakedViewActive = false;
+    let lastBakeTimestamp = 0;
+    function updateBakedMonitorFrame() {}
+
     function onFrameChanged() {
         timelineSlider.value = currentFrame;
         if (inpCurrentFrame && document.activeElement !== inpCurrentFrame) {
@@ -9733,13 +9743,13 @@ let lastMonitorRenderTime = 0;
             if (typeof snap.currentFrame === "number") {
                 currentFrame = Math.max(0, Math.min(totalFrames - 1, snap.currentFrame));
                 if (timelineSlider) timelineSlider.value = currentFrame;
-                if (timelineFrameInput) timelineFrameInput.value = currentFrame;
+                { const _tfi = document.getElementById("timeline-frame-input"); if (_tfi) _tfi.value = currentFrame; }
             }
 
             buildCameraTrajectoryPath();
             evaluateAnimation();
             updateKeyframeMarkers();
-            renderTimelineKeyframes();
+            if (typeof renderTimelineKeyframes === "function") renderTimelineKeyframes();
             updateSelectionHelpers();
             updateOutliner();
             notifyDetailsAndOutliner();
@@ -9886,6 +9896,8 @@ let lastMonitorRenderTime = 0;
     function syncSceneData() {
         sceneData = exportManifest();
         const pid = (window.currentProject && window.currentProject.id) || "";
+        // while another project's scene is still on stage (project switch in progress) nothing may be saved into this one
+        if (window.__vfxSceneOwner && window.__vfxSceneOwner !== pid) return;
         try {
             if (pid) {
                 localStorage.setItem(`vfx_3d_manifest_cache_${pid}`, JSON.stringify(sceneData));
@@ -11310,8 +11322,8 @@ let lastMonitorRenderTime = 0;
                 if (inp) inp.click();
             },
             onCaptureSelectedObjectPlateCrop: async () => {
-                const activeCam = viewThroughShotCam ? shotCamera : camera;
-                const plateImg = (bgTexture && bgTexture.image) ? bgTexture.image : null;
+                const activeCam = shotCamera;
+                const plateImg = null;
                 const fallbackUrl = `/vfx/plate_prep/default/frame/undist/${currentFrame}`;
                 return await projectObject3DBBoxToPlateCrop({
                     THREE,

@@ -2212,7 +2212,7 @@ app.registerExtension({
                         const existing = scene.getObjectByName("LTX_Calibration_Markers_3");
                         if (existing) {
                             existing.visible = !existing.visible;
-                            logMsg(`3D Markers Grid (Markers_3.blend) visibility: ${existing.visible ? "ON" : "OFF"}`);
+                            console.log(`3D Markers Grid (Markers_3.blend) visibility: ${existing.visible ? "ON" : "OFF"}`);
                             return;
                         }
 
@@ -2243,7 +2243,7 @@ app.registerExtension({
                         }
                         instancedMesh.instanceMatrix.needsUpdate = true;
                         scene.add(instancedMesh);
-                        logMsg("📍 Added 26,010 3D Calibration Markers (Markers_3.blend) to scene!");
+                        console.log("📍 Added 26,010 3D Calibration Markers (Markers_3.blend) to scene!");
                     };
 
                     // -------------------------------------------------------------
