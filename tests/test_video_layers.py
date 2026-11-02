@@ -347,3 +347,14 @@ def test_layer_xform_saved_and_applied(vl, project):
     assert a[10, 25] > 0.9 and a[10, 5] < 0.1           # the white strip moved half a frame to the right
     vl.update_layers_meta(project.pid, vid, [{"id": lid, "name": "M", "xform": {"x": 0, "y": 0, "s": 1, "r": 0}}])
     assert "xform" not in next(l for l in vl.load_manifest(project.pid, vid)["layers"] if l["id"] == lid)
+
+
+def test_component_morph_keeps_strokes_whole(vl):
+    A = np.zeros((120, 200, 4), np.uint8); B = np.zeros((120, 200, 4), np.uint8)
+    cv2.line(A, (20, 30), (70, 40), (255, 255, 255, 255), 9)
+    cv2.line(B, (130, 90), (180, 60), (255, 255, 255, 255), 9)
+    mid = vl._component_morph(A, B, 0.5)
+    area = lambda im: int((im[..., 3] > 127).sum())
+    assert area(mid) > 0.6 * min(area(A), area(B))      # the SDF blend of far-apart strokes shrank to a dot
+    ys, xs = np.nonzero(mid[..., 3] > 127)
+    assert 80 < xs.mean() < 120                            # half-way between the two strokes

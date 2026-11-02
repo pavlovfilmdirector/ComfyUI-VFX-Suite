@@ -36355,7 +36355,7 @@ async function openNarrationEditor() {
 
                 ${tipAttr("Selection → mask", "Выделение → маска", "Adds the selection to this frame's hand-drawn mask. Alt-click subtracts it.", "Добавляет выделение в ручную маску текущего кадра. Alt+клик — вычесть.")}
 
-                style="width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: none; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
+                style="width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: flex; opacity: 0.35; pointer-events: none; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
 
                 <i data-lucide="square-plus" style="width: 12px; height: 12px;"></i>
 
@@ -38314,7 +38314,7 @@ async function openNarrationEditor() {
             const st2 = typeof vlState2D !== "undefined" ? vlState2D : null;
             if (st2 && Array.isArray(st2.layers)) {
                 const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
-                const plateN = st2.plate?.total_frames || maxF;
+                const plateN = st2.plate?.total_frames || totalF;
                 st2.layers.forEach(l => {
                     if (l.type === "paint" && Array.isArray(l.keys)) {
                         l.keys.forEach(pf => {
@@ -38362,7 +38362,7 @@ async function openNarrationEditor() {
             if (selectedPaintKeys2D.size > 0) {
                 const byLayer = {};
                 const st2 = typeof vlState2D !== "undefined" ? vlState2D : null;
-                const plateN = st2?.plate?.total_frames || maxF;
+                const plateN = st2?.plate?.total_frames || totalF;
                 selectedPaintKeys2D.forEach(id => {
                     const [lid, pfStr] = id.split(":");
                     const pf = parseInt(pfStr, 10);
@@ -38553,7 +38553,7 @@ async function openNarrationEditor() {
             // 1. Render Paint Layer Keys
             try {
                 const st2 = typeof vlState2D !== "undefined" ? vlState2D : null;
-                const plateN = st2?.plate?.total_frames || maxF;
+                const plateN = st2?.plate?.total_frames || totalF;
                 const keyed = (l) => l.type === "paint" || ((l.type === "mask" || l.type === "matte") && (l.keys || []).length > 0);
                 const selPaint = st2 ? st2.layers.find(l => l.id === st2.selected && keyed(l)) : null;
                 const paintLayers = st2 ? (selPaint ? [selPaint] : st2.layers.filter(l => keyed(l) && l.visible !== false)) : [];
@@ -39245,7 +39245,40 @@ async function openNarrationEditor() {
 
 
 
-        // Two separate brushes: red = paint the mask, yellow = paint over the video (each with its own button)
+        // One brush button with two variants: paint the mask / paint over the video
+
+        (() => {
+
+            const brushBtn = toolsBar2D.querySelector('.btn-2d-dock-tool[data-tool="paint_mask_add"]');
+
+            const imgBtn = toolsBar2D.querySelector('.btn-2d-dock-tool[data-tool="paint_image"]');
+
+            if (!brushBtn) return;
+
+            if (imgBtn) imgBtn.remove();
+
+            const variants = [
+
+                { key: "paint_mask_add", icon: "paintbrush", color: "#ff3b5c", tEn: "Paint mask", tRu: "Рисовать маску", dEn: "Brush that adds to this frame's mask.", dRu: "Кисть, добавляющая в маску текущего кадра." },
+
+                { key: "paint_image", icon: "brush", color: "#fbbf24", tEn: "Paint over the video", tRu: "Рисовать поверх видео", dEn: "Color strokes on a layer shown on every frame. Alt = eraser.", dRu: "Цветные мазки на слое, видимом на всех кадрах. Alt — ластик." }
+
+            ];
+
+            brushBtn.dataset.tool = prefs.toolVariants?.brush2d === "paint_image" ? "paint_image" : "paint_mask_add";
+
+            const tint = () => {   // the button shows the brush it holds: red = mask, yellow = paint over the video
+                if (brushBtn.dataset.tool === "paint_image") { if (!(vid2DTool === "paint_image" && !window.__vfxPaintErase2D)) { brushBtn.style.color = "#fbbf24"; brushBtn.style.background = "transparent"; brushBtn.style.borderColor = "transparent"; } }
+                else if (!(vid2DTool === "paint_mask" && vid2DBrushMode === "add")) { brushBtn.style.color = "#ff3b5c"; brushBtn.style.background = "transparent"; brushBtn.style.borderColor = "transparent"; }
+            };
+            window.__vfxTintBrush2D = tint;
+            attachToolFlyout(brushBtn, "brush2d", variants, (key) => { brushBtn.dataset.tool = key; brushBtn.click(); });
+            tint();
+
+        })();
+
+
+
         // Wire Tools Dock Controls
 
         toolsBar2D.querySelectorAll(".btn-2d-dock-tool").forEach(b => {
@@ -39268,7 +39301,7 @@ async function openNarrationEditor() {
 
                 } else if (t === "paint_mask_sub") {
 
-                    if (vid2DTool === "paint_image") {   // the eraser erases what the active brush paints
+                    if (vid2DTool === "paint_image" || toolsBar2D.querySelector('.btn-2d-dock-tool[data-tool="paint_image"]')) {   // the eraser erases what the chosen brush paints
 
                         vid2DTool = "paint_image"; window.__vfxPaintErase2D = true;
 
@@ -39603,7 +39636,7 @@ async function openNarrationEditor() {
 
             const btn = toolsBar2D.querySelector("#btn-2d-sel-to-mask");
 
-            if (btn) btn.style.display = sel2DPoly ? "flex" : "none";
+            if (btn) { btn.style.display = "flex"; btn.style.opacity = sel2DPoly ? "1" : "0.35"; btn.style.pointerEvents = sel2DPoly ? "auto" : "none"; }
 
             const lw = Math.max(1.5, lassoCanvas.width / 900);
 
@@ -40627,7 +40660,7 @@ async function openNarrationEditor() {
 
             const n = vlState2D.plate?.total_frames || 0;
 
-            if (!n) return 0;
+            if (!n) return Math.max(0, curF);   // plate not extracted yet: the timeline frame (was 0 -> every key landed on frame 0)
 
             if (n === totalF) return Math.max(0, Math.min(n - 1, curF));
 
@@ -42756,7 +42789,8 @@ async function openNarrationEditor() {
             const otherVids = (typeof mediaVideos2D !== "undefined" ? mediaVideos2D : [])
                 .filter(v => v && v.id !== vidObj.id && String(v.videoUrl || "").startsWith("/vfx/project_file/"));
 
-            const lastRgb = rgbs.length ? rgbs[rgbs.length - 1].id : "plate";
+            const solidRgbs = rgbs.filter(l => l.type === "rgb" && l.source !== "composite");
+            const lastRgb = solidRgbs.length ? solidRgbs[solidRgbs.length - 1].id : "plate";
 
             const pop = openGenPopover(anchor, `
 

@@ -449,7 +449,7 @@ def _fill_color_outward(rgba: np.ndarray) -> np.ndarray:
     return out
 
 
-def _point_morph_prepare(A: np.ndarray, B: np.ndarray, max_pts: int = 6000):
+def _point_morph_prepare(A: np.ndarray, B: np.ndarray, max_pts: int = 6000, smooth: float = 0.0):
     """Line drawings morph best as point clouds: every stroke pixel of one key is paired with a pixel of
     the other (optimal assignment on a subsample, nearest-neighbour for the rest). Returns None if the
     drawings are too big (filled areas) or scipy is missing; the SDF morph handles those."""
@@ -474,8 +474,20 @@ def _point_morph_prepare(A: np.ndarray, B: np.ndarray, max_pts: int = 6000):
     cost = ((big[bi][:, None, :] - small[si][None, :, :]) ** 2).sum(-1)
     r, c = linear_sum_assignment(cost)
     disp = small[si][c] - big[bi][r]
-    _, nn = cKDTree(big[bi][r]).query(big)
-    _, j = cKDTree(small).query(big + disp[nn])
+    anchors = big[bi][r]
+    kn = int(min(len(anchors), 1 + round(3 * smooth))) if smooth > 0 else 1
+    if kn > 1:
+        # smoothing: every stroke pixel follows the weighted average of its nearest matched anchors, so
+        # neighbouring pixels pair with neighbouring pixels (coherent motion, no scattered in-betweens)
+        dist, nn = cKDTree(anchors).query(big, k=kn)
+        sig = max(2.0, float(np.median(dist[:, -1])))
+        wts = np.exp(-(dist / sig) ** 2)
+        wts /= wts.sum(1, keepdims=True) + 1e-6
+        moved = big + (disp[nn] * wts[..., None]).sum(1)
+    else:
+        _, nn = cKDTree(anchors).query(big)
+        moved = big + disp[nn]
+    _, j = cKDTree(small).query(moved)
     ia, ib = (j, np.arange(len(big))) if swap else (np.arange(len(big)), j)
     dt = cv2.distanceTransform((A[..., 3] > 100).astype(np.uint8), cv2.DIST_L2, 3)
     thick = int(max(1, min(6, round(float(dt.max()) * 0.5))))
@@ -498,6 +510,84 @@ def _point_morph_frame(prep, t: float, H: int, W: int) -> np.ndarray:
     out[..., :3] = cv2.dilate(out[..., :3], k)
     a = cv2.morphologyEx(out[..., 3], cv2.MORPH_CLOSE, k)
     out[..., 3] = cv2.GaussianBlur(a, (0, 0), 0.6)
+    return out
+
+
+def _components(alpha: np.ndarray, min_px: int = 30):
+    n, lab, st, cen = cv2.connectedComponentsWithStats((alpha > 127).astype(np.uint8), 8)
+    out = []
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] < min_px:
+            continue
+        m = (lab == i).astype(np.uint8)
+        mo = cv2.moments(m, True)
+        theta = 0.5 * np.arctan2(2 * mo["mu11"], (mo["mu20"] - mo["mu02"]) + 1e-9)
+        out.append({"mask": m, "c": (mo["m10"] / mo["m00"], mo["m01"] / mo["m00"]), "area": float(mo["m00"]), "theta": float(theta)})
+    return out
+
+
+_CANON = 512          # canonical canvas for one shape
+_CANON_SIZE = 40.0    # sqrt(area) of a shape on the canonical canvas
+
+
+def _to_canon(comp):
+    k = _CANON_SIZE / max(1.0, np.sqrt(comp["area"]))
+    M = cv2.getRotationMatrix2D(comp["c"], np.degrees(comp["theta"]), k)
+    M[0, 2] += _CANON / 2 - comp["c"][0]
+    M[1, 2] += _CANON / 2 - comp["c"][1]
+    return cv2.warpAffine(comp["mask"] * 255, M, (_CANON, _CANON), flags=cv2.INTER_LINEAR)
+
+
+def _component_morph(A: np.ndarray, B: np.ndarray, t: float) -> Optional[np.ndarray]:
+    """Shape morph that keeps each stroke whole: strokes of the two keys are paired (nearest first), each pair
+    is brought to a common position / size / direction, blended there (signed distance) and put back at the
+    interpolated position, size and angle - so strokes travel and turn instead of shrinking to a dot half-way.
+    Unpaired strokes fade out (A) or in (B). None if a key is empty."""
+    H, W = A.shape[:2]
+    ka, kb = _components(A[..., 3]), _components(B[..., 3])
+    if not ka or not kb:
+        return None
+    try:
+        from scipy.optimize import linear_sum_assignment
+        cost = np.array([[np.hypot(a["c"][0] - b["c"][0], a["c"][1] - b["c"][1]) for b in kb] for a in ka])
+        ri, ci = linear_sum_assignment(cost)
+    except Exception:   # greedy nearest pairs
+        ri, ci, used = [], [], set()
+        for i, a in enumerate(ka):
+            best = min((j for j in range(len(kb)) if j not in used), default=None,
+                       key=lambda j: np.hypot(a["c"][0] - kb[j]["c"][0], a["c"][1] - kb[j]["c"][1]))
+            if best is not None:
+                used.add(best); ri.append(i); ci.append(best)
+    acc = np.zeros((H, W), np.float32)
+    for i, j in zip(ri, ci):
+        a, b = ka[i], kb[j]
+        dth = b["theta"] - a["theta"]
+        dth = (dth + np.pi / 2) % np.pi - np.pi / 2      # an axis has no direction: turn the short way
+        ca_, cb_ = _to_canon(a), _to_canon(b)
+        if abs((b["theta"] - a["theta"]) - dth) > 1e-6:   # turned the short way: B's canonical shape is upside down
+            cb_ = cv2.rotate(cb_, cv2.ROTATE_180)
+        # rotate B's canonical shape so both are compared in the same frame (the canonical frames differ by dth)
+        sd = _sdf(ca_) * (1 - t) + _sdf(cb_) * t
+        canon = np.clip(0.5 - sd, 0, 1)
+        th = a["theta"] + dth * t
+        size = np.sqrt(a["area"]) * (1 - t) + np.sqrt(b["area"]) * t
+        cx = a["c"][0] * (1 - t) + b["c"][0] * t
+        cy = a["c"][1] * (1 - t) + b["c"][1] * t
+        k = size / _CANON_SIZE
+        M = cv2.getRotationMatrix2D((_CANON / 2, _CANON / 2), -np.degrees(th), k)
+        M[0, 2] += cx - _CANON / 2
+        M[1, 2] += cy - _CANON / 2
+        acc = np.maximum(acc, cv2.warpAffine(canon, M, (W, H), flags=cv2.INTER_LINEAR))
+    for i, a in enumerate(ka):           # strokes only in A fade out
+        if i not in set(ri):
+            acc = np.maximum(acc, a["mask"].astype(np.float32) * (1 - t))
+    for j, b in enumerate(kb):           # strokes only in B fade in
+        if j not in set(ci):
+            acc = np.maximum(acc, b["mask"].astype(np.float32) * t)
+    out = np.zeros((H, W, 4), np.uint8)
+    fa, fb = _fill_color_outward(A).astype(np.float32), _fill_color_outward(B).astype(np.float32)
+    out[..., :3] = np.clip(fa * (1 - t) + fb * t, 0, 255).astype(np.uint8)
+    out[..., 3] = (np.clip(acc, 0, 1) * 255).astype(np.uint8)
     return out
 
 
@@ -537,7 +627,7 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
         for fn in os.listdir(d):
             if fn.startswith("frame_"):
                 os.remove(os.path.join(d, fn))
-    if len(keys) < 2 or total <= 0:
+    if len(keys) < 2:   # in-betweens only lie between keys: no need for an extracted plate
         return 0
     imgs = {}
     for k in keys:
@@ -560,7 +650,7 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
         A, B = imgs[a], imgs[b]
         if B.shape != A.shape:
             B = cv2.resize(B, (A.shape[1], A.shape[0]))
-        prep = _point_morph_prepare(A, B)
+        prep = _point_morph_prepare(A, B, smooth=smooth)
         if prep is not None:  # line drawings: point-to-point morph
             H0, W0 = A.shape[:2]
             for f in range(a + 1, b):
@@ -568,6 +658,15 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
                 if smooth > 0:   # eased timing: the shape starts and settles softly instead of moving at a constant speed
                     tt = tt * tt * (3 - 2 * tt)
                 _write(os.path.join(d, f"frame_{f:04d}.png"), _point_morph_frame(prep, tt, H0, W0))
+                n += 1
+            continue
+        comp_ok = bool(_components(A[..., 3])) and bool(_components(B[..., 3]))
+        if comp_ok:   # strokes travel, turn and resize as whole shapes
+            for f in range(a + 1, b):
+                t = (f - a) / float(b - a)
+                if smooth > 0:
+                    t = t * t * (3 - 2 * t)
+                _write(os.path.join(d, f"frame_{f:04d}.png"), _component_morph(A, B, t))
                 n += 1
             continue
         ca, cb = _fill_color_outward(A).astype(np.float32), _fill_color_outward(B).astype(np.float32)
@@ -1785,11 +1884,18 @@ def _job_composite(job_id, kind, pid, vid, p):
             return None
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        elif img.shape[2] == 4:
-            img = img[..., :3]
         img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA) if img.shape[:2] != (h, w) else img
         lxf = layer_xf.get(src)
-        return _apply_xform(img, lxf, keep_outside_opaque=True) if lxf else img
+        if lxf:
+            img = _apply_xform(img, lxf)
+        if img.shape[2] == 4:
+            # a layer with transparency (paint strokes, a cut-out): what is see-through shows the video under it,
+            # as in the viewer, instead of black
+            a = img[..., 3:4].astype(np.float32) / 255.0
+            under = rgb("plate", i) if src != "plate" else None
+            base = under.astype(np.float32) if under is not None else np.zeros((h, w, 3), np.float32)
+            img = (img[..., :3].astype(np.float32) * a + base * (1 - a)).astype(np.uint8)
+        return img
 
     k = np.ones((3, 3), np.uint8)
     written = 0
