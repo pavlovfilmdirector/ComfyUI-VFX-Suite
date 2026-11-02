@@ -4529,21 +4529,25 @@ let lastMonitorRenderTime = 0;
             try { syncSceneData(); renderStudioViewports(); } catch (_) {}
             return true;
         } };
-    {
-        const sel = document.getElementById("sel-camera-asset");
-        if (sel) {
-            sel.onfocus = () => renderCameraCutsTrack();
-            sel.onchange = () => { window.__vfxCutPick = sel.value; const a = camActorById(sel.value); if (a) { try { selectObject(a); } catch (_) {} renderStudioViewports(); } };
-        }
-        const bc = document.getElementById("btn-camera-cut");
-        if (bc) bc.onclick = () => {
+    // delegated: the timeline footer is rebuilt after init, so handlers bound to the first buttons were lost (Cut did nothing)
+    if (!window.__vfxCutDelegated) {
+        window.__vfxCutDelegated = true;
+        document.addEventListener("focusin", (e) => { if (e.target && e.target.id === "sel-camera-asset") renderCameraCutsTrack(); });
+        document.addEventListener("change", (e) => {
+            const sel = e.target; if (!sel || sel.id !== "sel-camera-asset") return;
+            window.__vfxCutPick = sel.value;
+            const a = camActorById(sel.value); if (a) { try { selectObject(a); } catch (_) {} renderStudioViewports(); }
+        });
+        document.addEventListener("click", (e) => {
+            const btn = e.target && e.target.closest ? e.target.closest("#btn-camera-cut, #btn-camera-cut-del") : null;
+            if (!btn) return;
+            if (btn.id === "btn-camera-cut-del") { removeCameraCut(currentFrame); return; }
+            const sel = document.getElementById("sel-camera-asset");
             const a = camActorById(sel?.value) || getActiveMonitorCameraActor();
             if (!a) { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("Add a camera first", "Сначала добавьте камеру"), true); return; }
             addCameraCut(currentFrame, a);
             if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Cut at frame ${currentFrame}: ${a === shotCamera ? "shot camera" : a.userData.name}`, `Склейка на кадре ${currentFrame}: ${a === shotCamera ? "камера шота" : a.userData.name}`));
-        };
-        const bd = document.getElementById("btn-camera-cut-del");
-        if (bd) bd.onclick = () => removeCameraCut(currentFrame);
+        });
     }
     function getActiveMonitorCamera() {
         const actor = getActiveMonitorCameraActor();
