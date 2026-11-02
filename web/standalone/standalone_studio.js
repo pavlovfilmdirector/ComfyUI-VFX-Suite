@@ -1237,6 +1237,18 @@ let lastMonitorRenderTime = 0;
             if (label != null) {
                 text.textContent = label + (d.pending ? ` (+${d.pending})` : "");
             }
+            // hover tooltip: what exactly is running right now (the chip text is cut to fit)
+            {
+                const lines = [];
+                if (vj) lines.push(`${vj.name || vj.kind}${vj.project ? " · " + vj.project : ""}${vj.video ? " / " + vj.video : ""} — ${Math.round(vj.progress || 0)}%`, vj.message || "");
+                if (mj) lines.push(`3D: ${mj.kind || "mesh"} — ${Math.round(mj.progress || 0)}%`, mj.message || "");
+                if (r) lines.push(`ComfyUI: ${r.label || r.node_title || "…"}${r.max ? ` · ${uiText("step", "шаг")} ${r.value}/${r.max}` : ""}${r.eta != null ? ` · ~${fmt(r.eta)}` : ""}`, r.node_title && r.label ? `${uiText("node", "нода")}: ${r.node_title}` : "");
+                if (!lines.length && liveGenActive) lines.push(window.__activeLiveGen.stageTxt || "");
+                if (d.pending) lines.push(uiText(`${d.pending} more in the queue`, `ещё в очереди: ${d.pending}`));
+                const det = lines.filter(Boolean).join("\n") + "\n" + uiText("Click for details", "Клик — подробности");
+                chip.dataset.tipDEn = det; chip.dataset.tipDRu = det;
+                chip.title = "";
+            }
             if (!open) return;
             let html = "";
             if (r) {

@@ -8935,7 +8935,7 @@ def register_server_routes():
 
                 data["video_jobs"] = [
 
-                    {k: j.get(k) for k in ("id", "kind", "status", "progress", "message", "started")}
+                    {k: j.get(k) for k in ("id", "kind", "status", "progress", "message", "started", "project", "video", "name")}
 
                     for j in list(_VJOBS.values()) if j.get("status") == "running"
 

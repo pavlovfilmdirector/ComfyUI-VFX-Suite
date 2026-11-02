@@ -22811,6 +22811,7 @@ async function openNarrationEditor() {
 
 
 
+    window.__vfxSwitchMainDimension = (dim) => switchMainDimension(dim);
     function switchMainDimension(dim) {
 
         if (vid2DTimer) {
@@ -36298,16 +36299,6 @@ async function openNarrationEditor() {
 
 
 
-            <button class="vfx-btn" id="btn-2d-sel-to-mask"
-
-                ${tipAttr("Selection → mask", "Выделение → маска", "Adds the selection to this frame's hand-drawn mask. Alt-click subtracts it.", "Добавляет выделение в ручную маску текущего кадра. Alt+клик — вычесть.")}
-
-                style="order: 1; width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: none; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
-
-                <i data-lucide="square-plus" style="width: 12px; height: 12px;"></i>
-
-            </button>
-
             <button class="vfx-btn btn-2d-dock-tool" data-tool="lasso"
 
                 ${tipAttr("Lasso Mask (Direct Fill / Erase)", "Лассо маски (Мгновенная заливка / ластик)", "Draw loop to fill mask immediately. Shift+Drag to add, Ctrl+Drag to erase.", "Обведите контур для мгновенной заливки маски. Shift+перетаскивание — залить, Ctrl+перетаскивание — стереть.")}
@@ -36359,6 +36350,16 @@ async function openNarrationEditor() {
             </button>
 
 
+
+            <button class="vfx-btn" id="btn-2d-sel-to-mask"
+
+                ${tipAttr("Selection → mask", "Выделение → маска", "Adds the selection to this frame's hand-drawn mask. Alt-click subtracts it.", "Добавляет выделение в ручную маску текущего кадра. Alt+клик — вычесть.")}
+
+                style="width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: none; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
+
+                <i data-lucide="square-plus" style="width: 12px; height: 12px;"></i>
+
+            </button>
 
             <button class="vfx-btn" id="btn-2d-mask-invert"
 
@@ -36728,15 +36729,15 @@ async function openNarrationEditor() {
 
                     <canvas id="vfx-2d-tl-ruler" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
 
-                    <div id="vfx-2d-tl-dim-left" style="position: absolute; top: 0; bottom: 0; left: 0; width: ${(clipStart / Math.max(1, totalF)) * 100}%; background: rgba(0, 0, 0, 0.60); backdrop-filter: grayscale(1); pointer-events: none; border-right: 1.5px solid #38bdf8; z-index: 4;"></div>
+                    <div id="vfx-2d-tl-dim-left" style="position: absolute; top: 0; bottom: 0; left: 0; width: ${(clipStart / Math.max(1, totalF - 1)) * 100}%; background: rgba(0, 0, 0, 0.60); backdrop-filter: grayscale(1); pointer-events: none; border-right: 1.5px solid #38bdf8; z-index: 4;"></div>
 
-                    <div id="vfx-2d-tl-dim-right" style="position: absolute; top: 0; bottom: 0; left: ${(clipEnd / Math.max(1, totalF)) * 100}%; right: 0; background: rgba(0, 0, 0, 0.60); backdrop-filter: grayscale(1); pointer-events: none; border-left: 1.5px solid #c084fc; z-index: 4;"></div>
+                    <div id="vfx-2d-tl-dim-right" style="position: absolute; top: 0; bottom: 0; left: ${(clipEnd / Math.max(1, totalF - 1)) * 100}%; right: 0; background: rgba(0, 0, 0, 0.60); backdrop-filter: grayscale(1); pointer-events: none; border-left: 1.5px solid #c084fc; z-index: 4;"></div>
 
-                    <div id="vfx-2d-tl-active-bar" style="position: absolute; top: 0; left: ${(clipStart / Math.max(1, totalF)) * 100}%; width: ${Math.max(0, (clipEnd - clipStart) / Math.max(1, totalF)) * 100}%; height: 3px; background: linear-gradient(90deg, #38bdf8, #c084fc); pointer-events: none; z-index: 5; box-shadow: 0 0 6px rgba(56, 189, 248, 0.5);"></div>
+                    <div id="vfx-2d-tl-active-bar" style="position: absolute; top: 0; left: ${(clipStart / Math.max(1, totalF - 1)) * 100}%; width: ${Math.max(0, (clipEnd - clipStart) / Math.max(1, totalF - 1)) * 100}%; height: 3px; background: linear-gradient(90deg, #38bdf8, #c084fc); pointer-events: none; z-index: 5; box-shadow: 0 0 6px rgba(56, 189, 248, 0.5);"></div>
 
                     <div id="vfx-2d-tl-keys-layer" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: auto;"></div>
 
-                    <div id="vfx-2d-tl-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b5c; pointer-events: none; transform: translateX(-50%); z-index: 10; box-shadow: 0 0 6px #ff3b5c; left: ${(curF / Math.max(1, totalF)) * 100}%;">
+                    <div id="vfx-2d-tl-playhead" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b5c; pointer-events: none; transform: translateX(-${(curF / Math.max(1, totalF - 1)) * 100}%); z-index: 10; box-shadow: 0 0 6px #ff3b5c; left: ${(curF / Math.max(1, totalF - 1)) * 100}%;">
 
                         <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 7px; height: 7px; background: #ff3b5c; clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);"></div>
 
@@ -38215,9 +38216,18 @@ async function openNarrationEditor() {
 
 
 
+        // playhead: frame 0 touches the left edge, the last frame the right edge (the 2px line stays inside the track)
+        function setPlayhead2D(f) {
+            const el = wrapper.querySelector("#vfx-2d-tl-playhead");
+            if (!el) return;
+            const pct = Math.max(0, Math.min(1, f / Math.max(1, totalF - 1))) * 100;
+            el.style.left = `${pct}%`;
+            el.style.transform = `translateX(-${pct}%)`;
+        }
+
         function goTo2DFrame(newF) {
 
-            newF = Math.max(0, Math.min(totalF, Math.round(newF)));
+            newF = Math.max(0, Math.min(Math.max(0, totalF - 1), Math.round(newF)));
 
             curF = newF;
 
@@ -38255,7 +38265,7 @@ async function openNarrationEditor() {
 
             if (playheadEl) {
 
-                playheadEl.style.left = `${(newF / Math.max(1, totalF)) * 100}%`;
+                playheadEl.style.left = `${(newF / Math.max(1, totalF - 1)) * 100}%`; playheadEl.style.transform = `translateX(-${(newF / Math.max(1, totalF - 1)) * 100}%)`;
 
             }
 
@@ -38303,12 +38313,12 @@ async function openNarrationEditor() {
             }
             const st2 = typeof vlState2D !== "undefined" ? vlState2D : null;
             if (st2 && Array.isArray(st2.layers)) {
-                const maxF = Math.max(1, totalF);
+                const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
                 const plateN = st2.plate?.total_frames || maxF;
                 st2.layers.forEach(l => {
                     if (l.type === "paint" && Array.isArray(l.keys)) {
                         l.keys.forEach(pf => {
-                            const f = Math.round(pf * maxF / Math.max(1, plateN));
+                            const f = plateN === totalF ? pf : Math.max(0, Math.min(maxF, Math.round((pf + 0.5) * totalF / Math.max(1, plateN) - 0.5)));
                             set.add(f);
                         });
                     }
@@ -38322,7 +38332,7 @@ async function openNarrationEditor() {
 
         async function moveSelected2DKeys(delta) {
             if (!delta) return;
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
             let movedCount = 0;
 
             // 1. Move mask keys
@@ -38415,7 +38425,7 @@ async function openNarrationEditor() {
             render2DTimelineTrack();
 
             const startClientX = e.clientX;
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
             const rulerCanvas = wrapper.querySelector("#vfx-2d-tl-ruler");
             const initialTrackRect = rulerCanvas ? rulerCanvas.getBoundingClientRect() : { width: 600 };
             let hasDragged = false;
@@ -38487,11 +38497,11 @@ async function openNarrationEditor() {
 
             const w = rulerCanvas.width;
             const h = rulerCanvas.height;
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
 
             // Update dimmed areas and active range bar
             const startPct = (clipStart / maxF) * 100;
-            const endPct = (clipEnd / maxF) * 100;
+            const endPct = Math.min(100, (clipEnd / maxF) * 100);
             if (dimLeft) {
                 dimLeft.style.width = `${startPct}%`;
                 dimLeft.style.display = startPct > 0 ? "block" : "none";
@@ -38532,7 +38542,7 @@ async function openNarrationEditor() {
             rCtx.fillRect(inX, h - 2, 5, 2);
 
             // Draw Out-point bracket indicator (Purple)
-            const outX = (clipEnd / maxF) * w;
+            const outX = Math.min(w - 1, (clipEnd / maxF) * w);
             rCtx.fillStyle = "#c084fc";
             rCtx.fillRect(outX - 1, 0, 2, h);
             rCtx.fillRect(outX - 5, 0, 5, 2);
@@ -38548,7 +38558,7 @@ async function openNarrationEditor() {
                 const selPaint = st2 ? st2.layers.find(l => l.id === st2.selected && keyed(l)) : null;
                 const paintLayers = st2 ? (selPaint ? [selPaint] : st2.layers.filter(l => keyed(l) && l.visible !== false)) : [];
                 paintLayers.forEach(pl => (pl.keys || []).forEach(pf => {
-                    const f = Math.round(pf * maxF / Math.max(1, plateN));
+                    const f = plateN === totalF ? pf : Math.max(0, Math.min(maxF, Math.round((pf + 0.5) * totalF / Math.max(1, plateN) - 0.5)));
                     const id = `${pl.id}:${pf}`;
                     const sel = selectedPaintKeys2D.has(id);
                     const mk = document.createElement("div");
@@ -38615,7 +38625,7 @@ async function openNarrationEditor() {
         trackContainer.onmousedown = (e) => {
             if (e.target.closest(".vfx-2d-key-diamond, .vfx-2d-paint-key")) return;
             e.preventDefault();
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
             const getFrameFromClientX = (clientX) => {
                 const trackR = trackContainer.getBoundingClientRect();
                 const ratio = Math.max(0, Math.min(1, (clientX - trackR.left) / Math.max(1, trackR.width)));
@@ -39023,7 +39033,7 @@ async function openNarrationEditor() {
 
             selected2DMaskKeys.clear();
 
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
 
 
 
@@ -39079,7 +39089,7 @@ async function openNarrationEditor() {
 
             if (!delta || selected2DMaskKeys.size === 0) return;
 
-            const maxF = Math.max(1, totalF);
+            const maxF = Math.max(1, totalF - 1);   // frame 0 at the left edge, the last frame at the right edge
 
             const keysToMove = Array.from(selected2DMaskKeys)
 
@@ -39235,34 +39245,7 @@ async function openNarrationEditor() {
 
 
 
-        // One brush button with two variants: paint the mask / paint over the video
-
-        (() => {
-
-            const brushBtn = toolsBar2D.querySelector('.btn-2d-dock-tool[data-tool="paint_mask_add"]');
-
-            const imgBtn = toolsBar2D.querySelector('.btn-2d-dock-tool[data-tool="paint_image"]');
-
-            if (!brushBtn) return;
-
-            if (imgBtn) imgBtn.remove();
-
-            const variants = [
-
-                { key: "paint_mask_add", icon: "paintbrush", color: "#ff3b5c", tEn: "Paint mask", tRu: "Рисовать маску", dEn: "Brush that adds to this frame's mask.", dRu: "Кисть, добавляющая в маску текущего кадра." },
-
-                { key: "paint_image", icon: "brush", color: "#fbbf24", tEn: "Paint over the video", tRu: "Рисовать поверх видео", dEn: "Color strokes on a layer shown on every frame. Alt = eraser.", dRu: "Цветные мазки на слое, видимом на всех кадрах. Alt — ластик." }
-
-            ];
-
-            brushBtn.dataset.tool = prefs.toolVariants?.brush2d === "paint_image" ? "paint_image" : "paint_mask_add";
-
-            attachToolFlyout(brushBtn, "brush2d", variants, (key) => { brushBtn.dataset.tool = key; brushBtn.click(); });
-
-        })();
-
-
-
+        // Two separate brushes: red = paint the mask, yellow = paint over the video (each with its own button)
         // Wire Tools Dock Controls
 
         toolsBar2D.querySelectorAll(".btn-2d-dock-tool").forEach(b => {
@@ -39285,7 +39268,7 @@ async function openNarrationEditor() {
 
                 } else if (t === "paint_mask_sub") {
 
-                    if (prefs.toolVariants?.brush2d === "paint_image") {
+                    if (vid2DTool === "paint_image") {   // the eraser erases what the active brush paints
 
                         vid2DTool = "paint_image"; window.__vfxPaintErase2D = true;
 
@@ -40122,7 +40105,7 @@ async function openNarrationEditor() {
 
             if (playheadEl) {
 
-                playheadEl.style.left = `${(newFrame / Math.max(1, totalF)) * 100}%`;
+                setPlayhead2D(newFrame);
 
             }
 
@@ -40414,7 +40397,7 @@ async function openNarrationEditor() {
 
                         const playheadEl = wrapper.querySelector("#vfx-2d-tl-playhead");
 
-                        if (playheadEl) playheadEl.style.left = `${startProgress * 100}%`;
+                        if (playheadEl) setPlayhead2D(clipStart);
 
                         const inpTlF = wrapper.querySelector("#inp-2d-tl-frame");
 
@@ -40440,7 +40423,7 @@ async function openNarrationEditor() {
 
                     if (playheadEl) {
 
-                        playheadEl.style.left = `${progress * 100}%`;
+                        setPlayhead2D(Math.max(0, Math.min(totalF - 1, progress * totalF - 0.5)));
 
                     }
 
@@ -40538,7 +40521,7 @@ async function openNarrationEditor() {
 
                         const playheadEl = wrapper.querySelector("#vfx-2d-tl-playhead");
 
-                        if (playheadEl) playheadEl.style.left = `${startProgress * 100}%`;
+                        if (playheadEl) setPlayhead2D(clipStart);
 
                         const inpTlF = wrapper.querySelector("#inp-2d-tl-frame");
 
@@ -40554,7 +40537,7 @@ async function openNarrationEditor() {
 
                     const playheadEl = wrapper.querySelector("#vfx-2d-tl-playhead");
 
-                    if (playheadEl) playheadEl.style.left = `${progress * 100}%`;
+                    if (playheadEl) setPlayhead2D(Math.max(0, Math.min(totalF - 1, progress * totalF - 0.5)));
 
                     if (frame !== curF) {
 
@@ -41077,6 +41060,8 @@ async function openNarrationEditor() {
             // hand-drawn mask layers are keyed like paint (generated masks are edited frame by frame)
             const handMask = !!(vlState2D.editMask && l && (l.type === "mask" || l.type === "matte") && (Array.isArray(l.keys) || !l.frames));
             const erasing = e.altKey || window.__vfxPaintErase2D;
+            // the stroke on a frame without its own key makes a NEW key there (never overwrites the held key)
+            paintFreshKey2D = !hasKeyOnThisFrame && !vlState2D.editMask;
             if (!hasKeyOnThisFrame && (!vlState2D.editMask || (handMask && !erasing && (l.keys || []).length))) {
                 paintCtx2D.clearRect(0, 0, paintCanvas2D.width, paintCanvas2D.height);
                 if (l) {
@@ -41137,11 +41122,13 @@ async function openNarrationEditor() {
 
         let paintSaveChain2D = Promise.resolve();
 
+        let paintFreshKey2D = false;
         function savePaint2D(frameIdx) {
 
             const data = paintCanvas2D.toDataURL("image/png"); // snapshot now, not when the queue gets to it
+            const fresh = paintFreshKey2D; paintFreshKey2D = false;
 
-            paintSaveChain2D = paintSaveChain2D.then(() => savePaint2DNow(frameIdx, data)).catch(() => {});
+            paintSaveChain2D = paintSaveChain2D.then(() => savePaint2DNow(frameIdx, data, fresh)).catch(() => {});
 
             return paintSaveChain2D;
 
@@ -42193,36 +42180,7 @@ async function openNarrationEditor() {
 
             if (manEye) manEye.onclick = () => { vidObj.manualMaskHidden = !vidObj.manualMaskHidden; saveProject2DVideos(); if (maskCanvas) maskCanvas.style.visibility = vidObj.manualMaskHidden ? "hidden" : "visible"; renderVideoLayersPanel2D(); };
 
-            const manToLayer = async () => {
-                const keys = Object.keys(vidObj.masks || {}).map(Number).filter(k => !isNaN(k) && vidObj.masks[k]).sort((a, b) => a - b);
-                if (!keys.length) return;
-                const name = uiText("Hand-drawn mask", "Ручная маска");
-                try {
-                    const res = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/add_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ type: "mask", name, color: "#ff3b5c" }) }).then(r => r.json());
-                    if (!res || !res.layer) throw new Error(res && res.error || "add_layer");
-                    const n = vlState2D.plate?.total_frames || totalF;
-                    const toPlate = (f) => n === totalF ? f : Math.max(0, Math.min(n - 1, Math.floor((f + 0.5) * n / Math.max(1, totalF))));
-                    let st = null;
-                    for (const k of keys) {
-                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/frame_edit`, { method: "POST", headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ layer_id: res.layer.id, frame: toPlate(k), data: vidObj.masks[k] }) }).then(r => r.json());
-                        if (st.error) throw new Error(st.error);
-                    }
-                    if (vidObj.interpolate !== false && keys.length > 1) {
-                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/paint_morph`, { method: "POST", headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ layer_id: res.layer.id, on: true }) }).then(r => r.json()).catch(() => st);
-                    }
-                    push2DMaskUndo({ type: "full_masks", masks: JSON.parse(JSON.stringify(vidObj.masks || {})) });
-                    vidObj.masks = {}; saveProject2DVideos();
-                    if (maskCtx) maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-                    await refreshVideoState2D();
-                    vlState2D.selected = res.layer.id; vlState2D.selLayerIds = [res.layer.id];
-                    renderVideoLayersPanel2D(); updateVideoOverlays2D();
-                    if (typeof render2DTimelineTrack === "function") render2DTimelineTrack();
-                    showToastNotification(uiText(`Hand-drawn mask is now the layer «${name}»`, `Ручная маска стала слоем «${name}»`));
-                } catch (err) { showToastNotification(`${uiText("Hand-drawn mask", "Ручная маска")}: ${err.message || err}`, true); }
-            };
+            const manToLayer = () => convertManualMask2D();
             { const b = vlPanel2D.querySelector("#btn-2d-manual-tolayer"); if (b) b.onclick = (e) => { e.stopPropagation(); manToLayer(); }; }
             { const b = vlPanel2D.querySelector("#vl2d-manual-name"); if (b) b.onclick = (e) => { e.stopPropagation(); manToLayer(); }; }
 
@@ -42743,6 +42701,38 @@ async function openNarrationEditor() {
             if (otherVids.length) loadSrcLayers(otherVids[0].id);
         }
 
+        async function convertManualMask2D() {
+                const keys = Object.keys(vidObj.masks || {}).map(Number).filter(k => !isNaN(k) && vidObj.masks[k]).sort((a, b) => a - b);
+                if (!keys.length) return null;
+                const name = uiText("Hand-drawn mask", "Ручная маска");
+                try {
+                    const res = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/add_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ type: "mask", name, color: "#ff3b5c" }) }).then(r => r.json());
+                    if (!res || !res.layer) throw new Error(res && res.error || "add_layer");
+                    const n = vlState2D.plate?.total_frames || totalF;
+                    const toPlate = (f) => n === totalF ? f : Math.max(0, Math.min(n - 1, Math.floor((f + 0.5) * n / Math.max(1, totalF))));
+                    let st = null;
+                    for (const k of keys) {
+                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/frame_edit`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ layer_id: res.layer.id, frame: toPlate(k), data: vidObj.masks[k] }) }).then(r => r.json());
+                        if (st.error) throw new Error(st.error);
+                    }
+                    if (vidObj.interpolate !== false && keys.length > 1) {
+                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/paint_morph`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ layer_id: res.layer.id, on: true }) }).then(r => r.json()).catch(() => st);
+                    }
+                    push2DMaskUndo({ type: "full_masks", masks: JSON.parse(JSON.stringify(vidObj.masks || {})) });
+                    vidObj.masks = {}; saveProject2DVideos();
+                    if (maskCtx) maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                    await refreshVideoState2D();
+                    vlState2D.selected = res.layer.id; vlState2D.selLayerIds = [res.layer.id];
+                    renderVideoLayersPanel2D(); updateVideoOverlays2D();
+                    if (typeof render2DTimelineTrack === "function") render2DTimelineTrack();
+                    showToastNotification(uiText(`Hand-drawn mask is now the layer «${name}»`, `Ручная маска стала слоем «${name}»`));
+                    return res.layer.id;
+                } catch (err) { showToastNotification(`${uiText("Hand-drawn mask", "Ручная маска")}: ${err.message || err}`, true); return null; }
+        }
+
         async function openCompositeDialog2D(anchor) {
 
             try { await refreshVideoState2D(); } catch (_) {}
@@ -42750,8 +42740,9 @@ async function openNarrationEditor() {
             const L = vlState2D.layers;
 
             const masks = L.filter(l => l.type === "mask" || l.type === "matte");
+            const hasManual = Object.keys(vidObj.masks || {}).some(k => vidObj.masks[k]);
 
-            const rgbs = L.filter(l => l.type === "rgb");
+            const rgbs = L.filter(l => l.type === "rgb" || l.type === "paint");
 
             const src = (id, def) => `<select id="${id}" style="width: 100%; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">
 
@@ -42779,9 +42770,9 @@ async function openNarrationEditor() {
 
                 <div>${uiText("Subject mask", "Маска объекта")}</div>
 
-                ${masks.length ? `<select id="cp-mask" style="width: 100%; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">${masks.map(l => `<option value="${l.id}">${esc(l.name || l.id)}</option>`).join("")}</select>`
+                ${(masks.length || hasManual) ? `<select id="cp-mask" style="width: 100%; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">${masks.map(l => `<option value="${l.id}" ${vlState2D.selected === l.id ? "selected" : ""}>${esc(l.name || l.id)}</option>`).join("")}${hasManual ? `<option value="__manual__">${uiText("Hand-drawn mask", "Ручная маска")}</option>` : ""}</select>`
 
-                    : `<div style="color: #fbbf24;">${uiText("No mask yet: use SAM 3.1 (mask by text) first", "Маски нет: сначала SAM 3.1 (маска по тексту)")}</div>`}
+                    : `<div style="color: #fbbf24;">${uiText("No mask yet: draw one with the mask brush or use SAM 3.1 (mask by text)", "Маски нет: нарисуйте её кистью маски или сделайте SAM 3.1 (маска по тексту)")}</div>`}
 
                 <div>${uiText("Background", "Фон")}</div>${src("cp-bg", lastRgb)}
 
@@ -42795,7 +42786,7 @@ async function openNarrationEditor() {
 
                 <input id="cp-prompt" placeholder="${uiText("Scene description for the refine pass", "Описание сцены для рефайна")}" style="background: #0f0f11; color: #e2e8f0; border: 1px solid #333; border-radius: 4px; font-size: 10px; padding: 3px 6px;">
 
-                <button class="vfx-btn vfx-btn-primary" id="cp-go" style="padding: 4px;" ${masks.length ? "" : "disabled"}>${uiText("Composite", "Свести")}</button>`, 300);
+                <button class="vfx-btn vfx-btn-primary" id="cp-go" style="padding: 4px;" ${(masks.length || hasManual) ? "" : "disabled"}>${uiText("Composite", "Свести")}</button>`, 300);
 
             ["#cp-fg", "#cp-bg"].forEach(id => {
                 const selEl = pop.querySelector(id);
@@ -42818,10 +42809,13 @@ async function openNarrationEditor() {
                 const relight = pop.querySelector("#cp-relight").checked, scene = g("#cp-prompt").trim();
 
                 const bgId = g("#cp-bg");
+                let maskId = g("#cp-mask");
 
                 pop.remove();
 
-                const st = await runVideoJob2D("composite", { fg: g("#cp-fg"), mask: g("#cp-mask"), bg: bgId, harmonize: +g("#cp-hz") / 100,
+                if (maskId === "__manual__") { maskId = await convertManualMask2D(); if (!maskId) return; }
+
+                const st = await runVideoJob2D("composite", { fg: g("#cp-fg"), mask: maskId, bg: bgId, harmonize: +g("#cp-hz") / 100,
 
                     light_wrap: +g("#cp-lw") / 100, feather: +g("#cp-fe"), erode: 2 });
 

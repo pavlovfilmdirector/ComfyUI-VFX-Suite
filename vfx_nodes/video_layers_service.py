@@ -771,7 +771,8 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
         raise ProcessError(f"Unknown 2D job '{kind}'")
     job_id = f"vjob_{uuid.uuid4().hex[:10]}"
     with _JOBS_LOCK:
-        _JOBS[job_id] = {"id": job_id, "kind": kind, "status": "running", "progress": 0, "message": "Starting…", "started": time.time()}
+        _JOBS[job_id] = {"id": job_id, "kind": kind, "status": "running", "progress": 0, "message": "Starting…", "started": time.time(),
+                         "project": pid, "video": vid, "name": str((params or {}).get("name") or "")}
 
     def runner():
         try:
