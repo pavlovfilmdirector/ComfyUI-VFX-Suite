@@ -7912,6 +7912,21 @@ let lastMonitorRenderTime = 0;
         };
     }
 
+    // scripted scene edits (agents / MCP / batch setups): add a primitive with a transform and a colour
+    window.__vfxScene3D = {
+        objects: threeObjectsMap,
+        addPrimitive: (type = "box", name = "Box", pos = [0, 0, 0], scale = [1, 1, 1], color = "#cccccc", rot = [0, 0, 0]) => {
+            const geo = type === "box" ? new THREE.BoxGeometry(1, 1, 1) : type === "sphere" ? new THREE.SphereGeometry(0.5, 32, 24) : createPrimitiveGeometry(type);
+            const m = new THREE.Mesh(geo, defMat());
+            m.position.set(+pos[0], +pos[1], +pos[2]); m.scale.set(+scale[0], +scale[1], +scale[2]); m.rotation.set(+rot[0], +rot[1], +rot[2]);
+            pushUndoState(`Add ${name}`);
+            registerObject(m, name, type);
+            m.userData.color = color;
+            if (m.material && m.material.color) m.material.color.set(color);
+            try { syncSceneData(); renderStudioViewports(); } catch (_) {}
+            return m.userData.id;
+        }
+    };
     document.getElementById("btn-add-cube").onclick = () => {
         pushUndoState("Add Box");
         const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), defMat());

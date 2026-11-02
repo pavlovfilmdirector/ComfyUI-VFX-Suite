@@ -164,6 +164,8 @@ BUILTIN_STAGES += [
         "workflow": "api/storyboard/flux3_klein_edit.json",
         "inputs": [
             {"id": "image", "label": "Source Image", "label_ru": "Исходная картинка", "kind": "image"},
+            {"id": "references", "label": "Reference images (one path per line)", "label_ru": "Референсы (по одному пути в строке)", "kind": "text", "default": "",
+             "hint": "Up to 4 images FLUX looks at: character sheet, face, style.", "hint_ru": "До 4 картинок, на которые смотрит FLUX: лист персонажа, лицо, стиль."},
             {"id": "prompt", "label": "Edit Prompt", "label_ru": "Промпт", "kind": "text", "default": ""},
             {"id": "seed", "label": "Seed", "label_ru": "Сид", "kind": "number", "default": 428825},
             {"id": "steps", "label": "Steps", "label_ru": "Шаги", "kind": "number", "default": 16},
@@ -907,6 +909,24 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
                     if "file" in inputs:
                         inputs["file"] = clean_aud
 
+            # Reference images for FLUX.3 Klein edit ("scene + skeleton + character reference"): each becomes a
+            # LoadImage wired into the template's ReferenceMultiLatent node.
+            refs_in = resolved_inputs.get("references")
+            if isinstance(refs_in, str):
+                refs_in = [x.strip() for x in refs_in.replace(";", "\n").splitlines() if x.strip()]
+            if refs_in and isinstance(refs_in, list):
+                ref_node = next((nid for nid, n in injected_prompt.items() if isinstance(n, dict) and n.get("class_type") == "ReferenceMultiLatent"), None)
+                if ref_node:
+                    for ri, rv in enumerate(refs_in[:4], start=1):
+                        rp = _resolve_asset_path(str(rv), project_id)
+                        if not (rp and os.path.isfile(rp)):
+                            log(f"  ⚠ Reference not found: {rv}")
+                            continue
+                        rname = f"keshiki_pipe_{st_id}_ref{ri}_{job_id[:6]}{os.path.splitext(rp)[1] or '.png'}"
+                        shutil.copyfile(rp, os.path.join(input_dir, rname))
+                        injected_prompt[f"pref{ri}"] = {"class_type": "LoadImage", "inputs": {"image": rname}, "_meta": {"title": f"Reference {ri}"}}
+                        injected_prompt[ref_node]["inputs"][f"images.image{ri}"] = [f"pref{ri}", 0]
+                    log(f"  ↳ {min(4, len(refs_in))} reference image(s) added")
             # Auto-heal model checkpoint / VAE / LoRA names against installed ComfyUI models
             try:
                 try:
