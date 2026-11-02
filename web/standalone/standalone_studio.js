@@ -10486,7 +10486,9 @@ let lastMonitorRenderTime = 0;
     }
 
     let manifestServerSaveTimer = null;
+    var manifestLoading = false;
     function syncSceneData() {
+        if (manifestLoading) return;
         sceneData = exportManifest();
         const pid = (window.currentProject && window.currentProject.id) || "";
         // while another project's scene is still on stage (project switch in progress) nothing may be saved into this one
@@ -10572,6 +10574,10 @@ let lastMonitorRenderTime = 0;
         transformControls.detach();
         selectedObject = null;
         selectedObjects.clear();
+        // nothing may be saved while the scene is half-built: a camera is first created with a temporary id and only
+        // then gets its saved id + cuts, and a save in between made the camera (and its cuts) new on every load
+        manifestLoading = true;
+        setTimeout(() => { manifestLoading = false; }, 0);
 
         try {
             selectionBoxHelpers.forEach(h => {
@@ -10762,6 +10768,7 @@ let lastMonitorRenderTime = 0;
                 applyTextureToObject(m.userData.id, item.assignedImage, false);
             }
         });
+        manifestLoading = false;
         buildCameraTrajectoryPath();
         updateKeyframeMarkers();
         evaluateAnimation();

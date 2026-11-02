@@ -54923,6 +54923,14 @@ async function openNarrationEditor() {
                 const vec = row && row.querySelector(".ue-vec-inp")?.dataset.vec;
                 if (!vec || vec === "cursor") return;
                 pill.style.cursor = "pointer";
+                pill.title = uiText("Click: copy / paste this transform", "Клик: копировать / вставить трансформ");
+                if (!pill.querySelector(".vfx-xf-clip-ico")) {
+                    const ico = document.createElement("span");
+                    ico.className = "vfx-xf-clip-ico";
+                    ico.textContent = "⧉";
+                    ico.style.cssText = "margin-left: 4px; opacity: .75; font-size: 10px;";
+                    pill.appendChild(ico);
+                }
                 pill.onclick = (e) => {
                     e.stopPropagation();
                     document.querySelectorAll(".vfx-xf-clip-menu").forEach(m => m.remove());
