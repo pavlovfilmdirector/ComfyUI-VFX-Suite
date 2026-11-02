@@ -54949,9 +54949,28 @@ async function openNarrationEditor() {
                     setTimeout(() => document.addEventListener("mousedown", function close(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", close); } }), 0);
                 };
             });
+            // a visible row under the transform fields: Copy / Paste of all three, the label menus do one row at a time
+            const sclInp = containerEl.querySelector('.ue-vec-inp[data-vec="scl"]');
+            const lastRow = sclInp && (sclInp.closest(".ue5-xf-row") || sclInp.parentElement?.parentElement);
+            if (lastRow && !containerEl.querySelector(".vfx-xf-clip-row")) {
+                const row = document.createElement("div");
+                row.className = "vfx-xf-clip-row";
+                row.style.cssText = "display: flex; gap: 4px; margin: 4px 0 2px; font-size: 10px;";
+                const mk = (label, tipEn, tipRu, fn) => { const b = document.createElement("button"); b.className = "vfx-btn"; b.textContent = label; b.title = uiText(tipEn, tipRu);
+                    b.style.cssText = "flex: 1; padding: 2px 6px; font-size: 10px;"; b.onclick = (e) => { e.stopPropagation(); fn(); }; row.appendChild(b); return b; };
+                mk(`⧉ ${uiText("Copy transform", "Копировать трансформ")}`, "Copy location, rotation and scale", "Копировать позицию, поворот и масштаб", () => {
+                    window.__vfxXformClip = { pos: readVec("pos"), rot: readVec("rot"), scl: readVec("scl") };
+                    showToastNotification(uiText("Transform copied", "Трансформ скопирован"));
+                });
+                mk(`📋 ${uiText("Paste", "Вставить")}`, "Paste all three; one row only: click the Location / Rotation / Scale label", "Вставить всё; только одну строку — клик по надписи Позиция / Поворот / Масштаб", () => {
+                    const clip = window.__vfxXformClip || {};
+                    if (!(clip.pos || clip.rot || clip.scl)) { showToastNotification(uiText("Nothing copied yet", "Сначала скопируйте трансформ"), true); return; }
+                    ["pos", "rot", "scl"].forEach(v => writeVec(v, clip[v]));
+                    showToastNotification(uiText("Transform pasted", "Трансформ вставлен"));
+                });
+                lastRow.insertAdjacentElement("afterend", row);
+            }
         }
-
-
 
         // Unreal Engine 5 Style Drag-Scrubbing on Transform Input Boxes
 
