@@ -10507,7 +10507,17 @@ async function openNarrationEditor() {
         try {
             const pid = (currentProject && currentProject.id) || "sandbox_playground";
             let changed = false;
-
+            // per-frame outputs of 2D video jobs (pose / depth / mask frames in keshiki/video) are working files, not pictures:
+            // they flooded the gallery with hundreds of "pose_0xxxx_" cards. Drop the ones already imported, never import them again.
+            const isJobFrame = (sub) => /(^|\/)keshiki\/video(\/|$)/i.test(String(sub || "").split("\\").join("/"));
+            {
+                const before = mediaImages1D.length;
+                for (let i = mediaImages1D.length - 1; i >= 0; i--) {
+                    const it = mediaImages1D[i];
+                    if (it && String(it.id || "").startsWith("img_gen_") && isJobFrame(it.sub)) mediaImages1D.splice(i, 1);
+                }
+                if (mediaImages1D.length !== before) changed = true;
+            }
             const hResp = await fetch("/history").catch(() => null);
             if (hResp && hResp.ok) {
                 const historyData = await hResp.json().catch(() => ({}));
@@ -10524,7 +10534,7 @@ async function openNarrationEditor() {
                             const lowerFn = fn.toLowerCase();
                             const isImg = lowerFn.endsWith(".png") || lowerFn.endsWith(".jpg") || lowerFn.endsWith(".jpeg") || lowerFn.endsWith(".webp");
                             
-                            if (isImg && itype === "output" && (sub.includes("keshiki") || lowerFn.includes("keshiki") || lowerFn.includes("shot_") || lowerFn.includes("flux"))) {
+                            if (isImg && itype === "output" && !isJobFrame(sub) && (sub.includes("keshiki") || lowerFn.includes("keshiki") || lowerFn.includes("shot_") || lowerFn.includes("flux"))) {
                                 const url = `/view?filename=${encodeURIComponent(fn)}&type=${encodeURIComponent(itype)}` + (sub ? `&subfolder=${encodeURIComponent(sub)}` : "");
                                 const genId = "img_gen_" + fn.replace(/[^a-zA-Z0-9_-]/g, "_");
                                 
@@ -10568,7 +10578,7 @@ async function openNarrationEditor() {
                 if (currentProject) {
                     currentProject.mediaImages1D = mediaImages1D;
                 }
-                if (!activeImageId && mediaImages1D.length > 0) {
+                if ((!activeImageId || !mediaImages1D.some(x => x.id === activeImageId)) && mediaImages1D.length > 0) {
                     activeImageId = mediaImages1D[0].id;
                 }
                 renderTopViewportBar();
