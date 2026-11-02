@@ -5098,6 +5098,7 @@ let lastMonitorRenderTime = 0;
     }
 
     // Outliner UI
+    let outlinerAnchor = null;   // the last row clicked without Shift: start of a Shift+click range
     const outlinerList = document.getElementById("outliner-list");
     const outlinerCount = document.getElementById("outliner-count");
 
@@ -5245,19 +5246,33 @@ let lastMonitorRenderTime = 0;
                 <span class="vfx-outliner-del" ${tipAttr("Delete Object (Del)", "Удалить объект (Del)")} style="cursor:pointer; opacity:0.6; font-size:11px; padding:0 2px;">✕</span>
             `;
             item.onclick = (e) => {
+                // eye / delete act on the whole selection when the clicked row is part of it
+                const group = (selectedObjects.has(obj) && selectedObjects.size > 1) ? Array.from(selectedObjects).filter(o => o && o.userData && threeObjectsMap.has(o.userData.id)) : [obj];
                 if (e.target.classList.contains("vfx-outliner-eye")) {
-                    obj.visible = (obj.visible === false);
-                    if (obj.userData.cameraHelper) obj.userData.cameraHelper.visible = obj.visible;
+                    const vis = (obj.visible === false);
+                    group.forEach(o => { o.visible = vis; if (o.userData.cameraHelper) o.userData.cameraHelper.visible = vis; });
                     updateOutliner();
                     renderStudioViewports();
                     return;
                 }
                 if (e.target.classList.contains("vfx-outliner-del")) {
-                    selectObject(obj);
+                    if (group.length === 1) selectObject(obj);
                     deleteSelectedObjects();
                     return;
                 }
-                selectObject(obj, e.shiftKey || e.ctrlKey);
+                // click = this one; Ctrl/Cmd+click = add / remove; Shift+click = everything from the last clicked row to this one
+                const order = Array.from(threeObjectsMap.values());
+                if (e.shiftKey && outlinerAnchor && order.includes(outlinerAnchor)) {
+                    const i0 = order.indexOf(outlinerAnchor), i1 = order.indexOf(obj);
+                    const range = order.slice(Math.min(i0, i1), Math.max(i0, i1) + 1);
+                    const keep = (e.ctrlKey || e.metaKey) ? Array.from(selectedObjects) : [];
+                    selectObject(range[0], false);
+                    [...keep, ...range.slice(1)].forEach(o => { if (!selectedObjects.has(o)) selectObject(o, true); });
+                    if (selectedObjects.has(obj)) selectedObject = obj;
+                    return;
+                }
+                outlinerAnchor = obj;
+                selectObject(obj, e.ctrlKey || e.metaKey);
             };
             ol.appendChild(item);
         });

@@ -8242,6 +8242,17 @@ def register_server_routes():
 
                 return add_cors_headers(web.json_response({"error": str(e)}, status=400))
 
+        @routes.post("/vfx/video/{project_id}/{video_id}/duplicate")
+        async def vfx_video_duplicate(request):
+            from .video_layers_service import duplicate_video
+            pid = _sanitize_id(request.match_info["project_id"])
+            try:
+                data = await request.json()
+                st = await asyncio.to_thread(duplicate_video, pid, request.match_info["video_id"], str(data.get("new_id") or ""))
+                return add_cors_headers(web.json_response(st))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
         @routes.post("/vfx/video/{project_id}/{video_id}/import_layer")
 
         async def vfx_video_import_layer(request):

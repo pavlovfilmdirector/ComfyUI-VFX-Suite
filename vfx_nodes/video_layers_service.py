@@ -870,6 +870,19 @@ def _add_layer(pid: str, vid: str, ltype: str, name: str, color: str = "", extra
     return layer
 
 
+def duplicate_video(pid: str, src_vid: str, new_vid: str) -> Dict[str, Any]:
+    """Copy a video's working folder (prepared plate, layers, keys) under a new id: Ctrl+C / Ctrl+V of a video."""
+    src, dst = video_root(pid, src_vid), video_root(pid, new_vid)
+    if os.path.exists(dst):
+        raise ProcessError(f"Video {new_vid} already exists")
+    if os.path.isdir(src):
+        shutil.copytree(src, dst)
+    else:
+        os.makedirs(dst, exist_ok=True)
+    ensure_plate_registered(pid, new_vid)
+    return get_state(pid, new_vid)
+
+
 def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: str) -> Dict[str, Any]:
     """Copy a layer and its frame images from another video in the project into the target video."""
     src_man = load_manifest(pid, src_vid)

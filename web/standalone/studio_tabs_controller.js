@@ -43533,30 +43533,58 @@ async function openNarrationEditor() {
 
 
 
-            // Ctrl+C / Cmd+C -> Copy Mask Keyframes
-
+            // Ctrl+C: selected timeline keys -> keys; selected layers -> layers; nothing selected -> the whole video
             if ((e.code === "KeyC" || e.key === "c" || e.key === "с" || e.key === "С") && (e.ctrlKey || e.metaKey)) {
-
                 e.preventDefault();
-
-                copy2DMaskKeys();
-
+                if (selected2DMaskKeys.size > 0 || selectedPaintKeys2D.size > 0) { window.__vfxClip2D = { type: "keys" }; copy2DMaskKeys(); return; }
+                const lids = (vlState2D.selLayerIds && vlState2D.selLayerIds.length) ? vlState2D.selLayerIds.slice() : (vlState2D.selected ? [vlState2D.selected] : []);
+                if (lids.length) {
+                    window.__vfxClip2D = { type: "layers", pid: vlPid(), vid: vidObj.id, lids };
+                    showToastNotification(uiText(`Copied ${lids.length} layer(s) — Ctrl+V in this or another video`, `Скопировано слоёв: ${lids.length} — Ctrl+V в этом или другом видео`));
+                } else {
+                    window.__vfxClip2D = { type: "video", pid: vlPid(), vid: vidObj.id };
+                    showToastNotification(uiText(`Copied the video «${vidObj.title}» — Ctrl+V makes a duplicate`, `Скопировано видео «${vidObj.title}» — Ctrl+V создаст дубликат`));
+                }
                 return;
-
             }
-
-            // Ctrl+V / Cmd+V -> Paste Mask Keyframes
-
+            // Ctrl+V: paste what Ctrl+C took (keys / layers into this video / a duplicate of the video)
             if ((e.code === "KeyV" || e.key === "v" || e.key === "м" || e.key === "М") && (e.ctrlKey || e.metaKey)) {
-
                 e.preventDefault();
-
-                paste2DMaskKeys();
-
+                const clip = window.__vfxClip2D;
+                if (!clip || clip.type === "keys") { paste2DMaskKeys(); return; }
+                if (clip.pid !== vlPid()) { showToastNotification(uiText("Copied in another project", "Скопировано в другом проекте"), true); return; }
+                (async () => {
+                    if (clip.type === "layers") {
+                        let last = null;
+                        for (const lid of clip.lids) {
+                            const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ src_vid: clip.vid, src_lid: lid }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                            if (r.error) { showToastNotification(`Paste: ${r.error}`, true); continue; }
+                            last = r.layer;
+                        }
+                        await refreshVideoState2D();
+                        if (last) { vlState2D.selected = last.id; vlState2D.selLayerIds = [last.id]; }
+                        renderVideoLayersPanel2D(); updateVideoOverlays2D();
+                        showToastNotification(uiText(`Pasted ${clip.lids.length} layer(s)`, `Вставлено слоёв: ${clip.lids.length}`));
+                    } else if (clip.type === "video") {
+                        const src = mediaVideos2D.find(v => v.id === clip.vid);
+                        if (!src) { showToastNotification(uiText("The copied video is gone", "Скопированного видео больше нет"), true); return; }
+                        const newId = `vid_user_${Date.now()}`;
+                        const r = await fetch(`/vfx/video/${vlPid()}/${encodeURIComponent(src.id)}/duplicate`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ new_id: newId }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                        if (r.error) { showToastNotification(`Duplicate: ${r.error}`, true); return; }
+                        const copy = JSON.parse(JSON.stringify(src));
+                        copy.id = newId;
+                        copy.title = `${String(src.title || "video").slice(0, 32)} (${uiText("copy", "копия")})`;
+                        const at = mediaVideos2D.indexOf(src);
+                        mediaVideos2D.splice(at + 1, 0, copy);
+                        saveProject2DVideos();
+                        renderTopViewportBar();
+                        showToastNotification(uiText(`Duplicated: «${copy.title}»`, `Дубликат: «${copy.title}»`));
+                    }
+                })();
                 return;
-
             }
-
             // Ctrl+X / Cmd+X -> Cut Mask Keyframes
 
             if ((e.code === "KeyX" || e.key === "x" || e.key === "ч" || e.key === "Ч") && (e.ctrlKey || e.metaKey)) {
@@ -54355,8 +54383,18 @@ async function openNarrationEditor() {
                 if (e.target.closest(".ue-outliner-del-btn")) return;
 
                 const oid = row.dataset.oid;
-
-                if (onSelectObjectById) onSelectObjectById(oid, e.shiftKey || e.ctrlKey);
+                // click = this one, Ctrl+click = add / remove, Shift+click = range from the last clicked row
+                const ids = [...containerEl.querySelectorAll(".ue-outliner-item")].map(r => r.dataset.oid);
+                const anchor = window.__vfxOutlinerAnchor;
+                if (e.shiftKey && anchor && ids.includes(anchor) && onSelectObjectById) {
+                    const i0 = ids.indexOf(anchor), i1 = ids.indexOf(oid);
+                    const range = ids.slice(Math.min(i0, i1), Math.max(i0, i1) + 1);
+                    onSelectObjectById(range[0], false);
+                    range.slice(1).forEach(id => onSelectObjectById(id, true));
+                } else {
+                    window.__vfxOutlinerAnchor = oid;
+                    if (onSelectObjectById) onSelectObjectById(oid, e.ctrlKey || e.metaKey);
+                }
 
                 if (mainViewDim !== "3D") switchMainDimension("3D");
 

@@ -379,3 +379,13 @@ def test_outline_loop_morph_stays_closed(vl):
     mid = vl._component_morph(A, B, 0.5)
     n, _ = cv2.connectedComponents((mid[..., 3] > 100).astype(np.uint8))
     assert n - 1 == 1                                          # one clean loop, not dashes
+
+
+def test_duplicate_video_copies_layers(vl, project):
+    vid = vl.create_blank_video(project.pid, title="Dup", width=48, height=32, total_frames=4)["id"]
+    lid = vl._add_layer(project.pid, vid, "mask", "M")["id"]
+    vl.save_layer_frame(project.pid, vid, lid, 1, _png((255, 255, 255, 255), box=(0, 0, 8, 8)))
+    st = vl.duplicate_video(project.pid, vid, vid + "_copy")
+    assert any(l["id"] == lid and l.get("keys") == [1] for l in st["layers"])
+    with pytest.raises(vl.ProcessError):
+        vl.duplicate_video(project.pid, vid, vid + "_copy")
