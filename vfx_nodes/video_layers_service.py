@@ -1802,14 +1802,18 @@ def _clean_xform(xf) -> Optional[Dict[str, float]]:
         return None
     try:
         out = {"x": float(xf.get("x", 0) or 0), "y": float(xf.get("y", 0) or 0),
-               "s": float(xf.get("s", 1) if xf.get("s") is not None else 1), "r": float(xf.get("r", 0) or 0)}
+               "s": float(xf.get("s", 1) if xf.get("s") is not None else 1), "r": float(xf.get("r", 0) or 0),
+               "sx": float(xf.get("sx", 1) if xf.get("sx") is not None else 1), "sy": float(xf.get("sy", 1) if xf.get("sy") is not None else 1)}
     except (TypeError, ValueError):
         return None
     out["x"] = max(-4.0, min(4.0, out["x"]))
     out["y"] = max(-4.0, min(4.0, out["y"]))
     out["s"] = max(0.02, min(20.0, out["s"]))
+    out["sx"] = max(0.02, min(20.0, out["sx"]))
+    out["sy"] = max(0.02, min(20.0, out["sy"]))
     out["r"] = ((out["r"] + 180.0) % 360.0) - 180.0
-    if abs(out["x"]) < 1e-4 and abs(out["y"]) < 1e-4 and abs(out["s"] - 1) < 1e-4 and abs(out["r"]) < 1e-3:
+    if abs(out["x"]) < 1e-4 and abs(out["y"]) < 1e-4 and abs(out["s"] - 1) < 1e-4 and abs(out["r"]) < 1e-3 \
+            and abs(out["sx"] - 1) < 1e-4 and abs(out["sy"] - 1) < 1e-4:
         return None
     return out
 
@@ -1821,9 +1825,14 @@ def _apply_xform(img: np.ndarray, xf: Optional[Dict[str, float]], keep_outside_o
     if not xf or img is None:
         return img
     h, w = img.shape[:2]
-    M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), -xf["r"], xf["s"])
-    M[0, 2] += xf["x"] * w
-    M[1, 2] += xf["y"] * h
+    # same order as the CSS transform: translate, rotate (clockwise), scale (s * sx, s * sy) about the centre
+    a = np.radians(xf["r"])
+    ca, sa = np.cos(a), np.sin(a)
+    kx, ky = xf["s"] * xf.get("sx", 1.0), xf["s"] * xf.get("sy", 1.0)
+    A = np.array([[ca * kx, -sa * ky], [sa * kx, ca * ky]], np.float64)
+    c = np.array([w / 2.0, h / 2.0])
+    t = c + np.array([xf["x"] * w, xf["y"] * h]) - A @ c
+    M = np.hstack([A, t[:, None]]).astype(np.float64)
     if img.ndim == 3 and img.shape[2] == 3 and not keep_outside_opaque:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
     return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)

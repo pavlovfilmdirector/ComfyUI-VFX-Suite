@@ -389,3 +389,13 @@ def test_duplicate_video_copies_layers(vl, project):
     assert any(l["id"] == lid and l.get("keys") == [1] for l in st["layers"])
     with pytest.raises(vl.ProcessError):
         vl.duplicate_video(project.pid, vid, vid + "_copy")
+
+
+def test_layer_xform_non_uniform_scale(vl):
+    img = np.zeros((40, 80), np.uint8); img[15:25, 35:45] = 255          # a 10x10 square in the middle
+    out = vl._apply_xform(img, {"x": 0, "y": 0, "s": 1, "r": 0, "sx": 3, "sy": 1})
+    ys, xs = np.nonzero(out > 127)
+    assert 27 <= xs.max() - xs.min() + 1 <= 33 and 9 <= ys.max() - ys.min() + 1 <= 11   # wider only
+    out = vl._apply_xform(img, {"x": 0.25, "y": 0, "s": 1, "r": 90})
+    ys, xs = np.nonzero(out > 127)
+    assert 55 < xs.mean() < 65                                             # moved a quarter of the width

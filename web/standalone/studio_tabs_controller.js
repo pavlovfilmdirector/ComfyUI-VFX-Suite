@@ -36292,7 +36292,7 @@ async function openNarrationEditor() {
 
 
             <button class="vfx-btn btn-2d-dock-tool" data-tool="transform"
-                ${tipAttr("Move / transform layer", "Перемещение и трансформ слоя", "Drag: move the selected layer(s). Shift+drag or wheel: scale. Alt+drag: rotate (Shift snaps to 15°).", "Тянуть — двигать выбранный слой. Shift+тянуть или колесо — масштаб. Alt+тянуть — поворот (Shift — шаг 15°).")}
+                ${tipAttr("Move / transform layer", "Перемещение и трансформ слоя", "Drag: move. Corner handles: scale; side handles: stretch width or height alone (Shift+corner too). Wheel or Shift+drag: scale. Alt+drag: rotate (Shift snaps to 15°).", "Тянуть — двигать. Угловые маркеры — масштаб, боковые — растянуть только по ширине или высоте (или Shift+угол). Колесо или Shift+тянуть — масштаб. Alt+тянуть — поворот (Shift — шаг 15°).")}
                 style="width: 26px; height: 26px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: ${vid2DTool === "transform" ? '#38bdf8' : 'transparent'}; border: 1px solid ${vid2DTool === "transform" ? '#38bdf8' : 'transparent'}; color: ${vid2DTool === "transform" ? '#000' : '#38bdf8'}; border-radius: 4px;">
                 <i data-lucide="move" style="width: 13px; height: 13px;"></i>
             </button>
@@ -40932,7 +40932,7 @@ async function openNarrationEditor() {
         // --- Move / transform a layer (like the photo tab's Move tool): drag = move, Shift+drag or wheel = scale,
         // Alt+drag = rotate. Stored per layer as xform {x, y (fractions of the frame), s, r (deg)}; the viewer shows it
         // with a CSS transform and every server job (render, composite, cut out, merge) applies the same transform.
-        function xfCss2D(xf) { return xf ? `translate(${(xf.x || 0) * 100}%, ${(xf.y || 0) * 100}%) rotate(${xf.r || 0}deg) scale(${xf.s ?? 1})` : ""; }
+        function xfCss2D(xf) { return xf ? `translate(${(xf.x || 0) * 100}%, ${(xf.y || 0) * 100}%) rotate(${xf.r || 0}deg) scale(${(xf.s ?? 1) * (xf.sx ?? 1)}, ${(xf.s ?? 1) * (xf.sy ?? 1)})` : ""; }
         const xfCap2D = document.createElement("div");
         xfCap2D.style.cssText = "position: absolute; inset: 0; z-index: 8; display: none; cursor: move;";
         mediaBox2D.appendChild(xfCap2D);
@@ -40946,6 +40946,33 @@ async function openNarrationEditor() {
             clearTimeout(xfSaveTimer2D);
             xfSaveTimer2D = setTimeout(() => { saveVideoLayersMeta2D(); renderVideoLayersPanel2D(); }, 350);
         };
+        // handles of the transform box: corners = scale both ways, sides = stretch one way (width or height)
+        const XF_HANDLES = [["n", 0, -1], ["s", 0, 1], ["e", 1, 0], ["w", -1, 0], ["ne", 1, -1], ["nw", -1, -1], ["se", 1, 1], ["sw", -1, 1]];
+        const xfHandleEls = XF_HANDLES.map(([name]) => {
+            const h = document.createElement("div");
+            h.dataset.h = name;
+            h.style.cssText = `position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #0c0c0e; border: 1.5px solid #38bdf8; border-radius: ${name.length === 2 ? "2px" : "50%"}; z-index: 2; cursor: ${({ n: "ns", s: "ns", e: "ew", w: "ew", ne: "nesw", sw: "nesw", nw: "nwse", se: "nwse" })[name]}-resize;`;
+            h.title = name.length === 2 ? uiText("Scale (both ways)", "Масштаб (пропорционально)") : uiText("Stretch this way only", "Растянуть только в эту сторону");
+            xfCap2D.appendChild(h);
+            return h;
+        });
+        function xfGeom2D(xf) {   // the transformed frame rectangle in media-box pixels
+            const W = mediaBox2D.clientWidth, H = mediaBox2D.clientHeight;
+            const s = xf.s ?? 1, kx = s * (xf.sx ?? 1), ky = s * (xf.sy ?? 1), a = (xf.r || 0) * Math.PI / 180;
+            return { W, H, cx: W / 2 + (xf.x || 0) * W, cy: H / 2 + (xf.y || 0) * H, hw: W * kx / 2, hh: H * ky / 2, ca: Math.cos(a), sa: Math.sin(a) };
+        }
+        function placeXfHandles2D() {
+            const t = xfTargets2D()[0];
+            const show = vid2DTool === "transform" && !!t;
+            xfHandleEls.forEach(h => { h.style.display = show ? "block" : "none"; });
+            if (!show) return;
+            const g = xfGeom2D({ x: 0, y: 0, s: 1, r: 0, ...(t.xform || {}) });
+            XF_HANDLES.forEach(([name, ux, uy], i) => {
+                const lx = ux * g.hw, ly = uy * g.hh;
+                xfHandleEls[i].style.left = `${g.cx + lx * g.ca - ly * g.sa}px`;
+                xfHandleEls[i].style.top = `${g.cy + lx * g.sa + ly * g.ca}px`;
+            });
+        }
         function syncTransformTool2D() {
             const on = vid2DTool === "transform";
             xfCap2D.style.display = on ? "block" : "none";
@@ -40954,7 +40981,38 @@ async function openNarrationEditor() {
                 el.style.outline = sel ? "1.5px dashed #38bdf8" : "";
                 el.style.outlineOffset = sel ? "-1px" : "";
             });
+            placeXfHandles2D();
         }
+        xfHandleEls.forEach((h, i) => h.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault(); e.stopPropagation();
+            const targets = xfTargets2D();
+            if (!targets.length) return;
+            const [name, ux, uy] = XF_HANDLES[i];
+            const r = mediaBox2D.getBoundingClientRect();
+            const base = targets.map(l => ({ l, xf: { x: 0, y: 0, s: 1, r: 0, sx: 1, sy: 1, ...(l.xform || {}) } }));
+            const g0 = xfGeom2D(base[0].xf);
+            const onMove = (me) => {
+                // the cursor in the layer's own (unrotated) frame, relative to its centre
+                const px = me.clientX - r.left - g0.cx, py = me.clientY - r.top - g0.cy;
+                const lx = px * g0.ca + py * g0.sa, ly = -px * g0.sa + py * g0.ca;
+                base.forEach(({ l, xf }) => {
+                    const n = { ...xf };
+                    if (name.length === 2 && !me.shiftKey) {             // corner: both ways, keeping the proportion
+                        const k = Math.max(0.02, Math.hypot(lx, ly) / Math.max(1, Math.hypot(g0.hw, g0.hh)));
+                        n.s = Math.max(0.02, xf.s * k);
+                    } else {                                             // side (or Shift+corner): width and/or height alone
+                        if (ux) n.sx = Math.max(0.02, xf.sx * Math.abs(lx) / Math.max(1, g0.hw));
+                        if (uy) n.sy = Math.max(0.02, xf.sy * Math.abs(ly) / Math.max(1, g0.hh));
+                    }
+                    l.xform = n;
+                });
+                updateVideoOverlays2D();
+            };
+            const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); xfCommit2D(); };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+        }));
         window.__vfxSyncTransform2D = syncTransformTool2D;
         xfCap2D.addEventListener("mousedown", (e) => {
             if (e.button !== 0) return;
@@ -40962,7 +41020,7 @@ async function openNarrationEditor() {
             if (!targets.length) { showToastNotification(uiText("Select a layer in the layers panel first", "Сначала выберите слой в панели слоёв"), true); return; }
             e.preventDefault(); e.stopPropagation();
             const r = mediaBox2D.getBoundingClientRect();
-            const start = targets.map(l => ({ l, xf: { x: 0, y: 0, s: 1, r: 0, ...(l.xform || {}) } }));
+            const start = targets.map(l => ({ l, xf: { x: 0, y: 0, s: 1, r: 0, sx: 1, sy: 1, ...(l.xform || {}) } }));
             const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
             const sx = e.clientX, sy = e.clientY;
             const a0 = Math.atan2(sy - cy, sx - cx);
@@ -41943,7 +42001,7 @@ async function openNarrationEditor() {
                     <input type="range" id="inp-2d-vl-opacity" min="0" max="100" value="${Math.round((sel.opacity ?? 1) * 100)}" style="flex: 1; min-width: 0;"></div>` : ""}
                 ${sel && sel.xform ? `<div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); font-family: 'JetBrains Mono', monospace; font-size: 9.5px;">
                     <i data-lucide="move" style="width: 11px; height: 11px; color: #38bdf8;"></i>
-                    <span style="flex: 1;">x ${(sel.xform.x * 100).toFixed(0)}% · y ${(sel.xform.y * 100).toFixed(0)}% · ${Math.round((sel.xform.s ?? 1) * 100)}% · ${Math.round(sel.xform.r || 0)}°</span>
+                    <span style="flex: 1;">x ${(sel.xform.x * 100).toFixed(0)}% · y ${(sel.xform.y * 100).toFixed(0)}% · ${Math.round((sel.xform.s ?? 1) * (sel.xform.sx ?? 1) * 100)}×${Math.round((sel.xform.s ?? 1) * (sel.xform.sy ?? 1) * 100)}% · ${Math.round(sel.xform.r || 0)}°</span>
                     <button class="vfx-btn" id="btn-2d-vl-xf-reset" style="padding: 0 6px; font-size: 9.5px;">${uiText("Reset", "Сброс")}</button></div>` : ""}
                 ${sel && sel.type === "paint" && sel.morph ? `<div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid rgba(255,255,255,0.08);" ${tipAttr("Morph smoothing: rounds off jagged in-between shapes and eases the motion between keys", "Сглаживание морфинга: скругляет рваные промежуточные формы и смягчает движение между ключами")}>
                     <span style="color: rgba(255,255,255,0.5);">${uiText("Smoothing", "Сглаживание")}</span>
