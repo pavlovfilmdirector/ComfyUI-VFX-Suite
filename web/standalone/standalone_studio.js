@@ -4362,6 +4362,40 @@ let lastMonitorRenderTime = 0;
         }
     });
 
+    // copy / paste transform of the selected object (exact values; the clipboard is shared with the Details panel)
+    window.__vfx3DCopyXform = () => {
+        const o = selectedObject; if (!o) return false;
+        const R = THREE.MathUtils.radToDeg;
+        window.__vfxXformClip = { pos: o.position.toArray(), rot: [R(o.rotation.x), R(o.rotation.y), R(o.rotation.z)], scl: o.scale.toArray() };
+        return true;
+    };
+    window.__vfx3DPasteXform = (parts = ["pos", "rot", "scl"]) => {
+        const o = selectedObject, clip = window.__vfxXformClip || {};
+        if (!o) return false;
+        const num = (a) => Array.isArray(a) && a.length === 3 && a.every(v => Number.isFinite(parseFloat(v))) ? a.map(v => parseFloat(v)) : null;
+        const pos = parts.includes("pos") && num(clip.pos), rot = parts.includes("rot") && num(clip.rot), scl = parts.includes("scl") && num(clip.scl);
+        if (!pos && !rot && !scl) return false;
+        pushUndoState("Paste Transform");
+        if (pos) o.position.fromArray(pos);
+        if (rot) o.rotation.set(...rot.map(d => THREE.MathUtils.degToRad(d)));
+        if (scl) o.scale.fromArray(scl);
+        o.updateMatrixWorld(true);
+        if (o === shotCamera) {
+            syncShotCameraVisuals(true);
+            if (cameraMatrices && cameraMatrices.length) { buildCameraTrajectoryPath(); persistTrackedCamera(); }
+        } else if (o.userData && o.userData.camera) {
+            o.userData.camera.updateMatrixWorld(true);
+            if (o.userData.cameraHelper) o.userData.cameraHelper.matrixWorld.copy(o.userData.camera.matrixWorld);
+        }
+        if (autoKeyEnabled && Array.isArray(o.userData?.keyframes) && o.userData.keyframes.length > 0) set3DTransformKeyframe(o, currentFrame, true);
+        syncSceneData();
+        updateTransformInspector(true);
+        try { notifyDetailsAndOutliner(); } catch (_) {}
+        monitorNeedsRender = true;
+        renderStudioViewports();
+        return true;
+    };
+
     transformControls.addEventListener("objectChange", () => {
         const obj = transformControls.object;
         if (obj) {
@@ -10084,6 +10118,14 @@ let lastMonitorRenderTime = 0;
             return;
         }
 
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (code === "KeyC" || code === "KeyV") && canvasHost && canvasHost.offsetParent !== null) {
+            e.preventDefault();
+            const ok = code === "KeyC" ? window.__vfx3DCopyXform() : window.__vfx3DPasteXform();
+            if (typeof window.__vfxToast === "function") window.__vfxToast(ok
+                ? (code === "KeyC" ? uiText("Transform copied", "Трансформ скопирован") : uiText("Transform pasted", "Трансформ вставлен"))
+                : uiText("Select an object first", "Сначала выделите объект"), !ok);
+            return;
+        }
         if ((code === "KeyY" || k === "y" || k === "н") && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             if (typeof window.__vfxHandleGlobalRedo === "function") {

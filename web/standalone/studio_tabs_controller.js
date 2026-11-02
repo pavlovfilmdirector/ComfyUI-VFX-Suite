@@ -27790,6 +27790,26 @@ async function openNarrationEditor() {
 
 
 
+            <button class="vfx-btn" id="btn-3d-left-xfcopy"
+
+                ${tipAttr("Copy transform (Ctrl+Shift+C)", "Копировать трансформ (Ctrl+Shift+C)", "Location, rotation and scale of the selected object.", "Позиция, поворот и масштаб выделенного объекта.")}
+
+                style="${dockBtnStyle(false)}">
+
+                <i data-lucide="copy" style="width:13px; height:13px;"></i>
+
+            </button>
+
+            <button class="vfx-btn" id="btn-3d-left-xfpaste"
+
+                ${tipAttr("Paste transform (Ctrl+Shift+V)", "Вставить трансформ (Ctrl+Shift+V)", "Click: choose what to paste — all, location, rotation or scale.", "Клик: выбрать, что вставить — всё, позицию, поворот или масштаб.")}
+
+                style="${dockBtnStyle(false)}">
+
+                <i data-lucide="clipboard-paste" style="width:13px; height:13px;"></i>
+
+            </button>
+
             <button class="vfx-btn" id="btn-3d-left-wholeanim"
 
                 ${tipAttr("Move whole animation", "Двигать всю анимацию", "When on, moving / rotating / scaling an animated object (e.g. a camera) shifts ALL its keyframes together, like a container. Off: only the key at the current frame changes.", "Включено: перемещение / поворот / масштаб анимированного объекта (например камеры) сдвигает ВСЕ его ключи разом, как контейнер. Выключено: меняется только ключ на текущем кадре.")}
@@ -28099,6 +28119,58 @@ async function openNarrationEditor() {
         });
 
 
+
+        const xfCopyBtn = bar3D.querySelector("#btn-3d-left-xfcopy");
+
+        const xfPasteBtn = bar3D.querySelector("#btn-3d-left-xfpaste");
+
+        if (xfCopyBtn) xfCopyBtn.onclick = () => {
+
+            if (typeof window.__vfx3DCopyXform === "function" && window.__vfx3DCopyXform()) showToastNotification(uiText("Transform copied", "Трансформ скопирован"));
+
+            else showToastNotification(uiText("Select an object first", "Сначала выделите объект"), true);
+
+        };
+
+        if (xfPasteBtn) xfPasteBtn.onclick = (e) => {
+
+            e.stopPropagation();
+
+            document.querySelectorAll(".vfx-xf-clip-menu").forEach(m => m.remove());
+
+            const clip = window.__vfxXformClip || {};
+
+            const m = document.createElement("div");
+
+            m.className = "vfx-xf-clip-menu";
+
+            const r = xfPasteBtn.getBoundingClientRect();
+
+            m.style.cssText = `position: fixed; z-index: 100005; left: ${r.right + 4}px; top: ${r.top}px; background: #16161b; border: 1px solid #3f3f46; border-radius: 5px; padding: 3px; display: flex; flex-direction: column; min-width: 150px; font-size: 10.5px; box-shadow: 0 8px 24px rgba(0,0,0,.6);`;
+
+            const item = (label, parts, dis) => { const b = document.createElement("button"); b.className = "vfx-btn"; b.textContent = label; b.disabled = !!dis;
+
+                b.style.cssText = `text-align: left; padding: 4px 8px; background: transparent; border: none; ${dis ? "opacity: .4;" : ""}`;
+
+                b.onclick = () => { m.remove(); if (!(typeof window.__vfx3DPasteXform === "function" && window.__vfx3DPasteXform(parts))) showToastNotification(uiText("Select an object first", "Сначала выделите объект"), true); };
+
+                m.appendChild(b); };
+
+            const none = !(clip.pos || clip.rot || clip.scl);
+
+            item(uiText("Paste all", "Вставить всё"), ["pos", "rot", "scl"], none);
+
+            item(uiText("Location only", "Только позицию"), ["pos"], !clip.pos);
+
+            item(uiText("Rotation only", "Только поворот"), ["rot"], !clip.rot);
+
+            item(uiText("Scale only", "Только масштаб"), ["scl"], !clip.scl);
+
+            document.body.appendChild(m);
+
+            setTimeout(() => document.addEventListener("mousedown", function close(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", close); } }), 0);
+
+        };
 
         const wholeAnimBtn = bar3D.querySelector("#btn-3d-left-wholeanim");
 
@@ -54959,13 +55031,14 @@ async function openNarrationEditor() {
                 const mk = (label, tipEn, tipRu, fn) => { const b = document.createElement("button"); b.className = "vfx-btn"; b.textContent = label; b.title = uiText(tipEn, tipRu);
                     b.style.cssText = "flex: 1; padding: 2px 6px; font-size: 10px;"; b.onclick = (e) => { e.stopPropagation(); fn(); }; row.appendChild(b); return b; };
                 mk(`⧉ ${uiText("Copy transform", "Копировать трансформ")}`, "Copy location, rotation and scale", "Копировать позицию, поворот и масштаб", () => {
-                    window.__vfxXformClip = { pos: readVec("pos"), rot: readVec("rot"), scl: readVec("scl") };
+                    if (!(typeof window.__vfx3DCopyXform === "function" && window.__vfx3DCopyXform()))
+                        window.__vfxXformClip = { pos: readVec("pos"), rot: readVec("rot"), scl: readVec("scl") };
                     showToastNotification(uiText("Transform copied", "Трансформ скопирован"));
                 });
                 mk(`📋 ${uiText("Paste", "Вставить")}`, "Paste all three; one row only: click the Location / Rotation / Scale label", "Вставить всё; только одну строку — клик по надписи Позиция / Поворот / Масштаб", () => {
                     const clip = window.__vfxXformClip || {};
                     if (!(clip.pos || clip.rot || clip.scl)) { showToastNotification(uiText("Nothing copied yet", "Сначала скопируйте трансформ"), true); return; }
-                    ["pos", "rot", "scl"].forEach(v => writeVec(v, clip[v]));
+                    if (!(typeof window.__vfx3DPasteXform === "function" && window.__vfx3DPasteXform())) ["pos", "rot", "scl"].forEach(v => writeVec(v, clip[v]));
                     showToastNotification(uiText("Transform pasted", "Трансформ вставлен"));
                 });
                 lastRow.insertAdjacentElement("afterend", row);
