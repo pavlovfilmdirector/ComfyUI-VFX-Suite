@@ -55,3 +55,19 @@ def test_link_rejects_folder_without_models(ss, tmp_path):
     m, _, _ = ss
     with pytest.raises(ValueError):
         m.link_models_folder(str(tmp_path))
+
+
+def test_any_pth_and_placeholder_rows(ss):
+    m, comfy, tmp = ss
+    (comfy / "custom_nodes" / "X" / "models").mkdir(parents=True)
+    (comfy / "custom_nodes" / "X" / "models" / "ck_other_name.pth").write_bytes(b"x")
+    (comfy / "models" / "loras" / "LTX-2.5").mkdir(parents=True)
+    (comfy / "models" / "loras" / "LTX-2.5" / "ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors").write_bytes(b"x")
+    man = json.loads(open(m.MANIFEST).read())
+    man["models"][2]["any_pth"] = True
+    man["models"].append({"group": "iclora", "file": "(other LTX-2.5 IC-LoRAs)", "dir": "loras/LTX-2.5", "page": "https://p"})
+    open(m.MANIFEST, "w").write(json.dumps(man))
+    by = {x["file"]: x for x in m.status()["models"]}
+    assert by["ck.pth"]["installed"]
+    other = by["(other LTX-2.5 IC-LoRAs)"]
+    assert other["installed"] and "clean-plate" in other["note"]

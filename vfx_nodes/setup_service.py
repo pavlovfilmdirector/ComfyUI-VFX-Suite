@@ -68,8 +68,15 @@ def _find(comfy: str, m: Dict[str, Any]) -> Optional[str]:
     if not fname or fname.startswith("("):
         return None
     if d.startswith("@"):
-        p = os.path.join(comfy, d[1:], fname)
-        return p if os.path.isfile(p) else None
+        folder = os.path.join(comfy, d[1:])
+        p = os.path.join(folder, fname)
+        if os.path.isfile(p):
+            return p
+        if m.get("any_pth") and os.path.isdir(folder):   # e.g. CorridorKey ships as CorridorKey.pth
+            found = sorted(f for f in os.listdir(folder) if f.endswith(".pth"))
+            if found:
+                return os.path.join(folder, found[0])
+        return None
     direct = os.path.join(comfy, "models", d, fname)
     if os.path.isfile(direct):
         return direct
@@ -99,13 +106,25 @@ def mark_done(done: bool = True) -> Dict[str, Any]:
 def status() -> Dict[str, Any]:
     comfy = _comfy_root()
     models = []
-    for i, m in enumerate(_manifest().get("models", [])):
+    manifest_models = _manifest().get("models", [])
+    named = {str(x.get("file")) for x in manifest_models}
+    for i, m in enumerate(manifest_models):
         path = _find(comfy, m) if m.get("group") != "auto" else None
         d = str(m.get("dir") or "")
+        note = m.get("note", "")
+        if str(m.get("file") or "").startswith("(") and d and not d.startswith("("):
+            # a placeholder row ("other IC-LoRAs ..."): report the extra files already in that folder
+            extra = []
+            for top in _search_dirs(comfy, d):
+                extra += [f for f in os.listdir(top) if f.endswith(".safetensors") and f not in named]
+            extra = sorted(set(extra))
+            if extra:
+                path = os.path.join(comfy, "models", d)
+                note = f"{len(extra)}: " + ", ".join(e.replace("ltx-2.5-22b-", "").replace(".safetensors", "") for e in extra)
         downloadable = bool(m.get("url")) and not d.startswith("@") and not d.startswith("(")
         models.append({
             "key": f"m{i}", "group": m.get("group"), "file": m.get("file"), "dir": d, "size_gb": m.get("size_gb"),
-            "url": m.get("url"), "page": m.get("page"), "note": m.get("note", ""),
+            "url": m.get("url"), "page": m.get("page"), "note": note,
             "installed": bool(path), "path": path, "downloadable": downloadable,
             "dest": f"{d}/{m.get('file')}" if downloadable else None,
         })
