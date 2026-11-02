@@ -526,16 +526,102 @@ def _components(alpha: np.ndarray, min_px: int = 30):
     return out
 
 
-_CANON = 512          # canonical canvas for one shape
-_CANON_SIZE = 40.0    # sqrt(area) of a shape on the canonical canvas
+_CANON = 1024         # canonical canvas for one stroke
 
 
-def _to_canon(comp):
-    k = _CANON_SIZE / max(1.0, np.sqrt(comp["area"]))
+def _extent(comp) -> float:
+    ys, xs = np.nonzero(comp["mask"])
+    return float(np.hypot(xs.max() - xs.min() + 1, ys.max() - ys.min() + 1)) if len(xs) else 1.0
+
+
+def _to_canon(comp, k: float):
+    """The stroke centred and turned flat, at a common scale k for both strokes of a pair (k <= 1: a thin line keeps
+    its real width, so the blend does not break it into dashes)."""
     M = cv2.getRotationMatrix2D(comp["c"], np.degrees(comp["theta"]), k)
     M[0, 2] += _CANON / 2 - comp["c"][0]
     M[1, 2] += _CANON / 2 - comp["c"][1]
     return cv2.warpAffine(comp["mask"] * 255, M, (_CANON, _CANON), flags=cv2.INTER_LINEAR)
+
+
+def _thin(m: np.ndarray) -> np.ndarray:
+    """Zhang-Suen thinning (1 px skeleton) of a 0/1 mask; uses OpenCV's contrib version when present."""
+    try:
+        return (cv2.ximgproc.thinning((m > 0).astype(np.uint8) * 255) > 0).astype(np.uint8)
+    except Exception:
+        pass
+    img = np.pad((m > 0).astype(np.uint8), 1)
+    while True:
+        changed = False
+        for step in (0, 1):
+            P = [img[1:-1, 1:-1], img[:-2, 1:-1], img[:-2, 2:], img[1:-1, 2:], img[2:, 2:], img[2:, 1:-1], img[2:, :-2], img[1:-1, :-2], img[:-2, :-2]]
+            p1, p2, p3, p4, p5, p6, p7, p8, p9 = P
+            B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+            seq = [p2, p3, p4, p5, p6, p7, p8, p9, p2]
+            A = sum(((seq[i] == 0) & (seq[i + 1] == 1)).astype(np.uint8) for i in range(8))
+            c = (p2 * p4 * p6 == 0) & (p4 * p6 * p8 == 0) if step == 0 else (p2 * p4 * p8 == 0) & (p2 * p6 * p8 == 0)
+            rm = (p1 == 1) & (B >= 2) & (B <= 6) & (A == 1) & c
+            if rm.any():
+                img[1:-1, 1:-1][rm] = 0
+                changed = True
+        if not changed:
+            return img[1:-1, 1:-1]
+
+
+def _centerline(comp, n: int = 96):
+    """A line-like stroke as an ordered centre line (n points by arc length, end to end) and its width;
+    None for blobs and for strokes whose skeleton branches too much to be one line."""
+    m = comp["mask"]
+    ys, xs = np.nonzero(m)
+    if len(xs) < 20:
+        return None
+    x0, y0 = xs.min(), ys.min()
+    crop = m[y0:ys.max() + 1, x0:xs.max() + 1]
+    dt = cv2.distanceTransform(crop, cv2.DIST_L2, 3)
+    width = max(1.0, 2.0 * float(np.percentile(dt[crop > 0], 90)))
+    sk = _thin(crop)
+    sy, sx = np.nonzero(sk)
+    if len(sx) < 3 * width or len(sx) < 8:
+        return None
+    pix = {(int(x), int(y)) for x, y in zip(sx, sy)}
+    nb = lambda q: [(q[0] + dx, q[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx or dy) and (q[0] + dx, q[1] + dy) in pix]
+    def far(start):   # BFS: farthest skeleton pixel and the path to it
+        prev, frontier, last = {start: None}, [start], start
+        while frontier:
+            nxt = []
+            for q in frontier:
+                for r in nb(q):
+                    if r not in prev:
+                        prev[r] = q; nxt.append(r)
+            if nxt:
+                last = nxt[-1]
+            frontier = nxt
+        path, q = [], last
+        while q is not None:
+            path.append(q); q = prev[q]
+        return last, path[::-1]
+    e1, _ = far(next(iter(pix)))
+    _, path = far(e1)
+    closed = False
+    if len(path) < 0.6 * len(pix):
+        # no ends: a loop (an outline drawn around something) - walk it once along its contour
+        cs, _ = cv2.findContours(cv2.dilate(sk, np.ones((3, 3), np.uint8)), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        if not cs:
+            return None
+        c = max(cs, key=lambda z: len(z))[:, 0, :]
+        if len(c) < 8:
+            return None
+        path = [tuple(p) for p in c] + [tuple(c[0])]
+        closed = True
+    P = np.array(path, np.float32)
+    seg = np.r_[0, np.cumsum(np.hypot(*np.diff(P, axis=0).T))]
+    if seg[-1] < 3 * width:
+        return None
+    q = np.linspace(0, seg[-1], n, endpoint=not closed)
+    pts = np.stack([np.interp(q, seg, P[:, 0]) + x0, np.interp(q, seg, P[:, 1]) + y0], 1)
+    return pts.astype(np.float32), width, closed
+
+
+_MORPH_CACHE: Dict[str, Any] = {}
 
 
 def _component_morph(A: np.ndarray, B: np.ndarray, t: float) -> Optional[np.ndarray]:
@@ -544,7 +630,17 @@ def _component_morph(A: np.ndarray, B: np.ndarray, t: float) -> Optional[np.ndar
     interpolated position, size and angle - so strokes travel and turn instead of shrinking to a dot half-way.
     Unpaired strokes fade out (A) or in (B). None if a key is empty."""
     H, W = A.shape[:2]
-    ka, kb = _components(A[..., 3]), _components(B[..., 3])
+    import hashlib
+    key = hashlib.md5(A[..., 3].tobytes() + B[..., 3].tobytes()).hexdigest()
+    cached = _MORPH_CACHE.get(key)
+    if cached is None:   # the same pair is morphed for every in-between frame: analyse the strokes once
+        ka, kb = _components(A[..., 3]), _components(B[..., 3])
+        for comp in ka + kb:
+            comp["line"] = _centerline(comp)
+        _MORPH_CACHE.clear()
+        _MORPH_CACHE[key] = (ka, kb)
+    else:
+        ka, kb = cached
     if not ka or not kb:
         return None
     try:
@@ -563,18 +659,42 @@ def _component_morph(A: np.ndarray, B: np.ndarray, t: float) -> Optional[np.ndar
         a, b = ka[i], kb[j]
         dth = b["theta"] - a["theta"]
         dth = (dth + np.pi / 2) % np.pi - np.pi / 2      # an axis has no direction: turn the short way
-        ca_, cb_ = _to_canon(a), _to_canon(b)
+        la, lb = a.get("line"), b.get("line")
+        if la is not None and lb is not None and la[2] == lb[2]:
+            # two lines (or two loops): move the centre line point by point, keep a solid stroke of blended width
+            pa_, wa, closed = la; pb_, wb, _ = lb
+            # pair the points so the line MOVES (all points shift alike) rather than flips: pick the direction
+            # (and, for loops, the starting point) with the most uniform displacement, not the smallest one -
+            # far-apart keys made the reversed order look "closer" and the line turned over and shrank mid-way
+            spread = lambda cand: float(np.abs((cand - pa_) - (cand - pa_).mean(0)).sum())
+            if closed:
+                best = None
+                for cand in (pb_, pb_[::-1]):
+                    for sh in range(0, len(cand), 2):
+                        rolled = np.roll(cand, -sh, axis=0)
+                        sc = spread(rolled)
+                        if best is None or sc < best[0]:
+                            best = (sc, rolled)
+                pb_ = best[1]
+            elif spread(pb_[::-1]) < spread(pb_):
+                pb_ = pb_[::-1]
+            pts = (pa_ * (1 - t) + pb_ * t)
+            w = max(1, int(round(wa * (1 - t) + wb * t)))
+            lay = np.zeros((H, W), np.uint8)
+            cv2.polylines(lay, [np.round(pts * 4).astype(np.int32)], bool(closed), 255, w, cv2.LINE_AA, shift=2)
+            acc = np.maximum(acc, lay.astype(np.float32) / 255.0)
+            continue
+        kc = min(1.0, 0.9 * _CANON / max(_extent(a), _extent(b), 1.0))
+        ca_, cb_ = _to_canon(a, kc), _to_canon(b, kc)
         if abs((b["theta"] - a["theta"]) - dth) > 1e-6:   # turned the short way: B's canonical shape is upside down
             cb_ = cv2.rotate(cb_, cv2.ROTATE_180)
         # rotate B's canonical shape so both are compared in the same frame (the canonical frames differ by dth)
         sd = _sdf(ca_) * (1 - t) + _sdf(cb_) * t
         canon = np.clip(0.5 - sd, 0, 1)
         th = a["theta"] + dth * t
-        size = np.sqrt(a["area"]) * (1 - t) + np.sqrt(b["area"]) * t
         cx = a["c"][0] * (1 - t) + b["c"][0] * t
         cy = a["c"][1] * (1 - t) + b["c"][1] * t
-        k = size / _CANON_SIZE
-        M = cv2.getRotationMatrix2D((_CANON / 2, _CANON / 2), -np.degrees(th), k)
+        M = cv2.getRotationMatrix2D((_CANON / 2, _CANON / 2), -np.degrees(th), 1.0 / kc)
         M[0, 2] += cx - _CANON / 2
         M[1, 2] += cy - _CANON / 2
         acc = np.maximum(acc, cv2.warpAffine(canon, M, (W, H), flags=cv2.INTER_LINEAR))
@@ -650,7 +770,9 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
         A, B = imgs[a], imgs[b]
         if B.shape != A.shape:
             B = cv2.resize(B, (A.shape[1], A.shape[0]))
-        prep = _point_morph_prepare(A, B, smooth=smooth)
+        comp_ok = bool(_components(A[..., 3])) and bool(_components(B[..., 3]))
+        # whole strokes first (lines keep their length and direction); the point cloud only for empty keys
+        prep = None if comp_ok else _point_morph_prepare(A, B, smooth=smooth)
         if prep is not None:  # line drawings: point-to-point morph
             H0, W0 = A.shape[:2]
             for f in range(a + 1, b):
@@ -660,7 +782,6 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
                 _write(os.path.join(d, f"frame_{f:04d}.png"), _point_morph_frame(prep, tt, H0, W0))
                 n += 1
             continue
-        comp_ok = bool(_components(A[..., 3])) and bool(_components(B[..., 3]))
         if comp_ok:   # strokes travel, turn and resize as whole shapes
             for f in range(a + 1, b):
                 t = (f - a) / float(b - a)

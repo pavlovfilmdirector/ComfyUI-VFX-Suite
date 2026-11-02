@@ -358,3 +358,24 @@ def test_component_morph_keeps_strokes_whole(vl):
     assert area(mid) > 0.6 * min(area(A), area(B))      # the SDF blend of far-apart strokes shrank to a dot
     ys, xs = np.nonzero(mid[..., 3] > 127)
     assert 80 < xs.mean() < 120                            # half-way between the two strokes
+
+
+def test_thick_line_moves_without_flipping(vl):
+    A = np.zeros((400, 700, 4), np.uint8); B = np.zeros((400, 700, 4), np.uint8)
+    cv2.line(A, (80, 300), (300, 220), (0, 200, 255, 255), 30)
+    cv2.line(B, (380, 150), (620, 110), (0, 200, 255, 255), 30)
+    area = lambda im: int((im[..., 3] > 100).sum())
+    for t in (0.25, 0.5, 0.75):
+        mid = vl._component_morph(A, B, t)
+        assert area(mid) > 0.85 * min(area(A), area(B))   # it used to turn over and shrink half-way
+        ys, xs = np.nonzero(mid[..., 3] > 100)
+        assert xs.max() - xs.min() > 180                    # still a long line, not a short blob
+
+
+def test_outline_loop_morph_stays_closed(vl):
+    A = np.zeros((300, 300, 4), np.uint8); B = np.zeros((300, 300, 4), np.uint8)
+    cv2.ellipse(A, (120, 150), (60, 100), 30, 0, 360, (255, 255, 255, 255), 6)
+    cv2.ellipse(B, (180, 150), (70, 90), 10, 0, 360, (255, 255, 255, 255), 6)
+    mid = vl._component_morph(A, B, 0.5)
+    n, _ = cv2.connectedComponents((mid[..., 3] > 100).astype(np.uint8))
+    assert n - 1 == 1                                          # one clean loop, not dashes
