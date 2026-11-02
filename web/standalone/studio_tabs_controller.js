@@ -44122,6 +44122,18 @@ async function openNarrationEditor() {
 
                         </div>
 
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;" ${tipAttr("Which LTX-2.5 model runs the generation", "Какая модель LTX-2.5 делает генерацию", "Fast: the distilled model, 8 steps, the negative prompt has no effect. Full + 8-step LoRA: the full model with the distilled LoRA, as fast, often a little more detail. Full: the full model with its own steps and CFG, the negative prompt works, several times slower.", "Быстрая: дистиллированная модель, 8 шагов, негативный промпт не действует. Полная + 8-шаговая LoRA: полная модель с дистиллирующей LoRA, так же быстро, часто чуть детальнее. Полная: своё число шагов и CFG, негативный промпт работает, в разы медленнее.")}>${uiText("Model", "Модель")}
+                            <select id="g2-model" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">
+                                <option value="distilled">${uiText("Fast (distilled, 8 steps)", "Быстрая (distilled, 8 шагов)")}</option>
+                                <option value="dev_lora">${uiText("Full + 8-step LoRA", "Полная + 8-шаговая LoRA")}</option>
+                                <option value="dev">${uiText("Full (quality, slow)", "Полная (качество, медленно)")}</option>
+                            </select></label>
+                        <div id="g2-dev-box" style="display: none; flex-direction: column; gap: 4px; padding: 4px 6px; border: 1px solid rgba(56,189,248,0.3); border-radius: 5px; font-size: 10.5px;">
+                            <label style="display: flex; align-items: center; gap: 6px;"><span style="width: 52px;">${uiText("Steps", "Шаги")}</span><input type="range" id="g2-steps" min="12" max="50" step="2" value="30" style="flex: 1;"><span id="g2-stepsv" style="width: 24px;">30</span></label>
+                            <label style="display: flex; align-items: center; gap: 6px;"><span style="width: 52px;">CFG</span><input type="range" id="g2-cfg" min="1" max="6" step="0.5" value="3" style="flex: 1;"><span id="g2-cfgv" style="width: 24px;">3</span></label>
+                            <textarea id="g2-neg" rows="2" placeholder="${uiText("Negative prompt (works with the full model)", "Негативный промпт (работает с полной моделью)")}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10px; padding: 4px 6px; resize: vertical;">blurry, smeared limbs, distorted hands, extra limbs, lens flare, low quality, flicker</textarea>
+                            <div id="g2-dev-hint" style="font-size: 9.5px; color: #fbbf24;"></div>
+                        </div>
                         <textarea id="g2-prompt" rows="3" placeholder="${uiText("Prompt (what the result should look like)", "Промпт (каким должен быть результат)")}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10.5px; padding: 5px 7px; resize: vertical;">${esc((sel && sel.comment) || notesInp2D.value || "")}</textarea>
 
                         <div style="display: flex; gap: 6px;">
@@ -44189,6 +44201,21 @@ async function openNarrationEditor() {
                     pop.querySelector("#g2-use-ff").addEventListener("change", renderRef);
 
                     pop.querySelector("#g2-two").addEventListener("change", (e) => { pop.querySelector("#g2-two-box").style.display = e.target.checked ? "flex" : "none"; });
+                    {
+                        const mSel = pop.querySelector("#g2-model"), devBox = pop.querySelector("#g2-dev-box");
+                        try { const saved = localStorage.getItem("vfx_ltx_model_variant"); if (saved) mSel.value = saved; } catch (_) {}
+                        const syncDev = () => {
+                            devBox.style.display = mSel.value === "dev" ? "flex" : "none";
+                            const st = +pop.querySelector("#g2-steps").value, cfg = +pop.querySelector("#g2-cfg").value;
+                            pop.querySelector("#g2-stepsv").textContent = st; pop.querySelector("#g2-cfgv").textContent = cfg;
+                            const k = (st / 8) * (cfg > 1 ? 2 : 1);
+                            pop.querySelector("#g2-dev-hint").textContent = uiText(`About ${k.toFixed(1)}x the time of the fast model`, `Примерно в ${k.toFixed(1)} раза дольше быстрой модели`);
+                        };
+                        mSel.addEventListener("change", () => { try { localStorage.setItem("vfx_ltx_model_variant", mSel.value); } catch (_) {} syncDev(); });
+                        pop.querySelector("#g2-steps").addEventListener("input", syncDev);
+                        pop.querySelector("#g2-cfg").addEventListener("input", syncDev);
+                        syncDev();
+                    }
 
                     pop.querySelector("#g2-a2").addEventListener("input", (e) => { pop.querySelector("#g2-a2v").textContent = (+e.target.value).toFixed(2); });
 
@@ -44297,6 +44324,9 @@ async function openNarrationEditor() {
                         if ((wantsFF() || m.needs === "ref_sheet") && !refImg) { showToastNotification(uiText("Pick or generate the first frame first", "Сначала выберите или сгенерируйте первый кадр"), true); return; }
 
                         const two = pop.querySelector("#g2-two").checked;
+                        const variant = pop.querySelector("#g2-model").value;
+                        const extraModel = variant === "dev" ? { model_variant: "dev", steps: +pop.querySelector("#g2-steps").value, cfg: +pop.querySelector("#g2-cfg").value,
+                            negative: (pop.querySelector("#g2-neg").value || "").trim() || undefined } : (variant === "dev_lora" ? { model_variant: "dev_lora" } : {});
 
                         const extra2 = two ? { lora2: pop.querySelector("#g2-l2").value, source_layer2: pop.querySelector("#g2-s2").value, lora2_attention: +pop.querySelector("#g2-a2").value } : {};
 
@@ -44316,7 +44346,7 @@ async function openNarrationEditor() {
 
                             needs: wantsFF() ? "first_frame" : (m.needs || ""), ref_image: refImg ? (refImg.url || refImg.fallbackUrl) : undefined,
 
-                            audio: g2Aud, ...extra2,
+                            audio: g2Aud, ...extra2, ...extraModel,
 
                             name: `${uiText(m.title_en, m.title_ru)}${srcName ? ` ← ${srcName}` : ""}`,
 

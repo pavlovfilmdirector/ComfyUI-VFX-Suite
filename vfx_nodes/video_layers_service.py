@@ -2886,6 +2886,52 @@ def _restore_reserved_vram():
         pass
 
 
+def _find_model_file(kind: str, *needles: str) -> str:
+    """First file in a ComfyUI model folder whose name contains every needle (case-insensitive)."""
+    import folder_paths
+    try:
+        names = folder_paths.get_filename_list(kind)
+    except Exception:
+        names = []
+    for n in names:
+        low = n.lower().replace("\\", "/")
+        if all(x in low for x in needles):
+            return n
+    return ""
+
+
+def _apply_ltx_variant(prompt: Dict[str, Any], p: Dict[str, Any]) -> str:
+    """Which LTX-2.5 transformer runs the IC-LoRA pass.
+
+    distilled (default): the distilled model, 8 fixed sigmas, CFG 1 (the negative prompt has no effect).
+    dev_lora: the full (dev) model + the distilled LoRA: same 8 steps / CFG 1, often a little more detail.
+    dev: the full model with its own scheduler: N steps, real CFG, the negative prompt works (~4-8x slower)."""
+    variant = str(p.get("model_variant") or "distilled").lower()
+    if variant not in ("dev", "dev_lora"):
+        return "distilled"
+    unet = prompt.get("5004:5602")
+    dev = _find_model_file("diffusion_models", "ltx-2.5", "dev", "int8") or _find_model_file("diffusion_models", "ltx-2.5", "dev")
+    if not unet or not dev:
+        raise ProcessError("The full LTX-2.5 (dev) model was not found in models/diffusion_models")
+    unet["inputs"]["unet_name"] = dev
+    if variant == "dev_lora":
+        dl = _find_model_file("loras", "ltx-2.5", "distilled-lora") or _find_model_file("loras", "distilled-lora")
+        if not dl:
+            raise ProcessError("The LTX-2.5 distilled LoRA was not found in models/loras")
+        prompt["kvar_dlora"] = {"class_type": "LoraLoaderModelOnly", "_meta": {"title": "Distilled LoRA"},
+                                "inputs": {"lora_name": dl, "strength_model": float(p.get("distill_strength", 1.0)),
+                                           "model": ["5004:5602", 0]}}
+        prompt["5004:5606"]["inputs"]["model"] = ["kvar_dlora", 0]
+        return "dev_lora"
+    steps = max(4, min(80, int(p.get("steps", 30) or 30)))
+    prompt["5516:4984"] = {"class_type": "LTXVScheduler", "_meta": {"title": "LTXV Scheduler"},
+                           "inputs": {"steps": steps, "max_shift": 2.05, "base_shift": 0.95, "stretch": True,
+                                      "terminal": 0.1, "latent": ["9002:4528", 0]}}
+    prompt["5516:4828"]["inputs"]["cfg"] = float(p.get("cfg", 3.0) or 3.0)
+    prompt["5516:4831"]["inputs"]["sampler_name"] = "euler"
+    return "dev"
+
+
 def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     """Runs the plate through LTX-2.5 + an IC-LoRA in chunks of 8n+1 frames (the model's frame rule).
 
@@ -3074,6 +3120,7 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
                     prompt["5548:5026"]["inputs"]["resize_type.shorter_size"] = min(tw, th)
                 except KeyError:
                     pass
+                _apply_ltx_variant(prompt, p)
                 last_guide = "9002:5012"
                 if clip2_name:
                     last_guide = _add_second_ic_lora(prompt, lora2, clip2_name, float(p.get("lora2_strength", 1.0)),
