@@ -586,8 +586,9 @@ export async function initStandaloneLayoutStudio() {
                         <button class="vfx-btn" id="btn-import-anim" ${tipAttr('Character animation (FBX/GLB: Mixamo, UE) for the selected character — retargeted automatically', 'Анимация персонажа (FBX/GLB: Mixamo, UE) для выбранного персонажа — ретаргет автоматически')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="person-standing" style="width:13px; height:13px;"></i></button>
                         <!-- Motion from text (NVIDIA Kimodo): postponed until after the contest; the handler below stays dormant -->
                         <button class="vfx-btn" id="btn-toggle-bones" ${tipAttr('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
-                        <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Characters -> 2D pose layer (OpenPose) on the tracked video, through the shot camera', 'Персонажи на 2D-слой позы (OpenPose) на трекнутом видео через камеру шота')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
-                        <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Characters rendered through the shot camera -> RGB layer on the tracked video', 'Рендер персонажей через камеру шота -> RGB-слой на видео')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Pose to Gen: characters -> OpenPose layer through the camera (joints hidden behind objects are dropped)', 'Pose to Gen: персонажи -> слой позы OpenPose через камеру (суставы, закрытые объектами, не рисуются)')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Layout to Gen: characters rendered through the camera -> RGB layer', 'Layout to Gen: рендер персонажей через камеру -> RGB-слой')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-render-cams-package" ${tipAttr('Render every camera into its own layered video: Layout to Gen (scene + characters), Pose to Gen, Depth. Re-rendering updates the same layers', 'Рендер каждой камеры в отдельное видео со слоями: Layout to Gen (сцена + персонажи), Pose to Gen, Depth. Повторный рендер обновляет те же слои')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="layers" style="width:13px; height:13px;"></i></button>
 
                         <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
                         <input type="file" id="file-anim-input" accept=".fbx,.glb,.gltf,.bvh" style="display:none;" />
@@ -6319,6 +6320,16 @@ let lastMonitorRenderTime = 0;
             const keepFrame = currentFrame;
             let frames = [], visible = 0, dbg = null;
             const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
+            // occlusion: joints behind set dressing (boxes, meshes, GLB props) are left out, like a real OpenPose detection would
+            const OCC_TYPES = new Set(["box", "sphere", "cylinder", "cone", "torus", "mesh", "glb"]);
+            const occluders = opts.occlude === false ? [] : [...threeObjectsMap.values()].filter(o => OCC_TYPES.has(o.userData.type) && o.visible !== false);
+            const occRay = new THREE.Raycaster();
+            const jointHidden = (from, joint) => {
+                const dir = joint.clone().sub(from); const dist = dir.length(); if (dist < 1e-4) return false;
+                occRay.set(from, dir.normalize()); occRay.near = 0; occRay.far = dist - 0.03;
+                const hits = occRay.intersectObjects(occluders, true);
+                return hits.some(h => h.object.visible !== false && !(h.object.isLine || h.object.isPoints || h.object.isSprite));
+            };
             const nFrames = opts.frames || totalFrames || 49;
 
             for (let cam of candidateCams) {
@@ -6347,10 +6358,12 @@ let lastMonitorRenderTime = 0;
                         if (cam.parent) cam.parent.updateMatrixWorld(true);
                         cam.updateMatrixWorld(true);
                         const people = [];
+                        const camPos = cam.getWorldPosition(new THREE.Vector3());
                         chars.forEach(o => {
                             const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
                             people.push(pts.map(v => {
                                 if (!v) return null;
+                                if (occluders.length && jointHidden(camPos, v)) return null;   // a prop stands between the camera and this joint
                                 const n = v.clone().project(cam);
                                 if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
                                 if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
@@ -6387,7 +6400,7 @@ let lastMonitorRenderTime = 0;
             if (fillProgress) fillProgress.style.width = "60%";
             if (lblProgress) lblProgress.innerText = uiText("Rendering OpenPose frames...", "Отрисовка кадров OpenPose...");
             const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
-            const payload = { name: `Pose from 3D (${chars.map(o => o.userData.name).join(", ")})`.slice(0, 80), width: outW, height: outH, frames };
+            const payload = { name: opts.name || "Pose to Gen", layer_id: opts.layerId || undefined, width: outW, height: outH, frames };
             const r = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/pose_from_3d`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
@@ -6395,7 +6408,7 @@ let lastMonitorRenderTime = 0;
             if (r.error) {
                 throw new Error(r.error);
             }
-            if (activeVid && activeVid !== src.video && !isSyntheticVidId(activeVid)) {
+            if (!opts.video && activeVid && activeVid !== src.video && !isSyntheticVidId(activeVid)) {
                 try {
                     await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(activeVid)}/pose_from_3d`, {
                         method: "POST", headers: { "Content-Type": "application/json" },
@@ -6405,7 +6418,7 @@ let lastMonitorRenderTime = 0;
             }
             if (fillProgress) fillProgress.style.width = "100%";
             if (lblProgress) lblProgress.innerText = uiText("✅ OpenPose layer ready!", "✅ Слой позы OpenPose готов!");
-            if (typeof window.__vfxOn3DLayerExported === "function") {
+            if (!opts.noCard && typeof window.__vfxOn3DLayerExported === "function") {
                 try {
                     await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: r.layer, frames: r.frames, kind: "pose" });
                 } catch (_) {}
@@ -6493,20 +6506,36 @@ let lastMonitorRenderTime = 0;
         // clay look: imported characters often miss their textures (black); a layout pass wants clean shading anyway
         const keepOverride = scene.overrideMaterial;
         const hasSkelOnly = chars.some(o => o.userData?.skeletonOnly);
-        if (opts.material !== "original" && !props.length && !hasSkelOnly) {
+        // real depth from the scene geometry: linear camera distance, white = near, black = far (one range for the whole shot)
+        const isDepth = opts.pass === "depth";
+        let depthU = null;
+        if (isDepth) {
+            scene.background = new THREE.Color(0x000000);
+            const dm = new THREE.MeshDepthMaterial();
+            dm.skinning = true;
+            depthU = { dNear: { value: 0.1 }, dFar: { value: 50 } };
+            dm.onBeforeCompile = (sh) => {
+                sh.uniforms.dNear = depthU.dNear; sh.uniforms.dFar = depthU.dFar;
+                sh.vertexShader = sh.vertexShader.replace("void main() {", "varying float vViewZ;\nvoid main() {")
+                    .replace(/}\s*$/, "  vViewZ = -mvPosition.z;\n}");
+                sh.fragmentShader = "uniform float dNear;\nuniform float dFar;\nvarying float vViewZ;\n" + sh.fragmentShader
+                    .replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "gl_FragColor = vec4( vec3( clamp( 1.0 - ( vViewZ - dNear ) / max( 1e-4, dFar - dNear ), 0.0, 1.0 ) ), 1.0 );");
+            };
+            scene.overrideMaterial = dm;
+        } else if (opts.material !== "original" && !props.length && !hasSkelOnly) {
             const clay = new THREE.MeshLambertMaterial({ color: 0x8c8c8c });
             clay.skinning = true;   // older three.js: without it skinned meshes render in their bind pose
             scene.overrideMaterial = clay;
         }
         const nFrames = opts.frames || totalFrames || 49;
-        let layerId = null, lastLayer = null, sent = 0, batch = [];
-        const layerName = opts.name || `3D render (${[...chars, ...props].map(o => o.userData.name).join(", ")})`.slice(0, 80);
+        let layerId = opts.layerId || null, lastLayer = null, sent = 0, batch = [];
+        const layerName = opts.name || "Layout to Gen";
         const pid = (window.currentProject && window.currentProject.id) || (typeof localStorage !== "undefined" ? localStorage.getItem("vfx_last_project") : "") || "sandbox_playground";
         const flush = async () => {
             if (!batch.length) return;
             const res = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(src.video)}/layer_frames`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ layer_id: layerId, name: layerName, type: "rgb", frames: batch })
+                body: JSON.stringify({ layer_id: layerId, name: layerName, type: opts.layerType || "rgb", frames: batch })
             }).then(x => x.json());
             if (res.error) throw new Error(res.error);
             layerId = res.layer.id; lastLayer = res.layer; sent += res.frames; batch = [];
@@ -6516,6 +6545,35 @@ let lastMonitorRenderTime = 0;
             helpersToHide.forEach(h => { h.visible = false; });
             skelOnlyHelpers.forEach(h => { h.visible = true; });
             cam.aspect = outW / outH; cam.updateProjectionMatrix();
+            if (isDepth) {
+                // range pass: nearest / farthest visible geometry over the whole shot, so the depth does not pump frame to frame
+                let dMin = Infinity, dMax = 0;
+                const bb = new THREE.Box3(), corner = new THREE.Vector3(), inv = new THREE.Matrix4();
+                for (let f = 0; f < nFrames; f++) {
+                    currentFrame = f;
+                    let c = cam;
+                    if (cutsOn) { const cf = cameraObjOf(cutActorAt(f)); if (cf) c = cf; }
+                    if (cameraMatrices && cameraMatrices.length) updateShotCameraPose(f);
+                    evaluateAnimation();
+                    try { updateCharactersAtFrame(); } catch (_) {}
+                    scene.updateMatrixWorld(true);
+                    c.updateMatrixWorld(true);
+                    inv.copy(c.matrixWorld).invert();
+                    charSet.forEach(o => {
+                        bb.setFromObject(o); if (bb.isEmpty()) return;
+                        for (let i = 0; i < 8; i++) {
+                            corner.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(inv);
+                            const z = -corner.z; if (z <= 0) continue;
+                            dMin = Math.min(dMin, z); dMax = Math.max(dMax, z);
+                        }
+                    });
+                }
+                if (!Number.isFinite(dMin)) { dMin = 0.1; dMax = 50; }
+                dMax = Math.min(dMax, (cam.far || 1000) * 0.99);
+                const pad = (dMax - dMin) * 0.03;
+                depthU.dNear.value = Math.max(0.01, dMin - pad); depthU.dFar.value = dMax + pad;
+                logMsg(`Depth range: ${depthU.dNear.value.toFixed(2)}–${depthU.dFar.value.toFixed(2)} m`);
+            }
             for (let f = 0; f < nFrames; f++) {
                 currentFrame = f;
                 if (cutsOn) {
@@ -6540,7 +6598,7 @@ let lastMonitorRenderTime = 0;
                 if (cam.parent) cam.parent.updateMatrixWorld(true);
                 cam.updateMatrixWorld(true);
                 r.render(scene, cam);
-                batch.push({ frame: (src.startFrame || 0) + f, data: r.domElement.toDataURL("image/jpeg", 0.92) });
+                batch.push({ frame: (src.startFrame || 0) + f, data: r.domElement.toDataURL(isDepth ? "image/png" : "image/jpeg", 0.92) });
                 if (fillProgress) fillProgress.style.width = Math.round(((f + 1) / nFrames) * 95) + "%";
                 if (lblProgress) lblProgress.innerText = `${uiText("Rendering 3D frame", "Рендер 3D кадра")} ${f + 1}/${nFrames}...`;
                 if (batch.length >= 12) await flush();
@@ -6561,7 +6619,7 @@ let lastMonitorRenderTime = 0;
             setTimeout(() => { if (cardProgress) cardProgress.style.display = "none"; }, 1200);
             r.dispose();
         }
-        if (typeof window.__vfxOn3DLayerExported === "function") {
+        if (!opts.noCard && typeof window.__vfxOn3DLayerExported === "function") {
             try {
                 await window.__vfxOn3DLayerExported({ videoId: src.video, activeVid, layer: lastLayer || { id: layerId, name: layerName, type: "rgb" }, frames: sent, kind: "rgb" });
             } catch (_) {}
@@ -6570,6 +6628,58 @@ let lastMonitorRenderTime = 0;
         return { layer_id: layerId, layer: lastLayer, frames: sent };
     }
     window.__vfxRenderFrom3D = exportRenderLayerFrom3D;
+
+    // ---- every camera -> its own layered video: Layout to Gen + Pose to Gen + Depth (re-render updates the same layers) ----
+    async function renderCameraPackages3D(opts = {}) {
+        const pid = (window.currentProject && window.currentProject.id) || "sandbox_playground";
+        let cams = [...threeObjectsMap.values()].filter(o => o.userData.type === "camera" && o.visible !== false);
+        if (opts.cameraIds) cams = cams.filter(o => opts.cameraIds.includes(o.userData.id));
+        const list = cams.map(o => ({ id: o.userData.id, name: o.userData.name || o.userData.id, actor: o }));
+        if (!opts.cameraIds && !isShotCameraDeleted && cameraMatrices && cameraMatrices.length) list.unshift({ id: SHOT_CAM_ID, name: "Shot Camera", actor: shotCamera });
+        if (!list.length) throw new Error(uiText("No camera in 3D scene", "В 3D сцене нет камеры"));
+        const hasChars = [...threeObjectsMap.values()].some(o => o.userData.type === "character" && characterRigs.has(o.userData.id));
+        const outW = plateWidth || 1920, outH = plateHeight || 1080, nFrames = totalFrames || 49;
+        let known = {};
+        try { known = JSON.parse(localStorage.getItem(`vfx_cam_videos_${pid}`) || "{}") || {}; } catch (_) { known = {}; }
+        const results = [];
+        for (const c of list) {
+            const title = `3D · ${c.name}`;
+            let vid = (c.actor.userData && c.actor.userData.genVideoId) || known[c.id] || null;
+            let state = null;
+            if (vid) {
+                try { state = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(vid)}/state?t=${Date.now()}`).then(x => x.ok ? x.json() : null); } catch (_) { state = null; }
+                if (!state || !Array.isArray(state.layers)) vid = null;
+            }
+            let created = null;
+            if (!vid) {
+                const res = await fetch(`/vfx/video/${encodeURIComponent(pid)}/create_blank`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ title, width: outW, height: outH, fps: projectFPS || 25, total_frames: nFrames, color: "#000000" })
+                }).then(x => x.json());
+                if (res.error || !res.video) throw new Error(res.error || "create_blank failed");
+                created = res.video; created.title = title; created.badge = "3D CAM";
+                vid = created.id; state = { layers: created.layers || [] };
+            }
+            if (c.actor.userData) c.actor.userData.genVideoId = vid;
+            known[c.id] = vid;
+            const layerIdOf = (name) => (state.layers.find(l => l.name === name) || {}).id;
+            const base = { video: vid, cameraId: c.id, width: outW, height: outH, frames: nFrames, noCard: true };
+            await exportRenderLayerFrom3D({ ...base, characters: true, props: true, name: "Layout to Gen", layerId: layerIdOf("Layout to Gen") });
+            if (hasChars) {
+                try { await exportPoseLayerFrom3D({ ...base, name: "Pose to Gen", layerId: layerIdOf("Pose to Gen") }); }
+                catch (e) { logMsg(`Pose to Gen (${c.name}): ${e.message}`); }
+            }
+            if (opts.depth !== false) await exportRenderLayerFrom3D({ ...base, characters: true, props: true, pass: "depth", name: "Depth", layerId: layerIdOf("Depth") });
+            results.push({ camera: c.name, video: vid, created: !!created });
+            if (typeof window.__vfxOn3DCameraPackage === "function") {
+                try { await window.__vfxOn3DCameraPackage({ video: created, videoId: vid, title }); } catch (_) {}
+            }
+        }
+        try { localStorage.setItem(`vfx_cam_videos_${pid}`, JSON.stringify(known)); } catch (_) {}
+        syncSceneData();
+        return results;
+    }
+    window.__vfxRenderCameraPackages = renderCameraPackages3D;
     window.__vfxCreateCameraPreset = (preset, opts) => createDefaultCameraTrajectory(preset, opts || {});
     window.__vfxReplaceObjectWithGLB = (targetId, glbUrl, metaPatch = {}) => replaceObjectWithGLB(targetId, glbUrl, metaPatch);
     // scripted set dressing (agent / tests): a primitive with position, scale, rotation (deg) and colour
@@ -7378,15 +7488,23 @@ let lastMonitorRenderTime = 0;
         if (pb) pb.onclick = () => {
             pb.disabled = true;
             exportPoseLayerFrom3D()
-                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose layer created: ${r.frames} frames (added to Gallery & 2D Video)`, `Слой позы создан: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
+                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose to Gen: ${r.frames} frames (added to Gallery & 2D Video)`, `Pose to Gen: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
                 .catch(err => { logMsg(`ERROR: pose from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose from 3D: ${err.message}`, `Поза из 3D: ${err.message}`), true); })
                 .finally(() => { pb.disabled = false; });
+        };
+        const cpb = document.getElementById("btn-render-cams-package");
+        if (cpb) cpb.onclick = () => {
+            cpb.disabled = true;
+            renderCameraPackages3D()
+                .then(list => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Rendered ${list.length} camera(s) into layered videos: ${list.map(x => x.camera).join(", ")}`, `Отрендерено камер: ${list.length} — видео со слоями: ${list.map(x => x.camera).join(", ")}`), false); })
+                .catch(err => { logMsg(`ERROR: camera package: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Camera render: ${err.message}`, `Рендер камер: ${err.message}`), true); })
+                .finally(() => { cpb.disabled = false; });
         };
         const rb = document.getElementById("btn-render-from-3d");
         if (rb) rb.onclick = () => {
             rb.disabled = true;
             exportRenderLayerFrom3D()
-                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Render layer created: ${r.frames} frames (added to Gallery & 2D Video)`, `Слой рендера создан: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
+                .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Layout to Gen: ${r.frames} frames (added to Gallery & 2D Video)`, `Layout to Gen: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
                 .catch(err => { logMsg(`ERROR: render from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Render from 3D: ${err.message}`, `Рендер из 3D: ${err.message}`), true); })
                 .finally(() => { rb.disabled = false; });
         };
@@ -10307,6 +10425,7 @@ let lastMonitorRenderTime = 0;
             pivotOffset: Array.isArray(obj.userData.pivotOffset) ? [...obj.userData.pivotOffset] : undefined,
             camConv: obj.userData.type === "camera" ? true : undefined,
             cutFrames: obj.userData.type === "camera" && Array.isArray(obj.userData.cutFrames) && obj.userData.cutFrames.length ? [...obj.userData.cutFrames] : undefined,
+            genVideoId: obj.userData.type === "camera" ? (obj.userData.genVideoId || undefined) : undefined,
             focalMm: obj.userData.type === "camera" ? (obj.userData.focalMm ?? 35) : undefined,
             sensorPreset: obj.userData.type === "camera" ? (obj.userData.sensorPreset || "full_frame") : undefined,
             sensorWidthMm: obj.userData.type === "camera" ? (obj.userData.sensorWidthMm ?? 36.0) : undefined,
@@ -10500,6 +10619,7 @@ let lastMonitorRenderTime = 0;
                 if (item.color) camGroup.userData.color = item.color;
                 if (item.focalMm !== undefined) camGroup.userData.focalMm = item.focalMm;
                 if (Array.isArray(item.cutFrames)) camGroup.userData.cutFrames = item.cutFrames.map(Number).filter(Number.isFinite);
+                if (item.genVideoId) camGroup.userData.genVideoId = String(item.genVideoId);
                 if (item.sensorPreset !== undefined) camGroup.userData.sensorPreset = item.sensorPreset;
                 if (item.sensorWidthMm !== undefined) camGroup.userData.sensorWidthMm = item.sensorWidthMm;
                 if (item.sensorHeightMm !== undefined) camGroup.userData.sensorHeightMm = item.sensorHeightMm;

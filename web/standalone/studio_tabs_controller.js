@@ -60079,6 +60079,25 @@ async function openNarrationEditor() {
         return activeVideoId || null;
     };
 
+    // a 3D camera rendered into its own layered video: list it in the 2D tab / gallery and refresh its layers
+    window.__vfxOn3DCameraPackage = async ({ video, videoId, title } = {}) => {
+        if (!Array.isArray(mediaVideos2D) || !videoId) return;
+        const pid = currentProject?.id || "sandbox_playground";
+        let vObj = mediaVideos2D.find(v => v.id === videoId);
+        if (!vObj && video) { vObj = { ...video, title: title || video.title, badge: "3D CAM" }; mediaVideos2D.unshift(vObj); }
+        if (vObj && title) vObj.title = title;
+        try {
+            const st = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(videoId)}/state?t=${Date.now()}`).then(r => r.ok ? r.json() : null);
+            if (st && Array.isArray(st.layers)) {
+                videoLayersCache[videoId] = { layers: st.layers, plate: st.plate || null, at: Date.now() };
+                if (vObj) vObj.videoLayers = st.layers;
+            }
+        } catch (_) {}
+        if (typeof saveProject2DVideos === "function") saveProject2DVideos();
+        if (typeof renderTopViewportBar === "function") renderTopViewportBar();
+        if (typeof renderRightPanel === "function") renderRightPanel();
+    };
+
     window.__vfxOn3DLayerExported = async ({ videoId, activeVid, layer, frames, kind } = {}) => {
         try {
             const pid = (typeof getCurrentProjectName === "function" ? getCurrentProjectName() : (window.currentProject && window.currentProject.name)) || "New_Movie_Shot";
