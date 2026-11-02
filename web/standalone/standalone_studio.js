@@ -587,7 +587,7 @@ export async function initStandaloneLayoutStudio() {
                         <!-- Motion from text (NVIDIA Kimodo): postponed until after the contest; the handler below stays dormant -->
                         <button class="vfx-btn" id="btn-toggle-bones" ${tipAttr('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Pose to Gen: characters -> OpenPose layer through the camera (joints hidden behind objects are dropped)', 'Pose to Gen: персонажи -> слой позы OpenPose через камеру (суставы, закрытые объектами, не рисуются)')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
-                        <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Layout to Gen: characters rendered through the camera -> RGB layer', 'Layout to Gen: рендер персонажей через камеру -> RGB-слой')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Layout to Gen: scene + characters rendered through the camera -> RGB layer', 'Layout to Gen: сцена + персонажи через камеру -> RGB-слой')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-render-cams-package" ${tipAttr('Render every camera into its own layered video: Layout to Gen (scene + characters), Pose to Gen, Depth. Re-rendering updates the same layers', 'Рендер каждой камеры в отдельное видео со слоями: Layout to Gen (сцена + персонажи), Pose to Gen, Depth. Повторный рендер обновляет те же слои')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="layers" style="width:13px; height:13px;"></i></button>
 
                         <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
@@ -4373,16 +4373,17 @@ let lastMonitorRenderTime = 0;
     }
 
     function getActiveMonitorCameraActor() {
+        {
+            // camera cuts on the timeline decide who is on air (a selected camera no longer pins the monitor)
+            let cutCam = null;
+            try { cutCam = cutActorAt(currentFrame); } catch (_) {}
+            if (cutCam) return cutCam;
+        }
         if (selectedObject && selectedObject.userData && selectedObject.userData.type === "camera" && selectedObject.userData.camera) {
             if (selectedObject === shotCamera) {
                 return !isShotCameraDeleted ? shotCamera : null;
             }
             return selectedObject;
-        }
-        {
-            let cutCam = null;                              // camera cuts on the timeline decide who is on air
-            try { cutCam = cutActorAt(currentFrame); } catch (_) {}
-            if (cutCam) return cutCam;
         }
         if (lastActiveFreeCamGroup && threeObjectsMap.has(lastActiveFreeCamGroup.userData?.id)) {
             return lastActiveFreeCamGroup;
@@ -6483,8 +6484,11 @@ let lastMonitorRenderTime = 0;
             if (cardProgress) cardProgress.style.display = "none";
             throw new Error(uiText("Nothing to render (add a character or 3D object)", "Нечего рендерить (добавьте персонажа или 3D объект)"));
         }
-        const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        // no set dressing (e.g. a tracked shot whose environment is the filmed plate): characters on alpha, over the video
+        const overPlate = !props.length && opts.pass !== "depth" && !opts.background;
+        const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: overPlate });
         r.setPixelRatio(1); r.setSize(outW, outH, false);
+        if (overPlate) r.setClearColor(0x000000, 0);
         // only the chosen characters and the lights; helpers, grid, cloud, other objects hidden
         const keepVis = new Map();
         const charSet = new Set([...chars, ...props]);
@@ -6500,7 +6504,7 @@ let lastMonitorRenderTime = 0;
         });
         const helpersToHide = chars.filter(o => !o.userData?.skeletonOnly).map(o => characterRigs.get(o.userData.id)?.helper).filter(Boolean);
         const keepBg = scene.background, keepFrame = currentFrame, keepAspect = cam.aspect;
-        scene.background = new THREE.Color(opts.background || "#d4d4d4");
+        scene.background = overPlate ? null : new THREE.Color(opts.background || "#d4d4d4");
         const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 0.75); scene.add(hemi);
         const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(3, -4, 6); scene.add(key);
         // clay look: imported characters often miss their textures (black); a layout pass wants clean shading anyway
@@ -6508,6 +6512,7 @@ let lastMonitorRenderTime = 0;
         const hasSkelOnly = chars.some(o => o.userData?.skeletonOnly);
         // real depth from the scene geometry: linear camera distance, white = near, black = far (one range for the whole shot)
         const isDepth = opts.pass === "depth";
+        const swappedMats = [];
         let depthU = null;
         if (isDepth) {
             scene.background = new THREE.Color(0x000000);
@@ -6522,6 +6527,15 @@ let lastMonitorRenderTime = 0;
                     .replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "gl_FragColor = vec4( vec3( clamp( 1.0 - ( vViewZ - dNear ) / max( 1e-4, dFar - dNear ), 0.0, 1.0 ) ), 1.0 );");
             };
             scene.overrideMaterial = dm;
+        } else if (opts.material !== "original" && props.length) {
+            // characters in clay, set dressing in its own colours
+            const clayS = new THREE.MeshLambertMaterial({ color: 0x8c8c8c }); clayS.skinning = true;
+            const clayP = new THREE.MeshLambertMaterial({ color: 0x8c8c8c });
+            chars.filter(o => !o.userData?.skeletonOnly).forEach(o => o.traverse(m => {
+                if (!m.isMesh) return;
+                swappedMats.push([m, m.material]);
+                m.material = m.isSkinnedMesh ? clayS : clayP;
+            }));
         } else if (opts.material !== "original" && !props.length && !hasSkelOnly) {
             const clay = new THREE.MeshLambertMaterial({ color: 0x8c8c8c });
             clay.skinning = true;   // older three.js: without it skinned meshes render in their bind pose
@@ -6598,7 +6612,7 @@ let lastMonitorRenderTime = 0;
                 if (cam.parent) cam.parent.updateMatrixWorld(true);
                 cam.updateMatrixWorld(true);
                 r.render(scene, cam);
-                batch.push({ frame: (src.startFrame || 0) + f, data: r.domElement.toDataURL(isDepth ? "image/png" : "image/jpeg", 0.92) });
+                batch.push({ frame: (src.startFrame || 0) + f, data: r.domElement.toDataURL((isDepth || overPlate) ? "image/png" : "image/jpeg", 0.92) });
                 if (fillProgress) fillProgress.style.width = Math.round(((f + 1) / nFrames) * 95) + "%";
                 if (lblProgress) lblProgress.innerText = `${uiText("Rendering 3D frame", "Рендер 3D кадра")} ${f + 1}/${nFrames}...`;
                 if (batch.length >= 12) await flush();
@@ -6610,6 +6624,7 @@ let lastMonitorRenderTime = 0;
             isBakingLayout = false;
             scene.remove(hemi); scene.remove(key);
             scene.overrideMaterial = keepOverride;
+            swappedMats.forEach(([m, mat]) => { m.material = mat; });
             scene.background = keepBg;
             keepVis.forEach((v, o) => { o.visible = v; });
             cam = cam0;
@@ -7503,7 +7518,7 @@ let lastMonitorRenderTime = 0;
         const rb = document.getElementById("btn-render-from-3d");
         if (rb) rb.onclick = () => {
             rb.disabled = true;
-            exportRenderLayerFrom3D()
+            exportRenderLayerFrom3D({ characters: true, props: true, name: "Layout to Gen" })
                 .then(r => { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Layout to Gen: ${r.frames} frames (added to Gallery & 2D Video)`, `Layout to Gen: ${r.frames} кадров (добавлен в Галерею и 2D Видео)`), false); })
                 .catch(err => { logMsg(`ERROR: render from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Render from 3D: ${err.message}`, `Рендер из 3D: ${err.message}`), true); })
                 .finally(() => { rb.disabled = false; });

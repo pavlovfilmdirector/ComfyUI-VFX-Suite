@@ -9912,9 +9912,12 @@ async function openNarrationEditor() {
 
         if (!activeScene3DId && !mediaScenes3D.length) return;
 
-        const curLevel = mediaScenes3D.find(s => s.id === activeScene3DId && (s.mode === "level" || s.mode === "custom"))
-            || mediaScenes3D.find(s => s.mode === "level" || s.mode === "custom")
-            || mediaScenes3D[0];
+        // only the level that is actually open receives the live scene: with a track / mesh scene open,
+        // falling back to "the first level" overwrote that level with the track's objects
+        const activeItem = mediaScenes3D.find(s => s.id === activeScene3DId);
+        if (activeItem && !(activeItem.mode === "level" || activeItem.mode === "custom")) return;
+        const curLevel = activeItem
+            || mediaScenes3D.find(s => s.mode === "level" || s.mode === "custom");
 
         if (curLevel && typeof onExportManifest === "function") {
 
