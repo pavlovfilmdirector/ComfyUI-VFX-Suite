@@ -3601,6 +3601,12 @@ let lastMonitorRenderTime = 0;
         e.preventDefault();
     });
 
+    // the gizmo swallows pointerdown (preventDefault), so a text field touched earlier kept focus and ate Ctrl+Z after a drag
+    renderer.domElement.addEventListener("pointerdown", () => {
+        const ae = document.activeElement;
+        if (ae && ae !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || "")) { try { ae.blur(); } catch (_) {} }
+    }, true);
+
     renderer.domElement.addEventListener("pointerdown", (e) => {
         if (activeCamera !== flyCamera && activeCamera !== orthoCamera) return;
         const target = getPointerTarget(e);
@@ -4247,6 +4253,27 @@ let lastMonitorRenderTime = 0;
     };
 
     let lastInspectorThrottleTs = 0;
+    let wholeAnimDrag = null;
+    // shift every key by the same move / turn / scale the gizmo applied to the object (pivot = where the object started)
+    function applyWholeAnimDrag() {
+        const d = wholeAnimDrag;
+        if (!d) return;
+        const obj = d.obj;
+        const dq = obj.quaternion.clone().multiply(d.quat.clone().invert());
+        const sr = new THREE.Vector3(
+            d.scale.x ? obj.scale.x / d.scale.x : 1,
+            d.scale.y ? obj.scale.y / d.scale.y : 1,
+            d.scale.z ? obj.scale.z / d.scale.z : 1);
+        const dp = obj.position.clone().sub(d.pos);
+        for (const it of d.keys) {
+            it.k.position.copy(it.pos).sub(d.pos).applyQuaternion(dq).add(d.pos).add(dp);
+            it.k.quaternion.copy(dq).multiply(it.quat);
+            it.k.scale.copy(it.scale).multiply(sr);
+            // custom bezier handle offsets are world vectors: turn them with the path
+            if (Array.isArray(it.k.tangentOutOffset)) { if (!it.outOff) it.outOff = new THREE.Vector3().fromArray(it.k.tangentOutOffset); it.k.tangentOutOffset = it.outOff.clone().applyQuaternion(dq).toArray(); }
+            if (Array.isArray(it.k.tangentInOffset)) { if (!it.inOff) it.inOff = new THREE.Vector3().fromArray(it.k.tangentInOffset); it.k.tangentInOffset = it.inOff.clone().applyQuaternion(dq).toArray(); }
+        }
+    }
 
     transformControls.addEventListener("dragging-changed", (e) => {
         if (e.value) {
@@ -4272,9 +4299,27 @@ let lastMonitorRenderTime = 0;
             } else {
                 pushUndoState("Transform Object");
             }
+            // container mode: remember where the object and every key started, so the drag can carry the whole animation
+            wholeAnimDrag = null;
+            if (targetObj && window.__vfxMoveWholeAnim && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length > 0 && !targetObj.userData.isBaked) {
+                wholeAnimDrag = {
+                    obj: targetObj,
+                    pos: targetObj.position.clone(),
+                    quat: targetObj.quaternion.clone(),
+                    scale: targetObj.scale.clone(),
+                    keys: targetObj.userData.keyframes.map(k => ({ k, pos: k.position.clone(), quat: k.quaternion.clone(), scale: k.scale.clone() }))
+                };
+            }
         } else {
             const targetObj = transformControls.object;
-            if (targetObj && autoKeyEnabled && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length > 0) {
+            if (wholeAnimDrag && wholeAnimDrag.obj === targetObj) {
+                applyWholeAnimDrag();
+                wholeAnimDrag = null;
+                buildCameraTrajectoryPath();
+                evaluateAnimation();
+                updateKeyframeMarkers();
+                if (typeof renderTimelineKeyframes === "function") renderTimelineKeyframes();
+            } else if (targetObj && autoKeyEnabled && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length > 0) {
                 set3DTransformKeyframe(targetObj, currentFrame, true);
             } else if (targetObj && (targetObj.userData?.type === "camera" || targetObj === shotCamera) && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length >= 2) {
                 buildCameraTrajectoryPath();
@@ -4289,6 +4334,11 @@ let lastMonitorRenderTime = 0;
         const obj = transformControls.object;
         if (obj) {
             obj.updateMatrixWorld(true);
+            if (wholeAnimDrag && wholeAnimDrag.obj === obj) {
+                applyWholeAnimDrag();
+                const nowP = performance.now();
+                if (!wholeAnimDrag.lastPath || nowP - wholeAnimDrag.lastPath > 60) { wholeAnimDrag.lastPath = nowP; try { buildCameraTrajectoryPath(); } catch (_) {} }
+            }
             if (obj === shotCamera) {
                 syncShotCameraVisuals(true);
             } else if (obj.userData && obj.userData.camera) {

@@ -27787,6 +27787,16 @@ async function openNarrationEditor() {
 
 
 
+            <button class="vfx-btn" id="btn-3d-left-wholeanim"
+
+                ${tipAttr("Move whole animation", "Двигать всю анимацию", "When on, moving / rotating / scaling an animated object (e.g. a camera) shifts ALL its keyframes together, like a container. Off: only the key at the current frame changes.", "Включено: перемещение / поворот / масштаб анимированного объекта (например камеры) сдвигает ВСЕ его ключи разом, как контейнер. Выключено: меняется только ключ на текущем кадре.")}
+
+                style="${dockBtnStyle(false)}">
+
+                <i data-lucide="move-3d" style="width:13px; height:13px;"></i>
+
+            </button>
+
             <button class="vfx-btn" id="btn-3d-left-space"
 
                 ${tipAttr("World / Local Space (~)", "Оси: Мировые (World) / Локальные (Local) (~)", "Toggle gizmo axes between World (globe icon) and Local (compass icon) space.", "Переключить оси трансформации между Мировыми (World — глобус) и Локальными (Local — компас).")}
@@ -28086,6 +28096,44 @@ async function openNarrationEditor() {
         });
 
 
+
+        const wholeAnimBtn = bar3D.querySelector("#btn-3d-left-wholeanim");
+
+        if (wholeAnimBtn) {
+
+            const paintWhole = () => {
+
+                const on = !!window.__vfxMoveWholeAnim;
+
+                wholeAnimBtn.style.background = on ? "rgba(0, 240, 255, 0.16)" : "transparent";
+
+                wholeAnimBtn.style.borderColor = on ? "rgba(0, 240, 255, 0.45)" : "transparent";
+
+                wholeAnimBtn.style.color = on ? "#00f0ff" : "rgba(255,255,255,0.55)";
+
+            };
+
+            try { window.__vfxMoveWholeAnim = localStorage.getItem("vfx_move_whole_anim") === "1"; } catch (_) {}
+
+            paintWhole();
+
+            wholeAnimBtn.onclick = () => {
+
+                window.__vfxMoveWholeAnim = !window.__vfxMoveWholeAnim;
+
+                try { localStorage.setItem("vfx_move_whole_anim", window.__vfxMoveWholeAnim ? "1" : "0"); } catch (_) {}
+
+                paintWhole();
+
+                showToastNotification(window.__vfxMoveWholeAnim
+
+                    ? uiText("Moving an object now shifts all its keys", "Перемещение объекта теперь сдвигает все его ключи")
+
+                    : uiText("Moving an object edits only the current key", "Перемещение объекта меняет только текущий ключ"));
+
+            };
+
+        }
 
         const spaceBtn = bar3D.querySelector("#btn-3d-left-space");
 
