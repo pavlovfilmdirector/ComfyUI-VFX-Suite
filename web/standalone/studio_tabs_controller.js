@@ -9486,6 +9486,7 @@ async function openNarrationEditor() {
 
 
 
+    window.__vfxDeleteProjectMediaAsset = (type, item) => deleteProjectMediaAsset(type, item);
     async function deleteProjectMediaAsset(type, item) {
 
         if (!item) return;
@@ -10007,25 +10008,15 @@ async function openNarrationEditor() {
 
             mode: "level",
 
-            manifest: [], // Empty container!
-
+            manifest: defaultLevelManifest(), // an empty stage: ground and sun
             mtime: Date.now()
-
         };
-
-
-
+        newLvl.desc = `${newLvl.manifest.length} ${uiText("actors (ground + sun)", "объекта (земля + солнце)")}`;
         mediaScenes3D.unshift(newLvl);
-
         activeScene3DId = newLvl.id;
-
         saveProject3DScenes();
-
-
-
         if (typeof onLoadManifest === "function") {
-
-            onLoadManifest([]);
+            onLoadManifest(JSON.parse(JSON.stringify(newLvl.manifest)));
 
         }
 
@@ -10058,6 +10049,33 @@ async function openNarrationEditor() {
     }
 
     window.__vfxCreateNewLevel = createNewLevel;
+    function defaultLevelManifest() {
+        const t = Date.now();
+        return [
+            { id: `obj_ground_${t}`, name: "Ground", type: "plane", position: [0, 0, 0], rotation: [0, 0, 0], scale: [10, 10, 1], color: "#55703c",
+              description: "", passRole: "layout_depth", glbUrl: "", meshEngine: "", assignedImage: "", assignedCharacter: "", assignedAudio: "", fitMode: "stretch", keyframes: [] },
+            { id: `light_sun_${t}`, name: "Sun_1", type: "light", position: [3, -3, 6], rotation: [0.6, 0.45, 0.56], scale: [1, 1, 1], color: "#fff7ed",
+              description: "", passRole: "layout_depth", glbUrl: "", meshEngine: "", assignedImage: "", assignedCharacter: "", assignedAudio: "", fitMode: "stretch",
+              lightSubType: "sun", lightIntensity: 2.5, lightAngleDeg: 8, lightRange: 20, areaWidth: 2, areaHeight: 1.2, castShadows: true, keyframes: [] }
+        ];
+    }
+    // a copy of a level with everything in it (new ids, so both can be edited on their own)
+    function duplicateLevel(levelItem) {
+        syncActiveLevelData();
+        const src = levelItem || mediaScenes3D.find(s => s.id === activeScene3DId);
+        if (!src) return null;
+        const t = Date.now();
+        const manifest = JSON.parse(JSON.stringify(src.manifest || [])).map((o, i) => ({ ...o, id: `${String(o.id || "obj")}_d${t % 100000}_${i}` }));
+        const dup = { ...JSON.parse(JSON.stringify(src)), id: `lvl_${t}`, title: `${src.title} (${uiText("copy", "копия")})`, manifest, mtime: t };
+        const at = mediaScenes3D.indexOf(src);
+        mediaScenes3D.splice(Math.max(0, at), 0, dup);
+        saveProject3DScenes();
+        switchActiveLevel(dup);
+        showToastNotification(uiText(`Level duplicated: «${dup.title}»`, `Уровень продублирован: «${dup.title}»`));
+        return dup;
+    }
+    window.__vfxDuplicateLevel = duplicateLevel;
+    window.__vfxListLevels = () => mediaScenes3D.filter(s => s.mode === "level" || s.mode === "custom").map(s => ({ id: s.id, title: s.title, n: (s.manifest || []).length, active: s.id === activeScene3DId }));
 
 
 
@@ -13563,6 +13581,7 @@ async function openNarrationEditor() {
             },
 
             manifest3d: (typeof onExportManifest === "function") ? onExportManifest() : [],
+            activeLevelId: activeScene3DId || null,   // which level the live scene (manifest3d) belongs to
 
             timeline_events: (typeof window.__vfxGetTimelineEvents === "function") ? window.__vfxGetTimelineEvents() : [],
 
@@ -25732,6 +25751,18 @@ async function openNarrationEditor() {
             };
 
             actionEl.appendChild(addLevelBtn);
+
+            const dupLevelBtn = document.createElement("button");
+            dupLevelBtn.className = "vfx-btn";
+            dupLevelBtn.id = "btn-top-dup-level";
+            dupLevelBtn.style.cssText = "height: 26px; padding: 0 8px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); color: #a7f3d0; font-size: 10.5px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; gap: 4px; box-sizing: border-box;";
+            dupLevelBtn.innerHTML = `<i data-lucide="copy" style="width:11px; height:11px;"></i><span>${uiText("Duplicate level", "Дублировать уровень")}</span>`;
+            dupLevelBtn.setAttribute("data-tip-t-en", "Duplicate the active level");
+            dupLevelBtn.setAttribute("data-tip-t-ru", "Дублировать активный уровень");
+            dupLevelBtn.setAttribute("data-tip-d-en", "A copy of the level that is open now, with all its objects, cameras and keys.");
+            dupLevelBtn.setAttribute("data-tip-d-ru", "Копия открытого сейчас уровня со всеми объектами, камерами и ключами.");
+            dupLevelBtn.onclick = () => duplicateLevel();
+            actionEl.appendChild(dupLevelBtn);
 
         }
 
@@ -41159,7 +41190,10 @@ async function openNarrationEditor() {
 
         async function beginPaint2D() {
 
-            const W = vlState2D.plate?.width || mediaBox2D.clientWidth, H = vlState2D.plate?.height || mediaBox2D.clientHeight;
+            const ve2 = wrapper.querySelector("#vfx-2d-html5-video") || wrapper.querySelector("#vfx-2d-seq-img");
+            const pOk2 = !!vlState2D.plate?.total_frames;   // without an extracted plate its 1920x1080 defaults are wrong
+            const W = (pOk2 && vlState2D.plate.width) || ve2?.videoWidth || ve2?.naturalWidth || mediaBox2D.clientWidth;
+            const H = (pOk2 && vlState2D.plate.height) || ve2?.videoHeight || ve2?.naturalHeight || mediaBox2D.clientHeight;
 
             if (paintCanvas2D.width !== W || paintCanvas2D.height !== H) { paintCanvas2D.width = W; paintCanvas2D.height = H; }
 
@@ -43597,7 +43631,10 @@ async function openNarrationEditor() {
                 if (selected2DMaskKeys.size > 0 || selectedPaintKeys2D.size > 0) { window.__vfxClip2D = { type: "keys" }; copy2DMaskKeys(); return; }
                 const lids = (vlState2D.selLayerIds && vlState2D.selLayerIds.length) ? vlState2D.selLayerIds.slice() : (vlState2D.selected ? [vlState2D.selected] : []);
                 if (lids.length) {
-                    window.__vfxClip2D = { type: "layers", pid: vlPid(), vid: vidObj.id, lids };
+                    const ve = wrapper.querySelector("#vfx-2d-html5-video") || wrapper.querySelector("#vfx-2d-seq-img");
+                    const pOk = !!vlState2D.plate?.total_frames;
+                    const srcSize = [(pOk && vlState2D.plate.width) || ve?.videoWidth || ve?.naturalWidth || 0, (pOk && vlState2D.plate.height) || ve?.videoHeight || ve?.naturalHeight || 0];
+                    window.__vfxClip2D = { type: "layers", pid: vlPid(), vid: vidObj.id, lids, srcSize };
                     showToastNotification(uiText(`Copied ${lids.length} layer(s) — Ctrl+V in this or another video`, `Скопировано слоёв: ${lids.length} — Ctrl+V в этом или другом видео`));
                 } else {
                     window.__vfxClip2D = { type: "video", pid: vlPid(), vid: vidObj.id };
@@ -43616,7 +43653,10 @@ async function openNarrationEditor() {
                         let last = null;
                         for (const lid of clip.lids) {
                             const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ src_vid: clip.vid, src_lid: lid }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                                body: JSON.stringify({ src_vid: clip.vid, src_lid: lid, src_size: clip.srcSize || null,
+                                    dst_size: (() => { const ve = wrapper.querySelector("#vfx-2d-html5-video") || wrapper.querySelector("#vfx-2d-seq-img");
+                                        const pOk = !!vlState2D.plate?.total_frames;
+                                        return [(pOk && vlState2D.plate.width) || ve?.videoWidth || ve?.naturalWidth || 0, (pOk && vlState2D.plate.height) || ve?.videoHeight || ve?.naturalHeight || 0]; })() }) }).then(x => x.json()).catch(err => ({ error: err.message }));
                             if (r.error) { showToastNotification(`Paste: ${r.error}`, true); continue; }
                             last = r.layer;
                         }
@@ -54783,6 +54823,44 @@ async function openNarrationEditor() {
             inp.onchange = () => handleTransformChange(inp);
 
         });
+        // Copy / paste transform: one row (Location / Rotation / Scale) from its label pill, or all three
+        {
+            const readVec = (vec) => ["x", "y", "z"].map(a => containerEl.querySelector(`.ue-vec-inp[data-vec="${vec}"][data-axis="${a}"]`)?.value);
+            const writeVec = (vec, vals) => {
+                if (!Array.isArray(vals)) return;
+                const lockWas = scaleProportionalLocked;
+                if (vec === "scl") scaleProportionalLocked = false;   // paste the three numbers as they are
+                ["x", "y", "z"].forEach((a, i) => {
+                    const el = containerEl.querySelector(`.ue-vec-inp[data-vec="${vec}"][data-axis="${a}"]`);
+                    if (el && vals[i] !== undefined && vals[i] !== null && vals[i] !== "") { el.value = vals[i]; handleTransformChange(el); }
+                });
+                scaleProportionalLocked = lockWas;
+            };
+            const NAMES = { pos: uiText("Location", "Позиция"), rot: uiText("Rotation", "Поворот"), scl: uiText("Scale", "Масштаб") };
+            containerEl.querySelectorAll(".ue5-xf-label-pill").forEach(pill => {
+                const row = pill.closest(".ue5-xf-row") || pill.parentElement;
+                const vec = row && row.querySelector(".ue-vec-inp")?.dataset.vec;
+                if (!vec || vec === "cursor") return;
+                pill.style.cursor = "pointer";
+                pill.onclick = (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll(".vfx-xf-clip-menu").forEach(m => m.remove());
+                    const m = document.createElement("div");
+                    m.className = "vfx-xf-clip-menu";
+                    const r = pill.getBoundingClientRect();
+                    m.style.cssText = `position: fixed; z-index: 100005; left: ${r.left}px; top: ${r.bottom + 3}px; background: #16161b; border: 1px solid #3f3f46; border-radius: 5px; padding: 3px; display: flex; flex-direction: column; min-width: 160px; font-size: 10.5px; box-shadow: 0 8px 24px rgba(0,0,0,.6);`;
+                    const clip = window.__vfxXformClip || {};
+                    const item = (label, fn, dis) => { const b = document.createElement("button"); b.className = "vfx-btn"; b.textContent = label; b.disabled = !!dis;
+                        b.style.cssText = `text-align: left; padding: 4px 8px; background: transparent; border: none; ${dis ? "opacity: .4;" : ""}`; b.onclick = () => { fn(); m.remove(); }; m.appendChild(b); };
+                    item(`${uiText("Copy", "Копировать")}: ${NAMES[vec]}`, () => { window.__vfxXformClip = { ...(window.__vfxXformClip || {}), [vec]: readVec(vec) }; showToastNotification(uiText(`${NAMES[vec]} copied`, `${NAMES[vec]}: скопировано`)); });
+                    item(`${uiText("Paste", "Вставить")}: ${NAMES[vec]}`, () => writeVec(vec, clip[vec]), !clip[vec]);
+                    item(uiText("Copy all three", "Копировать всё (позиция, поворот, масштаб)"), () => { window.__vfxXformClip = { pos: readVec("pos"), rot: readVec("rot"), scl: readVec("scl") }; showToastNotification(uiText("Transform copied", "Трансформ скопирован")); });
+                    item(uiText("Paste all three", "Вставить всё"), () => { ["pos", "rot", "scl"].forEach(v => writeVec(v, clip[v])); }, !(clip.pos || clip.rot || clip.scl));
+                    document.body.appendChild(m);
+                    setTimeout(() => document.addEventListener("mousedown", function close(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", close); } }), 0);
+                };
+            });
+        }
 
 
 
@@ -67935,7 +68013,22 @@ function renderActiveCustomTab() {
 
             ensureDefaultLevelExists();
 
-            activeScene3DId = mediaScenes3D[0]?.id || null;
+            // the scene that opens is the last live one (manifest3d): it belongs to the level that was active when it was
+            // saved. Taking simply the newest level made it the active one and the next save copied Level 1 into it.
+            activeScene3DId = (() => {
+                if (proj.activeLevelId && mediaScenes3D.some(s => s.id === proj.activeLevelId)) return proj.activeLevelId;
+                // older projects: the level whose objects are the live scene's (never one with other content - the
+                // next save would overwrite it with the live scene)
+                const live = new Set((Array.isArray(proj.manifest3d) ? proj.manifest3d : []).map(o => o && o.id).filter(Boolean));
+                let best = null, bestScore = -1;
+                mediaScenes3D.filter(s => s.mode === "level" || s.mode === "custom").forEach(s => {
+                    const ids = (s.manifest || []).map(o => o && o.id).filter(Boolean);
+                    const common = ids.filter(id => live.has(id)).length;
+                    const score = common / Math.max(1, Math.max(ids.length, live.size));
+                    if (score > bestScore) { bestScore = score; best = s; }
+                });
+                return (best && bestScore > 0) ? best.id : (mediaScenes3D[0]?.id || null);
+            })();
 
             setTimeout(() => { try { syncTrackScenes(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); } catch (_) {} }, 800);
 

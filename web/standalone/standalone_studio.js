@@ -834,11 +834,11 @@ export async function initStandaloneLayoutStudio() {
                 </span>
             </div>
             <div class="vfx-key-group">
-                <button class="vfx-btn" id="btn-context-key" ${tipAttr('Bind character, location, storyboard or action to frame (K)', 'Привязать персонажа, локацию, раскадровку или действие к кадру (K)')} style="padding: 2px 8px; font-weight: 500; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25);">🔗 + Key Context (K)</button>
+                <button class="vfx-btn" id="btn-context-key" hidden ${tipAttr('Bind character, location, storyboard or action to frame (K)', 'Привязать персонажа, локацию, раскадровку или действие к кадру (K)')} style="display: none !important; padding: 2px 8px; font-weight: 500; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25);">🔗 + Key Context (K)</button>
                 <button class="vfx-btn" id="btn-set-key" style="padding: 2px 7px;" ${tipAttr('Add 3D Transform Keyframe', 'Ключ 3D трансформации')}>+ 3D Key</button>
                 <button class="vfx-btn" id="btn-del-key" style="padding: 2px 7px;" ${tipAttr('Delete keys on current frame or selected keys (Del)', 'Удалить ключи на текущем кадре или все выделенные ключи (Del)')}>- Del Key</button>
                 <button class="vfx-btn" id="btn-del-all-keys" style="padding: 2px 7px; color:#f87171; border-color:rgba(239,68,68,0.35);" ${tipAttr('Delete ALL keys for selected object or camera', 'Удалить ВСЕ ключи выбранного объекта или камеры')}>${uiText('🗑 All Keys', '🗑 Все ключи')}</button>
-                <button class="vfx-btn" id="btn-timeline-script" ${tipAttr('Compile chronological prompt script for LTX-Video and AI Director', 'Скомпилировать хронологический скрипт промптов для LTX-Video и ИИ-Режиссера')} style="padding: 2px 8px; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18);">📜 Script / Prompt</button>
+                <button class="vfx-btn" id="btn-timeline-script" hidden ${tipAttr('Compile chronological prompt script for LTX-Video and AI Director', 'Скомпилировать хронологический скрипт промптов для LTX-Video и ИИ-Режиссера')} style="display: none !important; padding: 2px 8px; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18);">📜 Script / Prompt</button>
                 <select class="vfx-interp-select" id="sel-interp">
                     <option value="bezier">Bezier</option>
                     <option value="linear">Linear</option>
@@ -4415,7 +4415,9 @@ let lastMonitorRenderTime = 0;
         const cams = listCameraAssets();
         const colorOf = (id) => CUT_COLORS[Math.max(0, cams.findIndex(c => c.id === id)) % CUT_COLORS.length];
         if (sel) {
-            const cur = camIdOfActor(cutActorAt(currentFrame) || getActiveMonitorCameraActor());
+            // keep the camera the user picked (it used to jump back to the camera on air, so «Cut» cut the wrong one)
+            const picked = window.__vfxCutPick && cams.some(c => c.id === window.__vfxCutPick) ? window.__vfxCutPick : null;
+            const cur = picked || camIdOfActor(cutActorAt(currentFrame) || getActiveMonitorCameraActor());
             sel.innerHTML = cams.map(c => `<option value="${c.id}" ${c.id === cur ? "selected" : ""}>📹 ${String(c.name).replace(/</g, "&lt;")}</option>`).join("")
                 || `<option value="">${uiText("no cameras", "нет камер")}</option>`;
         }
@@ -4435,8 +4437,28 @@ let lastMonitorRenderTime = 0;
                 background:${col}33; border-left:2px solid ${col}; color:${col}; font-size:9px; line-height:12px; padding-left:3px; overflow:hidden; white-space:nowrap; cursor:pointer; box-sizing:border-box;">📹 ${name.replace(/</g, "&lt;")}</div>`;
         }).join("");
         track.querySelectorAll(".cam-cut-seg").forEach(seg => {
-            seg.onclick = (e) => { e.stopPropagation(); setTimelineFrameFromCuts(+seg.dataset.frame); };
             seg.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); removeCameraCut(+seg.dataset.frame); };
+            // click: go to the cut; drag: move the cut (where this camera takes over) along the timeline
+            seg.onmousedown = (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault(); e.stopPropagation();
+                const from = +seg.dataset.frame, x0 = e.clientX, tr = track.getBoundingClientRect();
+                let moved = false, to = from;
+                const mv = (me) => {
+                    if (Math.abs(me.clientX - x0) > 3) moved = true;
+                    if (!moved) return;
+                    to = Math.max(0, Math.min(totalFrames - 1, Math.round(((me.clientX - tr.left) / Math.max(1, tr.width)) * span)));
+                    seg.style.left = `${(to / span) * 100}%`;
+                };
+                const up = () => {
+                    window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up);
+                    if (!moved) { setTimelineFrameFromCuts(from); return; }
+                    const a = camActorById(seg.dataset.cam);
+                    if (a && to !== from) { removeCameraCut(from, false); addCameraCut(to, a); }
+                    else renderCameraCutsTrack();
+                };
+                window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+            };
         });
     }
     function setTimelineFrameFromCuts(f) {
@@ -4459,7 +4481,7 @@ let lastMonitorRenderTime = 0;
         const sel = document.getElementById("sel-camera-asset");
         if (sel) {
             sel.onfocus = () => renderCameraCutsTrack();
-            sel.onchange = () => { const a = camActorById(sel.value); if (a) { try { selectObject(a); } catch (_) {} renderStudioViewports(); } };
+            sel.onchange = () => { window.__vfxCutPick = sel.value; const a = camActorById(sel.value); if (a) { try { selectObject(a); } catch (_) {} renderStudioViewports(); } };
         }
         const bc = document.getElementById("btn-camera-cut");
         if (bc) bc.onclick = () => {
@@ -8580,7 +8602,8 @@ let lastMonitorRenderTime = 0;
 
     // Timeline Controls & Playback (Synchronized with 2D Video Player & 3D Monitor)
     function togglePlay() {
-        const is2DActive = document.getElementById("vfx-2d-media-stage") !== null;
+        const st2d = document.getElementById("vfx-2d-media-stage");
+        const is2DActive = !!(st2d && st2d.offsetParent !== null);   // the 2D view stays in the page (hidden) while 3D is on screen
         if (is2DActive && typeof window.__vfxToggle2DPlayback === "function") {
             window.__vfxToggle2DPlayback();
             return;
@@ -9951,9 +9974,7 @@ let lastMonitorRenderTime = 0;
                 setCameraKeyframe(currentFrame);
                 return;
             }
-            const btnCtx = footer.querySelector("#btn-context-key");
-            if (btnCtx) btnCtx.click();
-            return;
+            return;   // (the "key context" binder was removed from the timeline)
         }
         if (code === "BracketLeft" || k === "[" || k === "х") {
             e.preventDefault();
@@ -11415,7 +11436,8 @@ let lastMonitorRenderTime = 0;
             }
         }
         if (isPlaying && !isBakingLayout) {
-            const is2DActive = document.getElementById("vfx-2d-media-stage") !== null;
+            const st2d = document.getElementById("vfx-2d-media-stage");
+        const is2DActive = !!(st2d && st2d.offsetParent !== null);   // the 2D view stays in the page (hidden) while 3D is on screen
             if (is2DActive) {
                 isPlaying = false;
                 if (btnPlayPause) btnPlayPause.innerText = "▶ Play";

@@ -399,3 +399,14 @@ def test_layer_xform_non_uniform_scale(vl):
     out = vl._apply_xform(img, {"x": 0.25, "y": 0, "s": 1, "r": 90})
     ys, xs = np.nonzero(out > 127)
     assert 55 < xs.mean() < 65                                             # moved a quarter of the width
+
+
+def test_place_in_frame_keeps_original_size(vl):
+    tall = np.zeros((100, 40, 4), np.uint8); tall[..., 3] = 255
+    out = vl._place_in_frame(tall, (40, 100), (200, 120))
+    ys, xs = np.nonzero(out[..., 3])
+    assert out.shape[:2] == (120, 200) and xs.max() - xs.min() + 1 == 40 and ys.max() - ys.min() + 1 == 100
+    stretched = np.zeros((120, 200, 4), np.uint8); stretched[..., 3] = 255   # a vertical layer stored at canvas size
+    out = vl._place_in_frame(stretched, (40, 100), (200, 120))
+    ys, xs = np.nonzero(out[..., 3])
+    assert xs.max() - xs.min() + 1 == 40

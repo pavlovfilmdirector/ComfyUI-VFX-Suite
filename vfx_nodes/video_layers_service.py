@@ -883,7 +883,8 @@ def duplicate_video(pid: str, src_vid: str, new_vid: str) -> Dict[str, Any]:
     return get_state(pid, new_vid)
 
 
-def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: str) -> Dict[str, Any]:
+def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: str,
+                            src_size=None, dst_size=None) -> Dict[str, Any]:
     """Copy a layer and its frame images from another video in the project into the target video."""
     src_man = load_manifest(pid, src_vid)
     src_layer = next((l for l in src_man.get("layers", []) if l.get("id") == src_lid), None)
@@ -902,12 +903,66 @@ def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: st
     src_dir = _layer_dir(pid, src_vid, src_lid)
     target_dir = _layer_dir(pid, target_vid, new_lid)
     os.makedirs(target_dir, exist_ok=True)
+
+    def _size(v):
+        try:
+            ensure_plate_registered(pid, v)
+            inf = pps.get_info(node_id_for(v)) or {}
+            if not inf.get("total_frames"):   # no extracted plate: its 1920x1080 defaults would be wrong
+                return 0, 0
+            return int(inf.get("width") or 0), int(inf.get("height") or 0)
+        except Exception:
+            return 0, 0
+    (sw, sh), (tw, th) = _size(src_vid), _size(target_vid)
+    # plate not extracted yet: the video sizes the studio knows (the <video> element)
+    if not (sw and sh) and src_size:
+        sw, sh = int(src_size[0] or 0), int(src_size[1] or 0)
+    if not (tw and th) and dst_size:
+        tw, th = int(dst_size[0] or 0), int(dst_size[1] or 0)
     if os.path.exists(src_dir):
         for fn in os.listdir(src_dir):
             sp = os.path.join(src_dir, fn)
-            if os.path.isfile(sp):
-                shutil.copy2(sp, os.path.join(target_dir, fn))
+            if not os.path.isfile(sp):
+                continue
+            dp = os.path.join(target_dir, fn)
+            if fn.endswith(".png") and tw and th:
+                img = cv2.imread(sp, cv2.IMREAD_UNCHANGED)
+                if img is not None:
+                    dst = _place_in_frame(img, (sw, sh), (tw, th))
+                    if dst is not None:
+                        cv2.imwrite(dp, dst)
+                        continue
+            shutil.copy2(sp, dp)
     return new_layer
+
+
+def _place_in_frame(img: np.ndarray, src_size, dst_size) -> Optional[np.ndarray]:
+    """A layer frame of one video put into another video's frame at its original size (centred, transparent around;
+    scaled down only if it does not fit) - a vertical layer pasted into a horizontal video is not stretched.
+    The frame is first brought back to its own video's proportions (layers are stored at canvas size)."""
+    sw, sh = src_size
+    tw, th = dst_size
+    h, w = img.shape[:2]
+    if (w, h) == (tw, th) and (not sw or (sw, sh) == (tw, th)):
+        return None                                   # same size: plain copy
+    if sw and sh and (w, h) != (sw, sh):
+        img = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
+        h, w = sh, sw
+    if (w, h) == (tw, th):
+        return img
+    k = min(1.0, tw / float(w), th / float(h))
+    if k < 1.0:
+        img = cv2.resize(img, (max(1, int(round(w * k))), max(1, int(round(h * k)))), interpolation=cv2.INTER_AREA)
+        h, w = img.shape[:2]
+    if img.ndim == 2:
+        out = np.zeros((th, tw), img.dtype)
+    else:
+        if img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+        out = np.zeros((th, tw, 4), img.dtype)
+    x0, y0 = (tw - w) // 2, (th - h) // 2
+    out[y0:y0 + h, x0:x0 + w] = img
+    return out
 
 
 def frame_path(pid: str, vid: str, lid: str, idx: int) -> Optional[str]:

@@ -8271,7 +8271,8 @@ def register_server_routes():
 
                 src_lid = str(data.get("src_lid") or "")
 
-                new_layer = await asyncio.to_thread(import_layer_from_video, pid, vid, src_vid, src_lid)
+                new_layer = await asyncio.to_thread(import_layer_from_video, pid, vid, src_vid, src_lid,
+                                                    data.get("src_size"), data.get("dst_size"))
 
                 st = await asyncio.to_thread(get_state, pid, vid)
 
