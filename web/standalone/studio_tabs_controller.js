@@ -41059,6 +41059,7 @@ async function openNarrationEditor() {
 
         }
 
+        let paintScreenPt2D = null;
         const paintPt2D = (e) => {
 
             const r = paintCanvas2D.getBoundingClientRect();
@@ -41103,7 +41104,13 @@ async function openNarrationEditor() {
                 }
             }
 
-            painting2D = true; paintLast2D = paintPt2D(e);
+            // draw in screen pixels with the canvas -> screen scale as a transform: the brush stays round on screen even
+            // when the canvas is stretched to a different aspect than its pixels (it was oval, the mask brush was not)
+            const pr2 = paintCanvas2D.getBoundingClientRect();
+            const kx = paintCanvas2D.width / Math.max(1, pr2.width), ky = paintCanvas2D.height / Math.max(1, pr2.height);
+            paintCtx2D.setTransform(kx, 0, 0, ky, 0, 0);
+            paintScreenPt2D = (ev) => { const rr = paintCanvas2D.getBoundingClientRect(); return { x: ev.clientX - rr.left, y: ev.clientY - rr.top }; };
+            painting2D = true; paintLast2D = paintScreenPt2D(e);
 
             const editL = vlState2D.editMask ? vlState2D.layers.find(l => l.id === vlState2D.paintLayerId) : null;
 
@@ -41115,11 +41122,11 @@ async function openNarrationEditor() {
 
             paintCtx2D.fillStyle = col; paintCtx2D.strokeStyle = col; paintCtx2D.lineCap = "round"; paintCtx2D.lineJoin = "round";
 
-            paintCtx2D.lineWidth = vid2DBrushSize * 2 * k;
+            paintCtx2D.lineWidth = vid2DBrushSize * 2;
 
             paintCtx2D.filter = prefs.brushSoft2D ? `blur(${prefs.brushSoft2D * k}px)` : "none";
 
-            paintCtx2D.beginPath(); paintCtx2D.arc(paintLast2D.x, paintLast2D.y, vid2DBrushSize * k, 0, Math.PI * 2); paintCtx2D.fill();
+            paintCtx2D.beginPath(); paintCtx2D.arc(paintLast2D.x, paintLast2D.y, vid2DBrushSize, 0, Math.PI * 2); paintCtx2D.fill();
 
         });
 
@@ -41127,7 +41134,7 @@ async function openNarrationEditor() {
 
             if (!painting2D) return;
 
-            const pt = paintPt2D(e);
+            const pt = paintScreenPt2D(e);
 
             paintCtx2D.beginPath(); paintCtx2D.moveTo(paintLast2D.x, paintLast2D.y); paintCtx2D.lineTo(pt.x, pt.y); paintCtx2D.stroke();
 
@@ -41141,7 +41148,7 @@ async function openNarrationEditor() {
 
             painting2D = false;
 
-            paintCtx2D.filter = "none";
+            paintCtx2D.filter = "none"; paintCtx2D.setTransform(1, 0, 0, 1, 0, 0);
 
             clearTimeout(paintSaveTimer2D);
 
