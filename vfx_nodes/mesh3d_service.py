@@ -1,8 +1,7 @@
 r"""
-3D Mesh Generation & Proxy Replacement Service (Pixal3D & TRELLIS.2 Native ComfyUI)
+3D Mesh Generation & Proxy Replacement Service (TRELLIS.2, native ComfyUI)
 =====================================================================================
 Direct ComfyUI workflow integration for 3D Mesh Generation:
-- Pixal3D with MoGe-2 camera geometry & FOV conditioning
 - TRELLIS.2 with O-Voxel high-detail geometry cascade
 - BiRefNet auto background removal & subject alignment
 - FlexiCubes remeshing, decimation, and PEC UV unwrapping
@@ -155,7 +154,7 @@ def delete_mesh3d_asset(mesh_id: str = "", filename: str = "", url: str = "") ->
 
 def check_comfy_trellis2_ready() -> bool:
     """
-    Checks if ComfyUI has the required models installed for native Trellis2 / Pixal3D generation.
+    Checks if ComfyUI has the required models installed for native TRELLIS.2 generation.
     """
     comfy_dir = _comfy_root()
     needed = [
@@ -167,7 +166,6 @@ def check_comfy_trellis2_ready() -> bool:
     ]
     diff_models = [
         os.path.join(comfy_dir, "models", "diffusion_models", "trellis_2_int8_convrot.safetensors"),
-        os.path.join(comfy_dir, "models", "diffusion_models", "pixal3d_int8_convrot.safetensors"),
     ]
     has_base = any(os.path.exists(p) for p in needed)
     has_diff = any(os.path.exists(p) for p in diff_models)
@@ -209,7 +207,7 @@ def seed_existing_glb_assets():
                         "title": title,
                         "filename": fname,
                         "url": f"/vfx/mesh3d/file/{fname}",
-                        "engine": "pixal3d" if "pixal" in fname.lower() else "trellis2",
+                        "engine": "trellis2",
                         "description": "ComfyUI 3D Mesh with PBR materials",
                         "size_mb": size_mb,
                         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -229,7 +227,7 @@ def seed_existing_glb_assets():
                 "title": title,
                 "filename": fname,
                 "url": f"/vfx/mesh3d/file/{fname}",
-                "engine": "pixal3d" if "pixal" in fname.lower() else "trellis2",
+                "engine": "trellis2",
                 "description": "Project 3D GLB asset",
                 "size_mb": size_mb,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -249,13 +247,6 @@ def list_mesh3d_library():
     return {
         "meshes": items,
         "engines": {
-            "pixal3d": {
-                "name": "Pixal3D (Camera Conditioned)",
-                "available": True,
-                "weights_ready": comfy_ready,
-                "native_comfy": True,
-                "features": ["MoGe-2 FOV Geometry Estimation", "Euler KSampler Structure & Shape", "FlexiCubes Remeshing", "PBR Texture Baking"]
-            },
             "trellis2": {
                 "name": "TRELLIS.2 (O-Voxel Cascade)",
                 "available": True,
@@ -267,8 +258,8 @@ def list_mesh3d_library():
                 "name": "Hunyuan3D-Omni (Legacy)",
                 "available": False,
                 "deprecated": True,
-                "migrated_to": "pixal3d",
-                "features": ["Replaced by Native ComfyUI Pixal3D + TRELLIS.2 Pipeline"]
+                "migrated_to": "trellis2",
+                "features": ["Replaced by the native ComfyUI TRELLIS.2 pipeline"]
             }
         }
     }
@@ -602,7 +593,7 @@ def _run_comfy_3d_generation(
     **kwargs
 ) -> str:
     """
-    Executes native 3D generation inside ComfyUI using the 3d_pixal3d_trellis2_image_to_model workflow.
+    Executes native 3D generation inside ComfyUI using the trellis2_image_to_3d workflow.
     Wires all UI parameters into the ComfyUI graph and harvests the GLB model and all PBR textures.
     """
     from .process_runner import load_template, COMFY_URL, _post_json
@@ -650,10 +641,10 @@ def _run_comfy_3d_generation(
 
     with _JOBS_LOCK:
         job_record["progress"] = 15
-        job_record["message"] = "Preparing ComfyUI Trellis2/Pixal3D graph..."
+        job_record["message"] = "Preparing ComfyUI TRELLIS.2 graph..."
         job_record["logs"].append(f"[Comfy3D] Staged input image: {input_filename}")
 
-    prompt_data = load_template("mesh_gen", "trellis2_pixal3d.json")
+    prompt_data = load_template("mesh_gen", "trellis2_image_to_3d.json")
 
     # Wire LoadImage (Node 122)
     if "122" in prompt_data and "inputs" in prompt_data["122"]:
@@ -668,21 +659,6 @@ def _run_comfy_3d_generation(
     center_align = bool(p.get("center_align", True))
     if "312" in prompt_data and "inputs" in prompt_data["312"]:
         prompt_data["312"]["inputs"]["pad_factor"] = 1.1 if center_align else 1.0
-
-    # Model Switch (Node 316: True -> TRELLIS.2, False -> Pixal3D)
-    model_choice = str(p.get("model", "")).lower()
-    trellis_flag = (model_choice == "trellis2" or bool(p.get("use_trellis2", False)))
-    if "316" in prompt_data and "inputs" in prompt_data["316"]:
-        prompt_data["316"]["inputs"]["value"] = bool(trellis_flag)
-
-    # Lens / FOV configuration (Node 298: Pixal3DConditioning)
-    lens_mode = str(p.get("lens_mode", "auto")).lower()
-    if lens_mode == "manual" and "298" in prompt_data and "inputs" in prompt_data["298"]:
-        try:
-            manual_fov = float(p.get("lens_fov", 35.0))
-            prompt_data["298"]["inputs"]["camera_angle_x"] = manual_fov
-        except Exception:
-            pass
 
     # Stage 1: Structure KSampler (Node 3)
     s1_seed = int(p.get("seed_stage1", p.get("seed", 56)))
@@ -761,7 +737,7 @@ def _run_comfy_3d_generation(
 
     with _JOBS_LOCK:
         job_record["progress"] = 20
-        model_name = "TRELLIS.2" if trellis_flag else "Pixal3D"
+        model_name = "TRELLIS.2"
         job_record["message"] = f"Queuing 3D generation in ComfyUI ({model_name})..."
         job_record["logs"].append(f"[Comfy3D] Model: {model_name}, Target Res: {target_res}, Texture: {t_sz}px")
 
@@ -916,7 +892,7 @@ def _run_comfy_3d_generation(
 
 def start_3d_generation_job(params: dict) -> dict:
     """
-    Launches an asynchronous 3D generation job using native ComfyUI Pixal3D / TRELLIS.2 workflow.
+    Launches an asynchronous 3D generation job using the native ComfyUI TRELLIS.2 workflow.
     Returns job metadata immediately so the frontend can track progress and inspect results.
     """
     target_object_id = params.get("target_object_id", "")
@@ -925,19 +901,10 @@ def start_3d_generation_job(params: dict) -> dict:
     image_source = params.get("image_source") or params.get("image_data_url") or ""
     bbox_scale = params.get("bbox_scale") or params.get("bbox") or [1.0, 1.0, 1.0]
 
-    raw_eng = str(params.get("engine") or params.get("model") or "pixal3d").lower()
-    if "trellis" in raw_eng:
-        model_choice = "trellis2"
-        engine_str = params.get("engine") or "trellis2"
-        use_trellis2 = True
-    elif "pixal" in raw_eng:
-        model_choice = "pixal3d"
-        engine_str = params.get("engine") or "pixal3d"
-        use_trellis2 = False
-    else:
-        model_choice = "pixal3d"
-        engine_str = params.get("engine") or "pixal3d"
-        use_trellis2 = False
+    # TRELLIS.2 is the only image -> 3D engine (Pixal3D was removed: its results were not good enough)
+    model_choice = "trellis2"
+    engine_str = str(params.get("engine") or "") if "trellis" in str(params.get("engine") or "").lower() else "trellis2"
+    use_trellis2 = True
 
     input_img_path = _resolve_input_image(image_source, prompt)
     job_id = f"job3d_{uuid.uuid4().hex[:10]}"
@@ -996,7 +963,7 @@ def start_3d_generation_job(params: dict) -> dict:
 
             size_mb = round(os.path.getsize(final_path) / (1024 * 1024), 2)
             out_url = f"/vfx/mesh3d/file/{final_filename}"
-            engine_label = "Pixal3D" if model_choice == "pixal3d" else "TRELLIS.2"
+            engine_label = "TRELLIS.2"
 
             mesh_entry = {
                 "id": f"mesh_{uuid.uuid4().hex[:8]}",

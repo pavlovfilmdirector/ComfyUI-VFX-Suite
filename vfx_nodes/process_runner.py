@@ -334,6 +334,19 @@ def _partner_class_types() -> set:
     return {n for ex in PROCESS_EXTRAS.values() for n in ex.get("partner_nodes", [])}
 
 
+def _in_comfy_queue(prompt_id: str) -> Optional[bool]:
+    """True/False when the ComfyUI queue (running + pending) could be read, None when it could not."""
+    try:
+        with urllib.request.urlopen(f"{COMFY_URL}/queue", timeout=10) as resp:
+            q = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    for item in (q.get("queue_running") or []) + (q.get("queue_pending") or []):
+        if isinstance(item, (list, tuple)) and len(item) > 1 and str(item[1]) == str(prompt_id):
+            return True
+    return False
+
+
 def get_run_status(prompt_id: str) -> Dict[str, Any]:
     """Reads /history/<id>. Returns status and output file descriptors (images, video, audio, 3D)."""
     try:
@@ -343,7 +356,19 @@ def get_run_status(prompt_id: str) -> Dict[str, Any]:
         raise ProcessError(f"Cannot read ComfyUI history: {e}")
     entry = hist.get(prompt_id)
     if not entry:
-        return {"prompt_id": prompt_id, "status": "pending"}
+        # Not finished. If ComfyUI no longer has it queued or running (queue cleared, server restarted, prompt
+        # deleted) nobody will ever finish it: report an error instead of "pending" forever (phantom jobs).
+        if _in_comfy_queue(prompt_id) is False:
+            try:
+                with urllib.request.urlopen(f"{COMFY_URL}/history/{prompt_id}", timeout=10) as resp:
+                    entry = json.loads(resp.read().decode("utf-8")).get(prompt_id)
+            except Exception:
+                entry = None
+            if not entry:
+                return {"prompt_id": prompt_id, "status": "error", "outputs": [],
+                        "errors": [{"exception_message": "The prompt is no longer in the ComfyUI queue (cleared or ComfyUI restarted)"}]}
+        else:
+            return {"prompt_id": prompt_id, "status": "pending"}
     st = entry.get("status", {})
     outputs = []
     for nid, out in (entry.get("outputs") or {}).items():

@@ -16864,7 +16864,7 @@ async function openNarrationEditor() {
 
                                     <option value="storyboard/flux3_klein_t2i">🖼️ ${uiText("Storyboard T2I (FLUX.3 Klein)", "Раскадровка T2I (FLUX.3 Klein)")}</option>
 
-                                    <option value="mesh_gen/trellis2_pixal3d">🧊 ${uiText("3D Mesh (TRELLIS.2 Pixal3D)", "3D Меш (TRELLIS.2 Pixal3D)")}</option>
+                                    <option value="mesh_gen/trellis2_image_to_3d">🧊 ${uiText("3D Mesh (TRELLIS.2)", "3D Меш (TRELLIS.2)")}</option>
 
                                     <option value="agent/latest">🤖 ${uiText("Current Agent Workflow (Active)", "Текущий воркфлоу агента (Active)")}</option>
 
@@ -20636,6 +20636,9 @@ async function openNarrationEditor() {
 
                     <div style="display: flex; align-items: center; gap: 8px;">
 
+                        <button class="vfx-btn" id="btn-modal-first-run" style="padding: 4px 10px; font-size: 10.5px; background: rgba(192,132,252,0.16); border: 1px solid rgba(192,132,252,0.45); color: #e9d5ff;" onclick="window.__vfxShowFirstRunSetup && window.__vfxShowFirstRunSetup()">
+                            ✨ ${uiText("Model checklist", "Список моделей")}
+                        </button>
                         <button class="vfx-btn" id="btn-modal-switch-comfy" style="padding: 4px 10px; font-size: 10.5px; background: rgba(59,130,246,0.16); border: 1px solid rgba(59,130,246,0.45); color: #93c5fd;">
 
                             ⇄ ${uiText("Switch to Standard ComfyUI", "Открыть обычный режим ComfyUI")}
@@ -20885,6 +20888,124 @@ async function openNarrationEditor() {
     }
 
     window.__vfxShowPipelineModelsModal = showPipelineModelsModal;
+
+    // ---------------------------------------------------------------- First-run setup: models
+    // Shown once after installation (and from the models manager): every model KESHIKI can use, grouped;
+    // tick the ones to download, or link a folder where the models already are (no copying).
+    async function showFirstRunSetup(opts = {}) {
+        const old = document.getElementById("vfx-first-run-setup");
+        if (old) old.remove();
+        let st = await fetch("/vfx/setup/status").then(r => r.json()).catch(e => ({ error: e.message }));
+        if (st.error) { showToastNotification(`Setup: ${st.error}`, true); return; }
+        const ov = document.createElement("div");
+        ov.id = "vfx-first-run-setup";
+        ov.dataset.vfxModal = "1";
+        ov.style.cssText = "position: fixed; inset: 0; z-index: 100002; background: rgba(6,6,9,0.86); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;";
+        ["mousedown", "mouseup", "click", "keydown", "wheel"].forEach(ev => ov.addEventListener(ev, e => e.stopPropagation()));
+        document.body.appendChild(ov);
+        let job = null, jobTimer = null;
+        const gb = (v) => v == null ? "" : (v >= 1 ? `${(+v).toFixed(1)} GB` : `${Math.round(v * 1024)} MB`);
+        const render = () => {
+            const byGroup = {};
+            st.models.forEach(m => (byGroup[m.group] = byGroup[m.group] || []).push(m));
+            const items = job ? Object.fromEntries((job.items || []).map(i => [i.dest, i])) : {};
+            const groupHtml = st.groups.filter(g => byGroup[g.id]).map(g => {
+                const rows = byGroup[g.id].map(m => {
+                    const it = m.dest && items[m.dest];
+                    let state;
+                    if (m.installed) state = `<span style="color: #4ade80;">✓ ${uiText("installed", "есть")}</span>`;
+                    else if (it) state = it.status === "error" ? `<span style="color: #f87171;" title="${esc(it.error || "")}">✕ ${uiText("error", "ошибка")}</span>`
+                        : (it.status === "done" || it.status === "exists" ? `<span style="color: #4ade80;">✓</span>`
+                        : `<span style="color: #93c5fd;">${it.total ? Math.round(100 * it.done / it.total) : 0}%</span>`);
+                    else if (g.id === "auto") state = `<span style="color: rgba(255,255,255,0.45);">${uiText("auto", "сам")}</span>`;
+                    else if (!m.downloadable) state = (m.page || m.url) ? `<a href="${esc(m.page || m.url)}" target="_blank" rel="noopener" style="color: #fbbf24;">${uiText("page ↗", "страница ↗")}</a>` : `<span style="color: rgba(255,255,255,0.4);">—</span>`;
+                    else state = `<span style="color: rgba(255,255,255,0.45);">${uiText("missing", "нет")}</span>`;
+                    const canTick = !m.installed && m.downloadable && !it;
+                    return `<label style="display: grid; grid-template-columns: 18px 1fr 70px 70px; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; ${canTick ? "cursor: pointer;" : ""} background: rgba(255,255,255,0.02);">
+                        <input type="checkbox" class="fr-pick" data-key="${m.key}" ${canTick ? (g.id === "core" ? "checked" : "") : "disabled"} ${m.installed ? "checked" : ""}>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${esc((m.path || m.dir + "/" + m.file) + (m.note ? "\n" + m.note : ""))}">${esc(m.file)}${m.note ? ` <span style="color: rgba(255,255,255,0.4);">· ${esc(m.note.slice(0, 70))}</span>` : ""}</span>
+                        <span style="text-align: right; color: rgba(255,255,255,0.5); font-family: 'JetBrains Mono', monospace;">${gb(m.size_gb)}</span>
+                        <span style="text-align: right;">${state}</span></label>`;
+                }).join("");
+                return `<div style="margin-bottom: 10px;"><div style="font-weight: 600; color: #fff; margin: 4px 0;">${esc(uiText(g.title_en, g.title_ru))}</div>${rows}</div>`;
+            }).join("");
+            const picked = [...ov.querySelectorAll(".fr-pick:checked:not(:disabled)")].map(c => c.dataset.key);
+            ov.innerHTML = `<div style="width: 760px; max-width: 96vw; max-height: 90vh; display: flex; flex-direction: column; background: #121216; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; box-shadow: 0 24px 64px rgba(0,0,0,0.9); color: #e4e4e7; font-size: 11px;">
+                <div style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="sparkles" style="width: 16px; height: 16px; color: #c084fc;"></i>
+                    <span style="flex: 1; font-size: 13.5px; font-weight: 700; color: #fff;">${uiText("Welcome to KESHIKI — models", "Добро пожаловать в KESHIKI — модели")}</span>
+                    <button class="vfx-btn" id="fr-x" style="background: transparent; border: none; color: rgba(255,255,255,0.6); font-size: 15px;">✕</button></div>
+                <div style="padding: 10px 16px; color: rgba(255,255,255,0.7); line-height: 1.45; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    ${uiText("Tick the models to download into ComfyUI/models, or link a folder where you already keep models (another ComfyUI, a shared drive) — they are used in place, nothing is copied. You can open this again from the models manager.",
+                        "Отметьте модели, которые нужно скачать в ComfyUI/models, или укажите папку, где модели уже лежат (другой ComfyUI, общий диск) — они подключатся на месте, без копирования. Это окно можно открыть снова из менеджера моделей.")}</div>
+                <div style="padding: 8px 16px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="white-space: nowrap; color: rgba(255,255,255,0.75);">📁 ${uiText("I already have models in:", "Модели уже есть в папке:")}</span>
+                    <input id="fr-path" class="ue-input" placeholder="${uiText("e.g. D:\\ComfyUI\\models", "например D:\\ComfyUI\\models")}" value="${esc(st.linked && st.linked[0] || "")}" style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 4px 8px;">
+                    <button class="vfx-btn" id="fr-link" style="padding: 4px 10px;">${uiText("Link", "Подключить")}</button></div>
+                <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 10px 16px;">${groupHtml}</div>
+                <div style="padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px;">
+                    <span id="fr-sum" style="flex: 1; color: rgba(255,255,255,0.6);"></span>
+                    ${job && job.status === "running" ? `<button class="vfx-btn" id="fr-cancel" style="padding: 5px 12px; color: #fca5a5;">${uiText("Stop downloads", "Остановить загрузку")}</button>` : ""}
+                    <button class="vfx-btn" id="fr-later" style="padding: 5px 12px;">${uiText("Later", "Позже")}</button>
+                    <button class="vfx-btn vfx-btn-primary" id="fr-go" style="padding: 5px 14px;" ${job && job.status === "running" ? "disabled" : ""}>${uiText("Download selected", "Скачать отмеченные")}</button>
+                    <button class="vfx-btn" id="fr-done" style="padding: 5px 12px; color: #4ade80;">${uiText("Done", "Готово")}</button></div></div>`;
+            refreshLucideIcons();
+            if (picked.length && !job) ov.querySelectorAll(".fr-pick").forEach(c => { if (!c.disabled) c.checked = picked.includes(c.dataset.key); });
+            const sum = () => {
+                const sel = st.models.filter(m => [...ov.querySelectorAll(".fr-pick:checked:not(:disabled)")].some(c => c.dataset.key === m.key));
+                const have = st.models.filter(m => m.installed).length;
+                ov.querySelector("#fr-sum").textContent = job && job.status === "running"
+                    ? uiText("Downloading… you can close this window, downloads continue.", "Идёт загрузка… окно можно закрыть, загрузка продолжится.")
+                    : `${uiText("Installed", "Установлено")}: ${have}/${st.models.filter(m => m.group !== "auto").length} · ${uiText("selected", "отмечено")}: ${sel.length} (${gb(sel.reduce((a, m) => a + (+m.size_gb || 0), 0))})`;
+            };
+            sum();
+            ov.querySelectorAll(".fr-pick").forEach(c => c.onchange = sum);
+            const close = (done) => { clearInterval(jobTimer); if (done) fetch("/vfx/setup/done", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) }).catch(() => {}); ov.remove(); };
+            ov.querySelector("#fr-x").onclick = () => close(true);
+            ov.querySelector("#fr-later").onclick = () => close(false);
+            ov.querySelector("#fr-done").onclick = () => close(true);
+            ov.querySelector("#fr-link").onclick = async () => {
+                const path = ov.querySelector("#fr-path").value.trim();
+                if (!path) return;
+                const r = await fetch("/vfx/setup/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }).then(x => x.json()).catch(e => ({ error: e.message }));
+                if (r.error) { showToastNotification(r.error, true); return; }
+                st = r;
+                showToastNotification(uiText(`Linked: ${r.linked_now} (${r.kinds.join(", ")})`, `Подключено: ${r.linked_now} (${r.kinds.join(", ")})`));
+                render();
+            };
+            const cancel = ov.querySelector("#fr-cancel");
+            if (cancel) cancel.onclick = () => job && fetch(`/vfx/models/download/${job.id}/cancel`, { method: "POST" });
+            ov.querySelector("#fr-go").onclick = async () => {
+                const keys = [...ov.querySelectorAll(".fr-pick:checked:not(:disabled)")].map(c => c.dataset.key);
+                const items = st.models.filter(m => keys.includes(m.key) && m.downloadable).map(m => ({ url: m.url, dest: m.dest }));
+                if (!items.length) { showToastNotification(uiText("Nothing selected", "Ничего не отмечено"), true); return; }
+                const r = await fetch("/vfx/models/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }).then(x => x.json()).catch(e => ({ error: e.message }));
+                if (r.error) { showToastNotification(r.error, true); return; }
+                job = r;
+                if (!r.has_hf_token) showToastNotification(uiText("No Hugging Face token found: gated models will fail until you run `hf auth login`", "Токен Hugging Face не найден: закрытые модели не скачаются, пока не выполнить `hf auth login`"), true);
+                render();
+                jobTimer = setInterval(async () => {
+                    const j = await fetch(`/vfx/models/download/${job.id}`).then(x => x.json()).catch(() => null);
+                    if (!j || j.error) return;
+                    job = j;
+                    if (j.status !== "running") {
+                        clearInterval(jobTimer);
+                        st = await fetch("/vfx/setup/status").then(x => x.json()).catch(() => st);
+                    }
+                    if (ov.isConnected) render();
+                }, 1500);
+            };
+        };
+        render();
+    }
+    window.__vfxShowFirstRunSetup = showFirstRunSetup;
+    // first launch after installation: once per install (the flag lives on the server, not in the browser)
+    setTimeout(async () => {
+        try {
+            const st = await fetch("/vfx/setup/status").then(r => r.ok ? r.json() : null);
+            if (st && !st.done && !document.getElementById("vfx-first-run-setup")) showFirstRunSetup();
+        } catch (_) {}
+    }, 2500);
 
 
 
@@ -26607,7 +26728,7 @@ async function openNarrationEditor() {
 
         const tr = window.__keshikiTrellis || (window.__keshikiTrellis = {
 
-            model: "pixal3d",
+            model: "trellis2",
 
             lens_mode: "auto",
 
@@ -36147,6 +36268,12 @@ async function openNarrationEditor() {
 
 
 
+            <button class="vfx-btn btn-2d-dock-tool" data-tool="transform"
+                ${tipAttr("Move / transform layer", "Перемещение и трансформ слоя", "Drag: move the selected layer(s). Shift+drag or wheel: scale. Alt+drag: rotate (Shift snaps to 15°).", "Тянуть — двигать выбранный слой. Shift+тянуть или колесо — масштаб. Alt+тянуть — поворот (Shift — шаг 15°).")}
+                style="width: 26px; height: 26px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: ${vid2DTool === "transform" ? '#38bdf8' : 'transparent'}; border: 1px solid ${vid2DTool === "transform" ? '#38bdf8' : 'transparent'}; color: ${vid2DTool === "transform" ? '#000' : '#38bdf8'}; border-radius: 4px;">
+                <i data-lucide="move" style="width: 13px; height: 13px;"></i>
+            </button>
+
             <button class="vfx-btn btn-2d-dock-tool" data-tool="paint_mask_add"
 
                 ${tipAttr("Paint Mask (+)", "Рисовать маску (+)", "Paint semi-transparent red mask on the current video frame.", "Рисовать маску объекта на текущем кадре видео (красный цвет).")}
@@ -36597,7 +36724,7 @@ async function openNarrationEditor() {
 
                 <!-- Track Scrubber Bar with Diamond Keyframe Markers and Marquee -->
 
-                <div id="vfx-2d-tl-track-container" style="position: relative; width: 100%; height: 28px; background: #07090f; border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 4px; overflow: hidden; cursor: col-resize;" ${tipAttr('Click or Drag to scrub video • Shift+Drag to marquee select keyframes', 'Нажмите или потяните для прокрутки видео • Shift+Перетаскивание для рамки выбора ключей')}>
+                <div id="vfx-2d-tl-track-container" style="position: relative; width: 100%; height: 28px; background: #07090f; border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 4px; overflow: hidden; cursor: col-resize;" ${tipAttr('Click or drag to move the playhead • Shift+drag selects keys (Ctrl+Shift adds)', 'Клик или перетаскивание двигают курсор • Shift+перетаскивание выделяет ключи (Ctrl+Shift добавляет)')}>
 
                     <canvas id="vfx-2d-tl-ruler" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
 
@@ -37020,6 +37147,11 @@ async function openNarrationEditor() {
             saveProject2DVideos();
 
             render2DTimelineTrack();
+
+            // the "Hand-drawn mask" row in the layers panel: show it as soon as the first key exists
+            if (typeof renderVideoLayersPanel2D === "function") {
+                try { renderVideoLayersPanel2D(); } catch (_) {}
+            }
 
             if (lblMaskStatus) {
 
@@ -38412,8 +38544,9 @@ async function openNarrationEditor() {
             try {
                 const st2 = typeof vlState2D !== "undefined" ? vlState2D : null;
                 const plateN = st2?.plate?.total_frames || maxF;
-                const selPaint = st2 ? st2.layers.find(l => l.id === st2.selected && l.type === "paint") : null;
-                const paintLayers = st2 ? (selPaint ? [selPaint] : st2.layers.filter(l => l.type === "paint" && l.visible !== false)) : [];
+                const keyed = (l) => l.type === "paint" || ((l.type === "mask" || l.type === "matte") && (l.keys || []).length > 0);
+                const selPaint = st2 ? st2.layers.find(l => l.id === st2.selected && keyed(l)) : null;
+                const paintLayers = st2 ? (selPaint ? [selPaint] : st2.layers.filter(l => keyed(l) && l.visible !== false)) : [];
                 paintLayers.forEach(pl => (pl.keys || []).forEach(pf => {
                     const f = Math.round(pf * maxF / Math.max(1, plateN));
                     const id = `${pl.id}:${pf}`;
@@ -38491,7 +38624,27 @@ async function openNarrationEditor() {
 
             const startX = e.clientX;
             let isDrag = false;
-            const isAdditive = e.shiftKey;
+
+            // Plain drag scrubs the playhead; Shift+drag draws the key selection box (Ctrl/Cmd+Shift adds to it)
+            if (!e.shiftKey) {
+                selected2DMaskKeys.clear();
+                selectedPaintKeys2D.clear();
+                let lastF = -1, raf = 0, pendingX = startX;
+                const scrubTo = () => { raf = 0; const f = getFrameFromClientX(pendingX); if (f !== lastF) { lastF = f; goTo2DFrame(f); } };
+                scrubTo();
+                const onScrubMove = (me) => { pendingX = me.clientX; if (!raf) raf = requestAnimationFrame(scrubTo); };
+                const onScrubUp = () => {
+                    window.removeEventListener("mousemove", onScrubMove);
+                    window.removeEventListener("mouseup", onScrubUp);
+                    if (raf) { cancelAnimationFrame(raf); scrubTo(); }
+                    render2DTimelineTrack();
+                };
+                window.addEventListener("mousemove", onScrubMove);
+                window.addEventListener("mouseup", onScrubUp);
+                return;
+            }
+
+            const isAdditive = e.ctrlKey || e.metaKey;
             const prevMaskSel = isAdditive ? new Set(selected2DMaskKeys) : new Set();
             const prevPaintSel = isAdditive ? new Set(selectedPaintKeys2D) : new Set();
 
@@ -38513,11 +38666,12 @@ async function openNarrationEditor() {
                 const maxBoxX = Math.min(trackR.width, Math.max(startX, me.clientX) - trackR.left);
                 const curWidth = maxBoxX - minBoxX;
 
+                // percentages: the timeline may sit inside a scaled (transform) viewport, where client px != CSS px
                 marqueeEl.style.display = "block";
-                marqueeEl.style.left = `${minBoxX}px`;
-                marqueeEl.style.width = `${curWidth}px`;
+                marqueeEl.style.left = `${(minBoxX / Math.max(1, trackR.width)) * 100}%`;
+                marqueeEl.style.width = `${(curWidth / Math.max(1, trackR.width)) * 100}%`;
                 marqueeEl.style.top = "0px";
-                marqueeEl.style.height = `${trackR.height}px`;
+                marqueeEl.style.height = "100%";
 
                 const minF = Math.max(0, Math.min(maxF, Math.round((minBoxX / trackR.width) * maxF)));
                 const maxFBox = Math.max(0, Math.min(maxF, Math.round((maxBoxX / trackR.width) * maxF)));
@@ -38584,6 +38738,16 @@ async function openNarrationEditor() {
             window.addEventListener("mousemove", onTrackDragMove);
             window.addEventListener("mouseup", onTrackDragUp);
         };
+
+        // Step one frame back / forward (wraps inside the In..Out range, like the arrow keys)
+        const step2DFrame = (d) => {
+            const lo = Math.max(0, clipStart), hi = Math.max(lo, Math.min(clipEnd, totalF - 1));
+            let nf = curF + d;
+            if (nf > hi) nf = lo; if (nf < lo) nf = hi;
+            goTo2DFrame(nf);
+        };
+        { const b = wrapper.querySelector("#btn-2d-tl-step-prev"); if (b) b.onclick = (ev) => step2DFrame(ev.shiftKey ? -10 : -1); }
+        { const b = wrapper.querySelector("#btn-2d-tl-step-next"); if (b) b.onclick = (ev) => step2DFrame(ev.shiftKey ? 10 : 1); }
 
         // Jump to prev/next key buttons (Mask & Paint)
         wrapper.querySelector("#btn-2d-tl-prev-key").onclick = () => {
@@ -39107,7 +39271,9 @@ async function openNarrationEditor() {
 
                 const t = b.dataset.tool;
 
-                if (t === "pan") {
+                if (t === "transform") {
+                    vid2DTool = "transform";
+                } else if (t === "pan") {
 
                     vid2DTool = "pan";
 
@@ -39193,6 +39359,11 @@ async function openNarrationEditor() {
 
                     if (bt === "paint_mask_sub" && vid2DTool === "paint_image" && window.__vfxPaintErase2D) isAct = true;
 
+                    if (bt === "transform") {
+                        const on = vid2DTool === "transform";
+                        btn.style.background = on ? "#38bdf8" : "transparent"; btn.style.borderColor = on ? "#38bdf8" : "transparent"; btn.style.color = on ? "#000" : "#38bdf8";
+                        return;
+                    }
                     if (bt === "paint_image") {
 
                         const on = vid2DTool === "paint_image" && !window.__vfxPaintErase2D;
@@ -39654,6 +39825,14 @@ async function openNarrationEditor() {
                 e.stopPropagation();
 
                 push2DMaskUndo();
+
+                // Like the paint brush: a held / morphed mask from earlier keys is only shown until you draw.
+                // Drawing (adding) on a frame without its own key starts a new key with just the new stroke;
+                // the earlier key stays visible through the ghost (onion skin) if you want to see it.
+                if (vid2DBrushMode !== "subtract" && !(vidObj.masks && vidObj.masks[curF])
+                    && Object.keys(vidObj.masks || {}).some(k => vidObj.masks[k])) {
+                    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                }
 
                 is2DPainting = true;
 
@@ -40658,15 +40837,78 @@ async function openNarrationEditor() {
                 el.style.display = "block";
 
                 if (el.dataset.src !== src) { el.dataset.src = src; el.src = src; }
+                el.style.transformOrigin = "50% 50%";
+                el.style.transform = xfCss2D(l.xform);
 
             });
 
             vlImgs2D.forEach((el, id) => { if (!wanted.has(id)) { el.remove(); vlImgs2D.delete(id); } });
+            try { syncTransformTool2D(); } catch (_) { /* transform tool not initialised yet */ }
 
             if (typeof updateGhostOverlay2D === 'function') updateGhostOverlay2D();
 
         }
 
+        // --- Move / transform a layer (like the photo tab's Move tool): drag = move, Shift+drag or wheel = scale,
+        // Alt+drag = rotate. Stored per layer as xform {x, y (fractions of the frame), s, r (deg)}; the viewer shows it
+        // with a CSS transform and every server job (render, composite, cut out, merge) applies the same transform.
+        function xfCss2D(xf) { return xf ? `translate(${(xf.x || 0) * 100}%, ${(xf.y || 0) * 100}%) rotate(${xf.r || 0}deg) scale(${xf.s ?? 1})` : ""; }
+        const xfCap2D = document.createElement("div");
+        xfCap2D.style.cssText = "position: absolute; inset: 0; z-index: 8; display: none; cursor: move;";
+        mediaBox2D.appendChild(xfCap2D);
+        let xfSaveTimer2D = null;
+        const xfTargets2D = () => {
+            const ids = (vlState2D.selLayerIds && vlState2D.selLayerIds.length > 1) ? vlState2D.selLayerIds : (vlState2D.selected ? [vlState2D.selected] : []);
+            return ids.map(id => vlState2D.layers.find(l => l.id === id)).filter(Boolean);
+        };
+        const xfCommit2D = () => {
+            updateVideoOverlays2D();
+            clearTimeout(xfSaveTimer2D);
+            xfSaveTimer2D = setTimeout(() => { saveVideoLayersMeta2D(); renderVideoLayersPanel2D(); }, 350);
+        };
+        function syncTransformTool2D() {
+            const on = vid2DTool === "transform";
+            xfCap2D.style.display = on ? "block" : "none";
+            vlImgs2D.forEach((el, id) => {
+                const sel = on && xfTargets2D().some(l => l.id === id);
+                el.style.outline = sel ? "1.5px dashed #38bdf8" : "";
+                el.style.outlineOffset = sel ? "-1px" : "";
+            });
+        }
+        window.__vfxSyncTransform2D = syncTransformTool2D;
+        xfCap2D.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+            const targets = xfTargets2D();
+            if (!targets.length) { showToastNotification(uiText("Select a layer in the layers panel first", "Сначала выберите слой в панели слоёв"), true); return; }
+            e.preventDefault(); e.stopPropagation();
+            const r = mediaBox2D.getBoundingClientRect();
+            const start = targets.map(l => ({ l, xf: { x: 0, y: 0, s: 1, r: 0, ...(l.xform || {}) } }));
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            const sx = e.clientX, sy = e.clientY;
+            const a0 = Math.atan2(sy - cy, sx - cx);
+            const mode = e.altKey ? "rotate" : (e.shiftKey ? "scale" : "move");
+            const onMove = (me) => {
+                start.forEach(({ l, xf }) => {
+                    const n = { ...xf };
+                    if (mode === "move") { n.x = xf.x + (me.clientX - sx) / Math.max(1, r.width); n.y = xf.y + (me.clientY - sy) / Math.max(1, r.height); }
+                    else if (mode === "scale") { n.s = Math.max(0.02, xf.s * Math.exp(-(me.clientY - sy) / 200)); }
+                    else { n.r = xf.r + (Math.atan2(me.clientY - cy, me.clientX - cx) - a0) * 180 / Math.PI; if (me.shiftKey) n.r = Math.round(n.r / 15) * 15; }
+                    l.xform = n;
+                });
+                updateVideoOverlays2D();
+            };
+            const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); xfCommit2D(); };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+        });
+        xfCap2D.addEventListener("wheel", (e) => {
+            const targets = xfTargets2D();
+            if (!targets.length) return;
+            e.preventDefault(); e.stopPropagation();
+            const k = Math.exp(-e.deltaY / 600);
+            targets.forEach(l => { l.xform = { x: 0, y: 0, s: 1, r: 0, ...(l.xform || {}) }; l.xform.s = Math.max(0.02, l.xform.s * k); });
+            xfCommit2D();
+        }, { passive: false });
         window.__vfxReloadVideoLayers2D = (v) => { if (v === vidObj.id) refreshVideoState2D(); };
 
 
@@ -40832,7 +41074,10 @@ async function openNarrationEditor() {
             } catch (_) {}
 
             // When drawing on a frame without an existing key, clear previous projection so user draws a fresh new shape
-            if (!hasKeyOnThisFrame && !vlState2D.editMask) {
+            // hand-drawn mask layers are keyed like paint (generated masks are edited frame by frame)
+            const handMask = !!(vlState2D.editMask && l && (l.type === "mask" || l.type === "matte") && (Array.isArray(l.keys) || !l.frames));
+            const erasing = e.altKey || window.__vfxPaintErase2D;
+            if (!hasKeyOnThisFrame && (!vlState2D.editMask || (handMask && !erasing && (l.keys || []).length))) {
                 paintCtx2D.clearRect(0, 0, paintCanvas2D.width, paintCanvas2D.height);
                 if (l) {
                     const el = vlImgs2D.get(l.id);
@@ -41210,6 +41455,19 @@ async function openNarrationEditor() {
                         }
                     }, isAlphaCutout ? uiText("Cutout Alpha", "Вырезать на альфе") : uiText("Render", "Рендер"));
             },
+            // cut the object out of the plate by one mask layer -> a new transparent video (RGBA PNGs + WebM)
+            cutout: (anchor, lid) => {
+                const m = vlState2D.layers.find(l => l.id === lid && isMaskLike2D(l));
+                if (!m) { showToastNotification(uiText("Select a mask layer first", "Сначала выберите слой маски"), true); return; }
+                askText(anchor || getLayersMirror("2D") || document.body,
+                    uiText(`Cut out by «${m.name}» (PNG sequence + WebM) — name`, `Вырезать по маске «${m.name}» (PNG-секвенция + WebM) — название`),
+                    `${vidObj.title.replace(/\.[a-z0-9]+$/i, "")}_${(m.name || "cutout").replace(/[^\wа-яё-]+/gi, "_").slice(0, 24)}`, async (name) => {
+                        const total = (vlState2D && vlState2D.plate && vlState2D.plate.total_frames) || totalF;
+                        const map = (f) => total > 0 && totalF > 0 ? Math.max(0, Math.min(total - 1, Math.round(f * (total - 1) / Math.max(1, totalF - 1)))) : Math.max(0, Math.round(f));
+                        const st = await runVideoJob2D("video_cutout", { name, mask_layer_id: m.id, start: map(clipStart), end: map(clipEnd) });
+                        if (st?.result?.video) { addDerivedVideo2D(st.result.video, name, "ALPHA"); await refreshVideoState2D(); }
+                    }, uiText("Cut out", "Вырезать"));
+            },
             remove: (lid) => { vlDeleted2D.add(lid); vlState2D.layers = vlState2D.layers.filter(x => x.id !== lid); opsRefresh2D(); }
 
         };
@@ -41376,7 +41634,7 @@ async function openNarrationEditor() {
 
                 method: "POST", headers: { "Content-Type": "application/json" },
 
-                body: JSON.stringify({ deleted, layers: vlState2D.layers.map(l => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 1, inverted: !!l.inverted, bw: !!l.bw, comment: l.comment || "" })) })
+                body: JSON.stringify({ deleted, layers: vlState2D.layers.map(l => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 1, inverted: !!l.inverted, bw: !!l.bw, comment: l.comment || "", xform: l.xform || null })) })
 
             }).then(r => r.json()).then(st => {
 
@@ -41564,7 +41822,8 @@ async function openNarrationEditor() {
 
                         <span style="width: 9px; height: 9px; border-radius: 2px; background: #ff3b5c;"></span>
 
-                        <span style="flex: 1;">${uiText("Hand-drawn mask", "Ручная маска")}</span>
+                        <span id="vl2d-manual-name" style="flex: 1; cursor: pointer;" ${tipAttr("Click: turn the hand-drawn mask into a regular mask layer (select, merge, fill, cut out, composite)", "Клик — превратить ручную маску в обычный слой маски (выделение, объединение, заливка, вырезка, сведение)")}>${uiText("Hand-drawn mask", "Ручная маска")}</span>
+                        <button class="vfx-btn" id="btn-2d-manual-tolayer" ${tipAttr("Make it a mask layer", "Сделать слоем маски")} style="padding: 0 5px; height: 16px; font-size: 9px; background: rgba(255,59,92,0.15); border: 1px solid rgba(255,59,92,0.4); color: #ffb4c0;">${uiText("→ layer", "→ слой")}</button>
 
                         <span style="font-size: 8.5px; font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.4);">${Object.keys(vidObj.masks || {}).length}🔑</span>
 
@@ -41572,7 +41831,7 @@ async function openNarrationEditor() {
 
                     </div>` : ""}
 
-                    <div style="display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 2px;">
+                    <div id="vl2d-plate-row" ${tipAttr("Click: work on the video itself (no layer selected)", "Клик — работать с самим видео (без выбранного слоя)")} style="display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 2px; cursor: pointer; border-radius: 3px; ${!vlState2D.selected ? "background: rgba(56,189,248,0.14); outline: 1px solid rgba(56,189,248,0.45);" : ""}">
 
                         <span style="width: 11px;"></span>
 
@@ -41591,6 +41850,14 @@ async function openNarrationEditor() {
                     <span style="color: rgba(255,255,255,0.5);">${uiText("Opacity", "Прозрачность")}</span>
 
                     <input type="range" id="inp-2d-vl-opacity" min="0" max="100" value="${Math.round((sel.opacity ?? 1) * 100)}" style="flex: 1; min-width: 0;"></div>` : ""}
+                ${sel && sel.xform ? `<div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); font-family: 'JetBrains Mono', monospace; font-size: 9.5px;">
+                    <i data-lucide="move" style="width: 11px; height: 11px; color: #38bdf8;"></i>
+                    <span style="flex: 1;">x ${(sel.xform.x * 100).toFixed(0)}% · y ${(sel.xform.y * 100).toFixed(0)}% · ${Math.round((sel.xform.s ?? 1) * 100)}% · ${Math.round(sel.xform.r || 0)}°</span>
+                    <button class="vfx-btn" id="btn-2d-vl-xf-reset" style="padding: 0 6px; font-size: 9.5px;">${uiText("Reset", "Сброс")}</button></div>` : ""}
+                ${sel && sel.type === "paint" && sel.morph ? `<div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid rgba(255,255,255,0.08);" ${tipAttr("Morph smoothing: rounds off jagged in-between shapes and eases the motion between keys", "Сглаживание морфинга: скругляет рваные промежуточные формы и смягчает движение между ключами")}>
+                    <span style="color: rgba(255,255,255,0.5);">${uiText("Smoothing", "Сглаживание")}</span>
+                    <input type="range" id="inp-2d-vl-morph-smooth" min="0" max="10" step="1" value="${Math.round(sel.morph_smooth || 0)}" style="flex: 1; min-width: 0;">
+                    <span id="lbl-2d-vl-morph-smooth" style="width: 16px; text-align: right; font-family: 'JetBrains Mono', monospace;">${Math.round(sel.morph_smooth || 0)}</span></div>` : ""}
 
                 <div style="display: flex; gap: 3px; padding: 4px 6px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.15);">
 
@@ -41609,6 +41876,10 @@ async function openNarrationEditor() {
                         <span>${uiText("Fill", "Заливка")}</span>
 
                     </button>
+                    ${sel && (sel.type === "mask" || sel.type === "matte") && !vidObj.alphaBy ? `<button class="vfx-btn" id="btn-2d-vl-cutout" ${tipAttr("Cut the object out by the selected mask: RGBA PNG sequence + transparent WebM (a new video)", "Вырезать объект по выбранной маске: RGBA PNG-секвенция + прозрачный WebM (новое видео)")} style="flex: 1; padding: 3px 2px; font-size: 9.5px; display: flex; align-items: center; justify-content: center; gap: 3px; color: #38bdf8;">
+                        <i data-lucide="scissors" style="width: 11px; height: 11px;"></i>
+                        <span>${uiText("Cut out", "Вырезать")}</span>
+                    </button>` : ""}
 
                     ${vidObj.alphaBy ? `<button class="vfx-btn" id="btn-2d-vl-render" ${tipAttr("Extract Cutout with Alpha: saves full RGBA PNG sequence and transparent WebM video", "Вырезать объект по маске на альфе (PNG-секвенция + WebM)")} style="flex: 1.2; padding: 3px 4px; font-size: 9.5px; display: flex; align-items: center; justify-content: center; gap: 3px; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.12);"><i data-lucide="scissors" style="width: 11px; height: 11px;"></i><span>${uiText("Cutout Alpha", "Вырезать на альфе")}</span></button>` : `<button class="vfx-btn" id="btn-2d-vl-render" ${tipAttr("Flatten the plate and all visible layers into a new video", "Свести плейт и все видимые слои в новое видео")} style="flex: 1; padding: 3px 2px; font-size: 9.5px; display: flex; align-items: center; justify-content: center; gap: 3px; color: #4ade80;"><i data-lucide="clapperboard" style="width: 11px; height: 11px;"></i><span>${uiText("Render", "Рендер")}</span></button>`}
 
@@ -41718,7 +41989,13 @@ async function openNarrationEditor() {
 
             const stopBtn = vlPanel2D.querySelector("#btn-2d-vl-stop");
 
-            if (stopBtn) stopBtn.onclick = () => vlJob2D.id && fetch(`/vfx/video/job/${vlJob2D.id}/cancel`, { method: "POST" });
+            if (stopBtn) stopBtn.onclick = () => {
+                const jid = vlJob2D.id;
+                if (!jid) return;
+                fetch(`/vfx/video/job/${jid}/cancel`, { method: "POST" }).catch(() => {});
+                // a job the server lost (restart, cleared queue) never reports back: free the panel anyway
+                setTimeout(() => { if (vlJob2D.id === jid) { vlJob2D.id = null; vlJob2D.lost = true; renderVideoLayersPanel2D(); } }, 4000);
+            };
 
 
 
@@ -41916,6 +42193,39 @@ async function openNarrationEditor() {
 
             if (manEye) manEye.onclick = () => { vidObj.manualMaskHidden = !vidObj.manualMaskHidden; saveProject2DVideos(); if (maskCanvas) maskCanvas.style.visibility = vidObj.manualMaskHidden ? "hidden" : "visible"; renderVideoLayersPanel2D(); };
 
+            const manToLayer = async () => {
+                const keys = Object.keys(vidObj.masks || {}).map(Number).filter(k => !isNaN(k) && vidObj.masks[k]).sort((a, b) => a - b);
+                if (!keys.length) return;
+                const name = uiText("Hand-drawn mask", "Ручная маска");
+                try {
+                    const res = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/add_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ type: "mask", name, color: "#ff3b5c" }) }).then(r => r.json());
+                    if (!res || !res.layer) throw new Error(res && res.error || "add_layer");
+                    const n = vlState2D.plate?.total_frames || totalF;
+                    const toPlate = (f) => n === totalF ? f : Math.max(0, Math.min(n - 1, Math.floor((f + 0.5) * n / Math.max(1, totalF))));
+                    let st = null;
+                    for (const k of keys) {
+                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/frame_edit`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ layer_id: res.layer.id, frame: toPlate(k), data: vidObj.masks[k] }) }).then(r => r.json());
+                        if (st.error) throw new Error(st.error);
+                    }
+                    if (vidObj.interpolate !== false && keys.length > 1) {
+                        st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/paint_morph`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ layer_id: res.layer.id, on: true }) }).then(r => r.json()).catch(() => st);
+                    }
+                    push2DMaskUndo({ type: "full_masks", masks: JSON.parse(JSON.stringify(vidObj.masks || {})) });
+                    vidObj.masks = {}; saveProject2DVideos();
+                    if (maskCtx) maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                    await refreshVideoState2D();
+                    vlState2D.selected = res.layer.id; vlState2D.selLayerIds = [res.layer.id];
+                    renderVideoLayersPanel2D(); updateVideoOverlays2D();
+                    if (typeof render2DTimelineTrack === "function") render2DTimelineTrack();
+                    showToastNotification(uiText(`Hand-drawn mask is now the layer «${name}»`, `Ручная маска стала слоем «${name}»`));
+                } catch (err) { showToastNotification(`${uiText("Hand-drawn mask", "Ручная маска")}: ${err.message || err}`, true); }
+            };
+            { const b = vlPanel2D.querySelector("#btn-2d-manual-tolayer"); if (b) b.onclick = (e) => { e.stopPropagation(); manToLayer(); }; }
+            { const b = vlPanel2D.querySelector("#vl2d-manual-name"); if (b) b.onclick = (e) => { e.stopPropagation(); manToLayer(); }; }
+
             const manDel = vlPanel2D.querySelector("#btn-2d-manual-del");
 
             if (manDel) manDel.onclick = () => showDeleteConfirmModal({
@@ -41941,6 +42251,14 @@ async function openNarrationEditor() {
             });
 
             if (maskCanvas) maskCanvas.style.visibility = vidObj.manualMaskHidden ? "hidden" : "visible";
+
+            { const pr = vlPanel2D.querySelector("#vl2d-plate-row");
+              if (pr) pr.onclick = (e) => {
+                  if (e.target.closest("#btn-2d-plate-eye")) return;
+                  vlState2D.selected = null; vlState2D.selLayerIds = [];
+                  if (vlState2D.editMask) { vlState2D.editMask = false; vlState2D.paintLayerId = null; }
+                  renderVideoLayersPanel2D(); updateVideoOverlays2D();
+              }; }
 
             const plateEye = vlPanel2D.querySelector("#btn-2d-plate-eye");
 
@@ -42104,6 +42422,7 @@ async function openNarrationEditor() {
             const renderBtn = vlPanel2D.querySelector("#btn-2d-vl-render");
 
             if (renderBtn) renderBtn.onclick = () => window.__vfx2DOps.render(renderBtn);
+            { const cb = vlPanel2D.querySelector("#btn-2d-vl-cutout"); if (cb) cb.onclick = () => window.__vfx2DOps.cutout(cb, vlState2D.selected); }
 
 
 
@@ -42209,6 +42528,23 @@ async function openNarrationEditor() {
 
                 op.onchange = () => saveVideoLayersMeta2D();
 
+            }
+
+            { const xr = vlPanel2D.querySelector("#btn-2d-vl-xf-reset");
+              if (xr && sel) xr.onclick = () => { delete sel.xform; saveVideoLayersMeta2D(); renderVideoLayersPanel2D(); updateVideoOverlays2D(); }; }
+
+            const ms = vlPanel2D.querySelector("#inp-2d-vl-morph-smooth");
+            if (ms && sel) {
+                ms.oninput = () => { const l = vlPanel2D.querySelector("#lbl-2d-vl-morph-smooth"); if (l) l.textContent = ms.value; };
+                ms.onchange = async () => {
+                    ms.disabled = true;
+                    const st = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/paint_morph`, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ layer_id: sel.id, on: true, smooth: +ms.value }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+                    if (st.error) { showToastNotification(`Morph: ${st.error}`, true); ms.disabled = false; return; }
+                    if (st.layers) vlState2D.layers = st.layers;
+                    if (typeof videoLayersCache !== "undefined") delete videoLayersCache[vidObj.id];
+                    renderVideoLayersPanel2D(); updateVideoOverlays2D();
+                };
             }
 
         }
@@ -42421,7 +42757,13 @@ async function openNarrationEditor() {
 
                 <option value="plate" ${def === "plate" ? "selected" : ""}>${uiText("Original footage", "Исходное видео")}</option>
 
-                ${rgbs.map(l => `<option value="${l.id}" ${def === l.id ? "selected" : ""}>${esc(l.name || l.id)}</option>`).join("")}</select>`;
+                ${rgbs.map(l => `<option value="${l.id}" ${def === l.id ? "selected" : ""}>${esc(l.name || l.id)}</option>`).join("")}
+                ${otherVids.length ? `<optgroup label="${uiText("Project videos", "Видео проекта")}">${otherVids.map(v => `<option value="${esc(v.videoUrl)}">${esc(v.title || v.id)}</option>`).join("")}</optgroup>` : ""}
+                <option value="__gallery__">🖼 ${uiText("Image from the gallery…", "Изображение из галереи…")}</option></select>`;
+
+            // gallery media: project videos (frame by frame) and pictures (a still background / subject)
+            const otherVids = (typeof mediaVideos2D !== "undefined" ? mediaVideos2D : [])
+                .filter(v => v && v.id !== vidObj.id && String(v.videoUrl || "").startsWith("/vfx/project_file/"));
 
             const lastRgb = rgbs.length ? rgbs[rgbs.length - 1].id : "plate";
 
@@ -42454,6 +42796,20 @@ async function openNarrationEditor() {
                 <input id="cp-prompt" placeholder="${uiText("Scene description for the refine pass", "Описание сцены для рефайна")}" style="background: #0f0f11; color: #e2e8f0; border: 1px solid #333; border-radius: 4px; font-size: 10px; padding: 3px 6px;">
 
                 <button class="vfx-btn vfx-btn-primary" id="cp-go" style="padding: 4px;" ${masks.length ? "" : "disabled"}>${uiText("Composite", "Свести")}</button>`, 300);
+
+            ["#cp-fg", "#cp-bg"].forEach(id => {
+                const selEl = pop.querySelector(id);
+                let prev = selEl.value;
+                selEl.onchange = async () => {
+                    if (selEl.value !== "__gallery__") { prev = selEl.value; return; }
+                    const pic = await pickProjectImage(uiText("Image for the composite", "Изображение для сведения"));
+                    const url = pic && (pic.url || pic.fallbackUrl);
+                    if (!url || !String(url).startsWith("/vfx/project_file/")) { selEl.value = prev; if (pic) showToastNotification(uiText("This image is not saved in the project yet", "Это изображение ещё не сохранено в проекте"), true); return; }
+                    let o = [...selEl.options].find(x => x.value === url);
+                    if (!o) { o = document.createElement("option"); o.value = url; o.textContent = "🖼 " + (pic.title || pic.id || "image"); selEl.insertBefore(o, selEl.querySelector('option[value="__gallery__"]')); }
+                    selEl.value = url; prev = url;
+                };
+            });
 
             pop.querySelector("#cp-go").onclick = async () => {
 
@@ -42761,13 +43117,16 @@ async function openNarrationEditor() {
 
             renderVideoLayersPanel2D();
 
+            let misses = 0;
             while (true) {
 
                 await new Promise(r => setTimeout(r, 1000));
 
-                const st = await fetch(`/vfx/video/job/${res.id}`).then(r => r.json()).catch(() => null);
+                if (vlJob2D.id !== res.id) return null;   // stopped from the panel (lost job)
+                let st = await fetch(`/vfx/video/job/${res.id}`).then(r => r.json()).catch(() => null);
 
-                if (!st) continue;
+                if (!st) { if (++misses < 90) continue; st = { status: "error", message: uiText("Server not responding", "Сервер не отвечает") }; }
+                misses = 0;
 
                 Object.assign(vlJob2D, { message: st.message, progress: st.progress || 0 });
 
@@ -50722,7 +51081,7 @@ async function openNarrationEditor() {
 
     let meshEnginesInfo = {};
 
-    let meshGenEngine = "hunyuan3d_omni";
+    let meshGenEngine = "trellis2";
 
     let meshGenResolution = 1024;
 
@@ -53245,26 +53604,6 @@ async function openNarrationEditor() {
                         <div class="ue-section-body" data-sec="gen3d" style="display:${detailsCollapsed.gen3d ? 'none' : 'flex'}; flex-direction:column; gap:5px;">
 
                             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
-
-                                <div class="ue-gen3d-engine-card ${meshGenEngine === 'pixal3d' ? 'active' : ''}" data-eng="pixal3d"
-
-                                    ${tipAttr("Pixal3D (Native ComfyUI)", "Pixal3D (Оценка камеры MoGe-2)", "Uses native Pixal3D pipeline with automatic camera angle and FOV conditioning.", "Нативная генерация 3D через ComfyUI с оценкой ракурса камеры MoGe-2.")}>
-
-                                    <div style="font-weight:700; font-size:10px; color:#fff; display:flex; justify-content:space-between;">
-
-                                        <span>Pixal3D</span>
-
-                                        <span style="font-size:8.5px; color:#38bdf8;">Cam FOV ✓</span>
-
-                                    </div>
-
-                                    <div style="font-size:9px; color:rgba(255,255,255,0.45); margin-top:2px;">
-
-                                        ${uiText("Camera conditioned + PBR", "Кондиционирование камеры + PBR")}
-
-                                    </div>
-
-                                </div>
 
                                 <div class="ue-gen3d-engine-card ${meshGenEngine === 'trellis2' ? 'active' : ''}" data-eng="trellis2"
 
@@ -63094,7 +63433,7 @@ function renderActiveCustomTab() {
 
             const tr = window.__keshikiTrellis || (window.__keshikiTrellis = {
 
-                model: "pixal3d",
+                model: "trellis2",
 
                 lens_mode: "auto",
 
@@ -63264,46 +63603,6 @@ function renderActiveCustomTab() {
 
 
 
-                <!-- 3. LENS & CAMERA FOV SECTION -->
-
-                <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 5px;">
-
-                    <div style="font-size:10px; font-weight:600; color:rgba(255,255,255,0.85);">${uiText("Lens & Camera Angle (MoGe-2)", "Линза и Угол Камеры (MoGe-2)")}</div>
-
-                    <div style="display:flex; gap:12px; align-items:center;">
-
-                        <label style="display:flex; align-items:center; gap:5px; font-size:9.5px; color:#fff; cursor:pointer;">
-
-                            <input type="radio" name="mesh-lens-mode" value="auto" ${tr.lens_mode !== 'manual' ? 'checked' : ''} />
-
-                            <span>${uiText("Auto (Estimate via MoGe-2 FOV)", "Рассчитать авто (MoGe-2 FOV)")}</span>
-
-                        </label>
-
-                        <label style="display:flex; align-items:center; gap:5px; font-size:9.5px; color:#fff; cursor:pointer;">
-
-                            <input type="radio" name="mesh-lens-mode" value="manual" ${tr.lens_mode === 'manual' ? 'checked' : ''} />
-
-                            <span>${uiText("Manual Camera FOV", "Ручной ввод угла")}</span>
-
-                        </label>
-
-                    </div>
-
-                    <div id="mesh-lens-manual-wrap" style="display:${tr.lens_mode === 'manual' ? 'flex' : 'none'}; align-items:center; gap:6px; margin-top:2px;">
-
-                        <span style="font-size:9px; color:rgba(255,255,255,0.6);">FOV (°):</span>
-
-                        <input type="number" id="mesh-lens-fov-inp" class="ue-input" value="${tr.lens_fov || 35}" min="10" max="130" step="1" style="width:65px; padding:2px 4px;" />
-
-                        <span style="font-size:8.5px; color:rgba(255,255,255,0.4);">≈ ${Math.round(24 / (2 * Math.tan(((tr.lens_fov || 35) * Math.PI) / 360)))} mm lens eq.</span>
-
-                    </div>
-
-                </div>
-
-
-
                 <!-- 4. MODEL SELECTION & PROMPT GUIDANCE -->
 
                 <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 6px;">
@@ -63311,14 +63610,6 @@ function renderActiveCustomTab() {
                     <div style="font-size:10px; font-weight:600; color:rgba(255,255,255,0.85);">${uiText("3D Generator Model", "Выбор Модели 3D")}</div>
 
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-
-                        <button class="vfx-btn ${tr.model === 'pixal3d' ? 'vfx-btn-primary' : ''} btn-mesh-pick-model" data-model="pixal3d" style="padding:6px; text-align:left;">
-
-                            <div style="font-weight:700; font-size:10px;">Pixal3D</div>
-
-                            <div style="font-size:8.5px; opacity:0.8;">Camera Conditioned + Normal FOV</div>
-
-                        </button>
 
                         <button class="vfx-btn ${tr.model === 'trellis2' ? 'vfx-btn-primary' : ''} btn-mesh-pick-model" data-model="trellis2" style="padding:6px; text-align:left;">
 

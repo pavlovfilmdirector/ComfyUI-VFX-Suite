@@ -124,7 +124,7 @@ BUILTIN_STAGES = [
         "description": "Создание PBR 3D меша (.glb) из одного изображения",
         "category": "3d",
         "icon": "🧊",
-        "workflow": "api/mesh_gen/trellis2_pixal3d.json",
+        "workflow": "api/mesh_gen/trellis2_image_to_3d.json",
         "inputs": [
             {"id": "image", "label": "Reference Image", "label_ru": "Изображение объекта", "kind": "image"}
         ],
@@ -802,8 +802,8 @@ def _execute_pipeline_worker(job_id: str, project_id: str, pipeline_def: Dict[st
                     prompt_data = load_template("voice", "ltx23_dubit")
                 elif st_type == "ltx25_a2v" or "ltx25_a2v" in st_wf:
                     prompt_data = load_template("voice", "ltx25_a2v")
-                elif st_type == "trellis_3d" or "trellis2_pixal3d" in st_wf:
-                    prompt_data = load_template("mesh_gen", "trellis2_pixal3d")
+                elif st_type == "trellis_3d" or "trellis2_pixal3d" in st_wf or "trellis2_image_to_3d" in st_wf:
+                    prompt_data = load_template("mesh_gen", "trellis2_image_to_3d")
                 elif st_type == "rembg_matte":
                     prompt_data = load_template("deconstruct", "sam3_text_mask_image")
                 else:

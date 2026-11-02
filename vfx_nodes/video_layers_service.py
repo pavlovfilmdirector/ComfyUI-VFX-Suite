@@ -130,7 +130,7 @@ def get_state(pid: str, vid: str) -> Dict[str, Any]:
         l["frames"] = _count_frames(d)
         g = l.get("grow") or {}
         l["rev"] = f"g{g.get('px', 0)}f{g.get('feather', 0)}"
-        keys = _paint_keys(d) if l.get("type") == "paint" else []
+        keys = _paint_keys(d) if l.get("type") in ("paint",) + MASK_LIKE else []
         if keys or os.path.isfile(os.path.join(d, "still.png")):
             l["still"] = not keys
             l["keys"] = keys
@@ -318,6 +318,15 @@ def save_layer_frame(pid: str, vid: str, layer_id: str, frame: int, png_bytes: b
     if not any(l["id"] == layer_id for l in man["layers"]):
         raise ProcessError("Layer not found")
     d = _layer_dir(pid, vid, layer_id)
+    lay = next(l for l in man["layers"] if l["id"] == layer_id)
+    if lay.get("type") in MASK_LIKE and not any(n.startswith("frame_") for n in os.listdir(d)):
+        # a hand-drawn mask (nothing generated): keyed like the paint brush - the stroke makes key N, which is
+        # held on later frames until the next key
+        with open(os.path.join(d, f"key_{int(frame):04d}.png"), "wb") as f:
+            f.write(png_bytes)
+        if lay.get("morph"):
+            bake_paint_morph(pid, vid, layer_id, only_key=int(frame))
+        return get_state(pid, vid)
     fn = f"frame_{int(frame):04d}.png"
     with open(os.path.join(d, fn), "wb") as f:
         f.write(png_bytes)
@@ -399,12 +408,14 @@ def paint_key_op(pid: str, vid: str, layer_id: str, frame, op: str) -> Dict[str,
     return get_state(pid, vid)
 
 
-def set_paint_morph(pid: str, vid: str, layer_id: str, on: bool) -> Dict[str, Any]:
+def set_paint_morph(pid: str, vid: str, layer_id: str, on: bool, smooth: Optional[float] = None) -> Dict[str, Any]:
     man = load_manifest(pid, vid)
     layer = next((l for l in man["layers"] if l["id"] == layer_id), None)
     if not layer:
         raise ProcessError("Layer not found")
     layer["morph"] = bool(on)
+    if smooth is not None:
+        layer["morph_smooth"] = float(max(0.0, min(10.0, smooth)))
     save_manifest(pid, vid, man)
     if on:
         bake_paint_morph(pid, vid, layer_id)
@@ -490,6 +501,22 @@ def _point_morph_frame(prep, t: float, H: int, W: int) -> np.ndarray:
     return out
 
 
+def _smooth_inbetween(img: np.ndarray, smooth: float) -> np.ndarray:
+    """Rounds off the jagged, noisy edges of a morphed in-between: blur the coverage, then re-cut it at the
+    middle with a soft ramp (a smooth contour, same thickness); colours are blurred under the shape only."""
+    sig = 0.6 + 0.5 * smooth
+    a = img[..., 3].astype(np.float32) / 255.0
+    ab = cv2.GaussianBlur(a, (0, 0), sig)
+    edge = 0.5 / (1.0 + 0.3 * smooth)     # width of the soft edge in coverage units
+    a2 = np.clip((ab - 0.5) / (2 * edge) + 0.5, 0, 1)
+    out = img.copy()
+    rgb = img[..., :3].astype(np.float32)
+    w = cv2.GaussianBlur(a, (0, 0), sig)[..., None] + 1e-4
+    out[..., :3] = np.clip(cv2.GaussianBlur(rgb * a[..., None], (0, 0), sig) / w, 0, 255).astype(np.uint8)
+    out[..., 3] = (a2 * 255).astype(np.uint8)
+    return out
+
+
 def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] = None) -> int:
     """In-between frames for a keyed paint layer: shapes morph through signed-distance blending,
     colors cross-fade. Before the first / after the last key the key is held."""
@@ -520,6 +547,12 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
         if im.ndim == 2 or im.shape[2] == 3:
             im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGRA if im.ndim == 2 else cv2.COLOR_BGR2BGRA)
         imgs[k] = im
+    lay = next((l for l in load_manifest(pid, vid).get("layers", []) if l.get("id") == layer_id), {}) or {}
+    smooth = float(lay.get("morph_smooth", 0) or 0)
+
+    def _write(fp, out):
+        cv2.imwrite(fp, _smooth_inbetween(out, smooth) if smooth > 0 else out)
+
     n = 0
     for a, b in segs:
         if a not in imgs or b not in imgs:
@@ -531,7 +564,10 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
         if prep is not None:  # line drawings: point-to-point morph
             H0, W0 = A.shape[:2]
             for f in range(a + 1, b):
-                cv2.imwrite(os.path.join(d, f"frame_{f:04d}.png"), _point_morph_frame(prep, (f - a) / float(b - a), H0, W0))
+                tt = (f - a) / float(b - a)
+                if smooth > 0:   # eased timing: the shape starts and settles softly instead of moving at a constant speed
+                    tt = tt * tt * (3 - 2 * tt)
+                _write(os.path.join(d, f"frame_{f:04d}.png"), _point_morph_frame(prep, tt, H0, W0))
                 n += 1
             continue
         ca, cb = _fill_color_outward(A).astype(np.float32), _fill_color_outward(B).astype(np.float32)
@@ -546,6 +582,8 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
             return cv2.warpAffine(img, np.float32([[1, 0, sx], [0, 1, sy]]), (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
         for f in range(a + 1, b):
             t = (f - a) / float(b - a)
+            if smooth > 0:
+                t = t * t * (3 - 2 * t)
             As, Bs = _shift(A[..., 3], dx * t, dy * t), _shift(B[..., 3], -dx * (1 - t), -dy * (1 - t))
             sa, sb = _sdf(As), _sdf(Bs)
             ca_t = _shift(ca, dx * t, dy * t) if (dx or dy) else ca
@@ -555,7 +593,7 @@ def bake_paint_morph(pid: str, vid: str, layer_id: str, only_key: Optional[int] 
             out = np.zeros_like(A)
             out[..., :3] = np.clip(ca_t * (1 - t) + cb_t * t, 0, 255).astype(np.uint8)
             out[..., 3] = (alpha * 255).astype(np.uint8)
-            cv2.imwrite(os.path.join(d, f"frame_{f:04d}.png"), out)
+            _write(os.path.join(d, f"frame_{f:04d}.png"), out)
             n += 1
     return n
 
@@ -584,6 +622,12 @@ def update_layers_meta(pid: str, vid: str, layers: List[Dict[str, Any]], deleted
             "comment": str(l.get("comment", base.get("comment", "")) or "")[:4000],
             "bw": bool(l.get("bw", base.get("bw", False))),
         })
+        if "xform" in l:
+            xf = _clean_xform(l.get("xform"))
+            if xf:
+                base["xform"] = xf
+            else:
+                base.pop("xform", None)
         out.append(base)
     out += [l for lid, l in known.items() if lid not in seen and lid not in gone]
     for lid in gone & set(known):
@@ -1517,6 +1561,40 @@ def inverted_frame_png(path: str) -> bytes:
     return buf.tobytes() if ok else b""
 
 
+def _clean_xform(xf) -> Optional[Dict[str, float]]:
+    """Layer transform from the UI's Move tool: offset x/y (fractions of the frame), scale s, rotation r (deg,
+    clockwise like CSS). None when it is the identity."""
+    if not isinstance(xf, dict):
+        return None
+    try:
+        out = {"x": float(xf.get("x", 0) or 0), "y": float(xf.get("y", 0) or 0),
+               "s": float(xf.get("s", 1) if xf.get("s") is not None else 1), "r": float(xf.get("r", 0) or 0)}
+    except (TypeError, ValueError):
+        return None
+    out["x"] = max(-4.0, min(4.0, out["x"]))
+    out["y"] = max(-4.0, min(4.0, out["y"]))
+    out["s"] = max(0.02, min(20.0, out["s"]))
+    out["r"] = ((out["r"] + 180.0) % 360.0) - 180.0
+    if abs(out["x"]) < 1e-4 and abs(out["y"]) < 1e-4 and abs(out["s"] - 1) < 1e-4 and abs(out["r"]) < 1e-3:
+        return None
+    return out
+
+
+def _apply_xform(img: np.ndarray, xf: Optional[Dict[str, float]], keep_outside_opaque: bool = False) -> np.ndarray:
+    """Moves / scales / rotates a frame around its centre (same result as the CSS transform in the viewer).
+    Outside the moved picture: transparent (4-channel), black (masks, 1-channel) or black RGB."""
+    xf = _clean_xform(xf)
+    if not xf or img is None:
+        return img
+    h, w = img.shape[:2]
+    M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), -xf["r"], xf["s"])
+    M[0, 2] += xf["x"] * w
+    M[1, 2] += xf["y"] * h
+    if img.ndim == 3 and img.shape[2] == 3 and not keep_outside_opaque:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+    return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+
 def _layer_alpha(pid, vid, layer, idx, h, w):
     """Alpha (0..1 float) of a layer at a frame, honoring its inverted flag; None if no frame."""
     fp = os.path.join(_layer_dir(pid, vid, layer["id"]), f"key_{idx:04d}.png")
@@ -1533,6 +1611,8 @@ def _layer_alpha(pid, vid, layer, idx, h, w):
         img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
     if img.ndim == 3 and img.shape[2] == 1:
         img = img[:, :, 0]
+    if layer.get("xform"):
+        img = _apply_xform(img, layer.get("xform"))
     if img.ndim == 2:
         a = img.astype(np.float32) / 255.0
         rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -1659,7 +1739,44 @@ def _job_composite(job_id, kind, pid, vid, p):
     layer = _add_layer(pid, vid, "rgb", p.get("name") or "Composite", extra={"source": "composite", "fg": fg_id, "bg": bg_id, "mask": mask_id, "alpha_source": "fg" if alpha_from_fg else "mask"})
     out_dir = _layer_dir(pid, vid, layer["id"])
 
+    media_cache: Dict[str, Any] = {}
+    layer_xf = {l["id"]: l.get("xform") for l in man["layers"] if l.get("xform")}
+
+    def media_frame(url, i):
+        """A gallery picture (same image on every frame) or a project video (frame i, held on its last frame)."""
+        if url not in media_cache:
+            path = resolve_media_path(url)
+            if os.path.splitext(path)[1].lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"):
+                media_cache[url] = ("img", cv2.imread(path, cv2.IMREAD_UNCHANGED))
+            else:
+                media_cache[url] = ("vid", path, {})
+        ent = media_cache[url]
+        if ent[0] == "img":
+            return ent[1]
+        frames = ent[2]
+        if "all" not in frames:
+            cap = cv2.VideoCapture(ent[1])
+            got = []
+            while True:
+                ok, fr = cap.read()
+                if not ok:
+                    break
+                got.append(cv2.resize(fr, (w, h), interpolation=cv2.INTER_AREA) if fr.shape[:2] != (h, w) else fr)
+            cap.release()
+            frames["all"] = got
+        got = frames["all"]
+        return got[min(i - f0, len(got) - 1)] if got else None
+
     def rgb(src, i):
+        if src.startswith("/vfx/project_file/"):
+            img = media_frame(src, i)
+            if img is None:
+                return None
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif img.shape[2] == 4:
+                img = img[..., :3]
+            return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA) if img.shape[:2] != (h, w) else img
         fp = frame_path(pid, vid, "plate_undist" if src == "plate" and _count_frames(pps.get_dirs(node_id_for(vid))["undist"]) else
                         ("plate_raw" if src == "plate" else _safe(src)), i)
         img = cv2.imread(fp, cv2.IMREAD_UNCHANGED) if fp and os.path.isfile(fp) else None
@@ -1669,7 +1786,9 @@ def _job_composite(job_id, kind, pid, vid, p):
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         elif img.shape[2] == 4:
             img = img[..., :3]
-        return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA) if img.shape[:2] != (h, w) else img
+        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA) if img.shape[:2] != (h, w) else img
+        lxf = layer_xf.get(src)
+        return _apply_xform(img, lxf, keep_outside_opaque=True) if lxf else img
 
     k = np.ones((3, 3), np.uint8)
     written = 0

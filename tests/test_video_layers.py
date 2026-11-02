@@ -256,3 +256,94 @@ def test_paint_key_move(vl, project):
     lay_moved = next(l for l in st_moved["layers"] if l["id"] == lid)
     assert 2 not in lay_moved["keys"]
     assert 5 in lay_moved["keys"]
+
+
+# ---------- hand-drawn mask layers are keyed like the paint brush (held until the next key)
+def _png(color, size=(48, 32), box=None):
+    img = np.zeros((size[1], size[0], 4), np.uint8)
+    if box:
+        x0, y0, x1, y1 = box
+        img[y0:y1, x0:x1] = color
+    return cv2.imencode(".png", img)[1].tobytes()
+
+
+def test_hand_mask_layer_holds_last_key(vl, project):
+    vid = vl.create_blank_video(project.pid, title="Mask hold", width=48, height=32, total_frames=10)["id"]
+    lid = vl._add_layer(project.pid, vid, "mask", "Hand mask")["id"]
+    st = vl.save_layer_frame(project.pid, vid, lid, 2, _png((92, 59, 255, 240), box=(4, 4, 20, 20)))
+    lay = next(l for l in st["layers"] if l["id"] == lid)
+    assert lay["keys"] == [2]
+    held = vl.frame_path(project.pid, vid, lid, 7)
+    assert held and held.endswith("key_0002.png")          # last key carried forward
+    vl.save_layer_frame(project.pid, vid, lid, 6, _png((92, 59, 255, 240), box=(30, 10, 44, 28)))
+    assert vl.frame_path(project.pid, vid, lid, 8).endswith("key_0006.png")
+    assert vl.frame_path(project.pid, vid, lid, 4).endswith("key_0002.png")
+
+
+def test_generated_mask_layer_is_still_edited_per_frame(vl, project):
+    vid = vl.create_blank_video(project.pid, title="Mask gen", width=48, height=32, total_frames=6)["id"]
+    lay = vl._add_layer(project.pid, vid, "mask", "SAM")
+    d = vl._layer_dir(project.pid, vid, lay["id"])
+    for i in range(6):
+        cv2.imwrite(os.path.join(d, f"frame_{i:04d}.png"), np.zeros((32, 48, 4), np.uint8))
+    vl.save_layer_frame(project.pid, vid, lay["id"], 3, _png((255, 255, 255, 255), box=(0, 0, 8, 8)))
+    assert not any(n.startswith("key_") for n in os.listdir(d))
+
+
+# ---------- morph smoothing
+def test_smooth_inbetween_rounds_jagged_edges(vl):
+    img = np.zeros((40, 40, 4), np.uint8)
+    img[10:30, 10:30] = (0, 0, 255, 255)
+    img[10:30:2, 30] = (0, 0, 255, 255)                    # a comb of 1-px teeth on the edge
+    out = vl._smooth_inbetween(img, 4)
+    assert out.shape == img.shape
+    assert out[20, 20, 3] == 255 and out[2, 2, 3] == 0     # inside stays solid, far outside stays empty
+    assert out[11:29, 31, 3].std() < img[11:29, 30, 3].std()   # the teeth are smoothed out
+
+
+# ---------- composite with a gallery picture as the background
+def test_composite_with_gallery_image_background(vl, project, monkeypatch, tmp_path):
+    vid = vl.create_blank_video(project.pid, title="Comp", width=48, height=32, total_frames=4, color="#ff0000")["id"]
+    mlid = vl._add_layer(project.pid, vid, "mask", "M")["id"]
+    vl.save_layer_frame(project.pid, vid, mlid, 0, _png((255, 255, 255, 255), box=(0, 0, 24, 32)))
+    bg = str(tmp_path / "bg.png"); cv2.imwrite(bg, np.full((64, 96, 3), (255, 0, 0), np.uint8))   # blue
+    monkeypatch.setattr(vl, "resolve_media_path", lambda u: bg)
+    r = vl._job_composite("t", "composite", project.pid, vid, {"fg": "plate", "mask": mlid, "bg": "/vfx/project_file/p/storyboard/bg.png",
+                                                               "erode": 0, "feather": 0})
+    out = cv2.imread(vl.frame_path(project.pid, vid, r["layer"]["id"], 2))
+    assert out[16, 40, 0] > 200 and out[16, 40, 2] < 60     # right half: the gallery background
+
+
+# ---------- a prompt that vanished from the ComfyUI queue is an error, not "pending" forever
+def test_run_status_lost_prompt(monkeypatch):
+    pr = load("process_runner")
+
+    class R:
+        def __init__(self, body): self.body = body
+        def read(self): return __import__("json").dumps(self.body).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake(url, timeout=10):
+        return R({"queue_running": [], "queue_pending": []} if url.endswith("/queue") else {})
+    monkeypatch.setattr(pr.urllib.request, "urlopen", fake)
+    assert pr.get_run_status("abc")["status"] == "error"
+
+    def fake2(url, timeout=10):
+        return R({"queue_running": [[0, "abc", {}, {}, []]], "queue_pending": []} if url.endswith("/queue") else {})
+    monkeypatch.setattr(pr.urllib.request, "urlopen", fake2)
+    assert pr.get_run_status("abc")["status"] == "pending"
+
+
+# ---------- layer transform (Move tool): saved in the manifest, applied when the layer is used
+def test_layer_xform_saved_and_applied(vl, project):
+    vid = vl.create_blank_video(project.pid, title="Xf", width=40, height=20, total_frames=3)["id"]
+    lid = vl._add_layer(project.pid, vid, "mask", "M")["id"]
+    vl.save_layer_frame(project.pid, vid, lid, 0, _png((255, 255, 255, 255), size=(40, 20), box=(0, 0, 10, 20)))
+    st = vl.update_layers_meta(project.pid, vid, [{"id": lid, "name": "M", "xform": {"x": 0.5, "y": 0, "s": 1, "r": 0}}])
+    lay = next(l for l in vl.load_manifest(project.pid, vid)["layers"] if l["id"] == lid)
+    assert lay["xform"]["x"] == 0.5
+    a, _ = vl._layer_alpha(project.pid, vid, lay, 1, 20, 40)
+    assert a[10, 25] > 0.9 and a[10, 5] < 0.1           # the white strip moved half a frame to the right
+    vl.update_layers_meta(project.pid, vid, [{"id": lid, "name": "M", "xform": {"x": 0, "y": 0, "s": 1, "r": 0}}])
+    assert "xform" not in next(l for l in vl.load_manifest(project.pid, vid)["layers"] if l["id"] == lid)

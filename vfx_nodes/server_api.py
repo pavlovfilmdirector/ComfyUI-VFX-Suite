@@ -8399,7 +8399,8 @@ def register_server_routes():
 
                 data = await request.json()
 
-                res = await asyncio.to_thread(set_paint_morph, pid, request.match_info["video_id"], str(data.get("layer_id")), bool(data.get("on")))
+                res = await asyncio.to_thread(set_paint_morph, pid, request.match_info["video_id"], str(data.get("layer_id")), bool(data.get("on")),
+                                              None if data.get("smooth") is None else float(data.get("smooth")))
 
                 return add_cors_headers(web.json_response(res))
 
@@ -8844,6 +8845,33 @@ def register_server_routes():
             return add_cors_headers(web.json_response({"status": "cancelled", "prompt_id": target_pid}))
 
 
+
+        # --- First-run setup: models list (install_manifest.json), link a folder of models, done flag ---
+        @routes.get("/vfx/setup/status")
+        async def vfx_setup_status(request):
+            from .setup_service import status
+            try:
+                return add_cors_headers(web.json_response(await asyncio.to_thread(status)))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=500))
+
+        @routes.post("/vfx/setup/link")
+        async def vfx_setup_link(request):
+            from .setup_service import link_models_folder
+            try:
+                data = await request.json()
+                return add_cors_headers(web.json_response(await asyncio.to_thread(link_models_folder, data.get("path", ""))))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
+        @routes.post("/vfx/setup/done")
+        async def vfx_setup_done(request):
+            from .setup_service import mark_done
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+            return add_cors_headers(web.json_response(mark_done(data.get("done", True) is not False)))
 
         @routes.post("/vfx/models/download")
 

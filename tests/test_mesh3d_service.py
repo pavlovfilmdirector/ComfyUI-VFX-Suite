@@ -73,7 +73,6 @@ def test_run_comfy_3d_generation_mock(tmp_path):
 
     mock_template = {
         "122": {"class_type": "LoadImage", "inputs": {"image": "default.png"}},
-        "316": {"class_type": "PrimitiveBoolean", "inputs": {"value": False}},
         "288": {"class_type": "PrimitiveInt", "inputs": {"value": 1024}},
         "186": {"class_type": "DecimateMesh", "inputs": {"target_face_count": 100000}},
         "322": {"class_type": "Save3DAdvanced", "inputs": {"filename_prefix": "3d/default"}},
@@ -123,7 +122,7 @@ def test_run_comfy_3d_generation_mock(tmp_path):
                     use_trellis2=True
                 )
                 assert res.endswith(".glb")
-                assert mock_template["316"]["inputs"]["value"] is True
+                assert not any(v.get("class_type") == "Pixal3DConditioning" for v in mock_template.values())
                 assert mock_template["288"]["inputs"]["value"] == 4096
                 assert mock_template["186"]["inputs"]["target_face_count"] == 300000
                 assert mock_template["3"]["inputs"]["seed"] == 777
