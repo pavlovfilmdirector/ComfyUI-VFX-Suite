@@ -150,10 +150,41 @@ def _run(job_id, st, out_dir, stem, prompt, duration, seed, steps):
         _set(job_id, status="error", error=str(e), message=f"Kimodo error: {e}")
 
 
+def _proc_stats(pid) -> Dict[str, Any]:
+    """CPU / memory / disk and network activity of a Kimodo process (is a silent first run downloading or stuck?)."""
+    try:
+        import psutil
+        root = psutil.Process(int(pid))
+        procs = [root] + root.children(recursive=True)    # a Windows venv python.exe is a launcher: the work runs in a child
+        for p in procs:
+            p.cpu_percent(None)
+        time.sleep(0.5)
+        tot = {"alive": True, "processes": len(procs), "cpu_percent": 0.0, "rss_gb": 0.0, "read_gb": 0.0, "write_gb": 0.0, "other_gb": 0.0}
+        for p in procs:
+            try:
+                io = p.io_counters()
+                tot["cpu_percent"] += p.cpu_percent(None)
+                tot["rss_gb"] += p.memory_info().rss / 1e9
+                tot["read_gb"] += io.read_bytes / 1e9
+                tot["write_gb"] += io.write_bytes / 1e9
+                tot["other_gb"] += getattr(io, "other_bytes", 0) / 1e9
+            except Exception:  # noqa: BLE001
+                pass
+        return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in tot.items()}
+    except Exception as e:  # noqa: BLE001
+        return {"alive": False, "error": str(e)}
+
+
 def get_job(job_id: str) -> Dict[str, Any]:
     with _LOCK:
         j = _JOBS.get(job_id)
-        return dict(j) if j else {"status": "not_found"}
+        j = dict(j) if j else None
+    if j is None:
+        m = re.fullmatch(r"pid_(\d+)", str(job_id))
+        return {"status": "process", "proc": _proc_stats(m.group(1))} if m else {"status": "not_found"}
+    if j.get("status") == "running" and j.get("pid"):
+        j["proc"] = _proc_stats(j["pid"])
+    return j
 
 
 def _kill_tree(pid: int) -> bool:

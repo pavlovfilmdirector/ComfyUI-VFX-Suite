@@ -24906,7 +24906,7 @@ async function openNarrationEditor() {
                                     ${tipAttr("Layer count (see Details panel)", "Количество слоёв (подробнее в панели Details)")}
                                     style="height: 14px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; font-size: 8.5px; line-height: 1; color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; pointer-events: none; user-select: none;">
                                     <i data-lucide="layers" style="width: 8.5px; height: 8.5px; opacity: 0.75;"></i>
-                                    <span>${type === "2d-video" ? (videoLayersCache[item.id] ? videoLayersCache[item.id].layers.length : 0) : countAttachments1D(item)}</span>
+                                    <span>${type === "2d-video" ? (videoLayersCache[item.id]?.layers?.length || 0) : countAttachments1D(item)}</span>
                                 </span>
                             ` : ''}
 
@@ -59429,7 +59429,7 @@ async function openNarrationEditor() {
                     if (r.ok) {
                         const st = await r.json();
                         if (Array.isArray(st.layers)) {
-                            videoLayersCache[vid] = st.layers;
+                            videoLayersCache[vid] = { layers: st.layers, plate: st.plate || null, at: Date.now() };
                             const vObj = Array.isArray(mediaVideos2D) ? mediaVideos2D.find(v => v.id === vid) : null;
                             if (vObj) vObj.videoLayers = st.layers;
                         }

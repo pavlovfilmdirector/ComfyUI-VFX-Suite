@@ -4432,7 +4432,17 @@ let lastMonitorRenderTime = 0;
         const sl = document.getElementById("timeline-slider"); if (sl) sl.value = currentFrame;
         try { onFrameChanged(); } catch (_) {}
     }
-    window.__vfxCameraCuts = { list: listCameraAssets, cuts: getCameraCuts, add: addCameraCut, remove: removeCameraCut, at: cutActorAt, render: renderCameraCutsTrack };
+    window.__vfxCameraCuts = { list: listCameraAssets, cuts: getCameraCuts, add: addCameraCut, remove: removeCameraCut, at: cutActorAt, render: renderCameraCutsTrack,
+        // place a free camera and aim it (agents / MCP / scripted multi-camera setups)
+        aim: (id, pos, target) => {
+            const a = camActorById(id);
+            if (!a || a === shotCamera || !Array.isArray(pos) || !Array.isArray(target)) return false;
+            a.position.set(+pos[0], +pos[1], +pos[2]);
+            aimCameraGroup(a, new THREE.Vector3(+target[0], +target[1], +target[2]));
+            a.updateMatrixWorld(true);
+            try { syncSceneData(); renderStudioViewports(); } catch (_) {}
+            return true;
+        } };
     {
         const sel = document.getElementById("sel-camera-asset");
         if (sel) {
