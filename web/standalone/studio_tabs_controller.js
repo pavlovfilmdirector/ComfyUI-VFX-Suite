@@ -5179,6 +5179,10 @@ async function openNarrationEditor() {
     // Hover over a small size slider: a long slider + exact number field.
 
     function attachSizePopover(input, label, min = 1, max = 200, softKey = null) {
+        // logarithmic slider: fine steps for small brushes (0.1 px), big jumps for large ones
+        const lg = max / Math.max(1e-6, min) >= 100;
+        const toSl = (v) => lg ? Math.round(1000 * Math.log(Math.max(min, +v || min) / min) / Math.log(max / min)) : Math.round(1000 * ((+v || min) - min) / Math.max(1e-6, max - min));
+        const fromSl = (sl) => lg ? min * Math.pow(max / min, (+sl) / 1000) : min + (max - min) * (+sl) / 1000;
 
         if (!input || input.dataset.sizePop) return;
 
@@ -5202,13 +5206,15 @@ async function openNarrationEditor() {
 
             pop.style.flexWrap = "wrap"; pop.style.width = "400px";
 
-            pop.innerHTML = `<span style="width: 62px;">${label}</span><input type="range" class="sp-r" min="${min}" max="${max}" value="${input.value}" style="width: 230px;">
+            pop.innerHTML = `<span style="width: 62px;">${label}</span><input type="range" class="sp-r" min="0" max="1000" step="1" value="${toSl(input.value)}" style="width: 230px;">
 
-                <input type="number" class="sp-n" min="${min}" max="${max}" value="${input.value}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
+                <input type="number" class="sp-n" min="${min}" max="${max}" step="${min < 1 ? 0.1 : 1}" value="${input.value}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
 
                 ${softKey ? `<span style="width: 62px;">${uiText("Softness", "Мягкость")}</span><input type="range" class="sp-sr" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 230px;">
 
-                <input type="number" class="sp-sn" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>` : ""}`;
+                <input type="number" class="sp-sn" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
+                ${softKey === "brushSoft2D" ? `<span style="width: 62px;">${uiText("Stabilizer", "Стабилизация")}</span><input type="range" class="sp-tr" min="0" max="100" value="${prefs[softKey + "Stab"] || 0}" style="width: 220px;">
+                <input type="number" class="sp-tn" min="0" max="100" value="${prefs[softKey + "Stab"] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>%</span>` : ""}` : ""}`;
 
             document.body.appendChild(pop);
 
@@ -5221,6 +5227,9 @@ async function openNarrationEditor() {
                 SR.oninput = () => setS(SR.value); SN.oninput = () => setS(SN.value);
 
                 SN.onkeydown = (e) => e.stopPropagation();
+            { const TR = pop.querySelector(".sp-tr"), TN = pop.querySelector(".sp-tn");
+              if (TR) { const setT = (v) => { v = Math.max(0, Math.min(100, parseInt(v, 10) || 0)); TR.value = v; TN.value = v; prefs[softKey + "Stab"] = v; savePrefs(); };
+                        TR.oninput = () => setT(TR.value); TN.oninput = () => setT(TN.value); TN.onkeydown = (e) => e.stopPropagation(); } }
 
             }
 
@@ -5232,17 +5241,19 @@ async function openNarrationEditor() {
 
             const set = (v) => {
 
-                v = Math.max(min, Math.min(max, parseInt(v, 10) || min));
+                v = Math.max(min, Math.min(max, parseFloat(v) || min));
 
-                if (parseInt(input.max, 10) < v) input.max = String(v);
+                v = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
 
-                input.value = v; R.value = v; N.value = v;
+                if (parseFloat(input.max) < v) input.max = String(v);
+
+                input.value = v; R.value = toSl(v); N.value = v;
 
                 input.dispatchEvent(new Event("input", { bubbles: true }));
 
             };
 
-            R.oninput = () => set(R.value);
+            R.oninput = () => set(fromSl(R.value));
 
             N.oninput = () => set(N.value);
 
@@ -5273,6 +5284,10 @@ async function openNarrationEditor() {
 
 
     function sizePopoverAt(x, y, input, label, min = 1, max = 400, softKey = null) {
+        // logarithmic slider: fine steps for small brushes (0.1 px), big jumps for large ones
+        const lg = max / Math.max(1e-6, min) >= 100;
+        const toSl = (v) => lg ? Math.round(1000 * Math.log(Math.max(min, +v || min) / min) / Math.log(max / min)) : Math.round(1000 * ((+v || min) - min) / Math.max(1e-6, max - min));
+        const fromSl = (sl) => lg ? min * Math.pow(max / min, (+sl) / 1000) : min + (max - min) * (+sl) / 1000;
 
         if (!input) return;
 
@@ -5288,13 +5303,15 @@ async function openNarrationEditor() {
 
         pop.style.flexWrap = "wrap"; pop.style.width = "390px";
 
-        pop.innerHTML = `<span style="width: 62px;">${label}</span><input type="range" class="sp-r" min="${min}" max="${max}" value="${input.value}" style="width: 220px;">
+        pop.innerHTML = `<span style="width: 62px;">${label}</span><input type="range" class="sp-r" min="0" max="1000" step="1" value="${toSl(input.value)}" style="width: 220px;">
 
-            <input type="number" class="sp-n" min="${min}" max="${max}" value="${input.value}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
+            <input type="number" class="sp-n" min="${min}" max="${max}" step="${min < 1 ? 0.1 : 1}" value="${input.value}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
 
             ${softKey ? `<span style="width: 62px;">${uiText("Softness", "Мягкость")}</span><input type="range" class="sp-sr" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 220px;">
 
-            <input type="number" class="sp-sn" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>` : ""}`;
+            <input type="number" class="sp-sn" min="0" max="60" value="${prefs[softKey] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>px</span>
+                ${softKey === "brushSoft2D" ? `<span style="width: 62px;">${uiText("Stabilizer", "Стабилизация")}</span><input type="range" class="sp-tr" min="0" max="100" value="${prefs[softKey + "Stab"] || 0}" style="width: 220px;">
+                <input type="number" class="sp-tn" min="0" max="100" value="${prefs[softKey + "Stab"] || 0}" style="width: 54px; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 11px;"><span>%</span>` : ""}` : ""}`;
 
         document.body.appendChild(pop);
 
@@ -5307,6 +5324,9 @@ async function openNarrationEditor() {
             SR.oninput = () => setS(SR.value); SN.oninput = () => setS(SN.value);
 
             SN.onkeydown = (e) => e.stopPropagation();
+            { const TR = pop.querySelector(".sp-tr"), TN = pop.querySelector(".sp-tn");
+              if (TR) { const setT = (v) => { v = Math.max(0, Math.min(100, parseInt(v, 10) || 0)); TR.value = v; TN.value = v; prefs[softKey + "Stab"] = v; savePrefs(); };
+                        TR.oninput = () => setT(TR.value); TN.oninput = () => setT(TN.value); TN.onkeydown = (e) => e.stopPropagation(); } }
 
         }
 
@@ -5314,17 +5334,19 @@ async function openNarrationEditor() {
 
         const set = (v) => {
 
-            v = Math.max(min, Math.min(max, parseInt(v, 10) || min));
+            v = Math.max(min, Math.min(max, parseFloat(v) || min));
 
-            if (parseInt(input.max, 10) < v) input.max = String(v);
+            v = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
 
-            input.value = v; R.value = v; N.value = v;
+            if (parseFloat(input.max) < v) input.max = String(v);
+
+            input.value = v; R.value = toSl(v); N.value = v;
 
             input.dispatchEvent(new Event("input", { bubbles: true }));
 
         };
 
-        R.oninput = () => set(R.value); N.oninput = () => set(N.value);
+        R.oninput = () => set(fromSl(R.value)); N.oninput = () => set(N.value);
 
         ["mousedown", "keydown", "wheel", "contextmenu"].forEach(ev => pop.addEventListener(ev, e => { e.stopPropagation(); if (ev === "contextmenu") e.preventDefault(); }));
 
@@ -36327,7 +36349,7 @@ async function openNarrationEditor() {
 
 
 
-            <input type="range" id="inp-2d-brush-size" min="2" max="60" value="${vid2DBrushSize}"
+            <input type="range" id="inp-2d-brush-size" min="0.1" max="250" step="0.1" value="${vid2DBrushSize}"
 
                 ${tipAttr("Brush Size", "Ширина кисти", "Adjust mask brush thickness (px).", "Изменить толщину кисти или ластика маски (px).")}
 
@@ -36355,7 +36377,7 @@ async function openNarrationEditor() {
 
                 ${tipAttr("Selection → mask", "Выделение → маска", "Adds the selection to this frame's hand-drawn mask. Alt-click subtracts it.", "Добавляет выделение в ручную маску текущего кадра. Alt+клик — вычесть.")}
 
-                style="width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: flex; opacity: 0.35; pointer-events: none; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
+                style="width: 26px; height: 22px; padding: 0; box-sizing: border-box; display: flex; opacity: 0.35; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(56,189,248,0.4); color: #38bdf8; border-radius: 4px;">
 
                 <i data-lucide="square-plus" style="width: 12px; height: 12px;"></i>
 
@@ -39428,7 +39450,7 @@ async function openNarrationEditor() {
 
             inpBrushSize.oninput = (e) => {
 
-                vid2DBrushSize = parseInt(e.target.value, 10) || 25;
+                vid2DBrushSize = Math.max(0.1, parseFloat(e.target.value) || 25);
 
             };
 
@@ -39573,6 +39595,16 @@ async function openNarrationEditor() {
         let is2DPainting = false;
 
         let lastPaintX = null, lastPaintY = null;
+        // brush stabilizer (lazy pointer): the stroke follows the cursor with a lag, which irons out hand jitter.
+        // 0 = off, 100 = strongest; set it with the brush size popover (hover the size slider or right-click the frame)
+        let stabPt2D = null;
+        function stab2D(p) {
+            const k = Math.max(0, Math.min(100, +prefs.brushSoft2DStab || 0));
+            if (!stabPt2D || !k) { stabPt2D = { x: p.x, y: p.y }; return p; }
+            const a = 1 - 0.93 * k / 100;
+            stabPt2D = { x: stabPt2D.x + (p.x - stabPt2D.x) * a, y: stabPt2D.y + (p.y - stabPt2D.y) * a };
+            return { x: stabPt2D.x, y: stabPt2D.y };
+        }
 
         let is2DLassoing = false;
 
@@ -39636,7 +39668,7 @@ async function openNarrationEditor() {
 
             const btn = toolsBar2D.querySelector("#btn-2d-sel-to-mask");
 
-            if (btn) { btn.style.display = "flex"; btn.style.opacity = sel2DPoly ? "1" : "0.35"; btn.style.pointerEvents = sel2DPoly ? "auto" : "none"; }
+            if (btn) { btn.style.display = "flex"; btn.style.opacity = sel2DPoly ? "1" : "0.35"; btn.style.pointerEvents = "auto"; }
 
             const lw = Math.max(1.5, lassoCanvas.width / 900);
 
@@ -39674,7 +39706,38 @@ async function openNarrationEditor() {
 
         function sel2DToMask(subtract) {
 
-            if (!sel2DPoly || !maskCtx) { showToastNotification(uiText("Make a selection first", "Сначала сделайте выделение"), true); return; }
+            if (!sel2DPoly || !maskCtx) { showToastNotification(uiText("Make a selection first (lasso / rectangle / ellipse tool)", "Сначала выделите область (лассо / прямоугольник / овал)"), true); return; }
+
+            // a mask layer is selected in the layers panel: the selection goes into that layer on this frame
+            const selLayer = vlState2D.layers.find(l => l.id === vlState2D.selected && (l.type === "mask" || l.type === "matte"));
+            if (selLayer) {
+                (async () => {
+                    try {
+                        const idx = plateIdx2D();
+                        const W = vlState2D.plate?.width || maskCanvas.width, H = vlState2D.plate?.height || maskCanvas.height;
+                        const c = document.createElement("canvas"); c.width = W; c.height = H;
+                        const cx = c.getContext("2d");
+                        try {
+                            const cur = await loadImageEl1D(`/vfx/video/${vlPid()}/${vlVid()}/frame/${encodeURIComponent(selLayer.id)}/${idx}?t=${Date.now()}`);
+                            cx.drawImage(cur, 0, 0, W, H);
+                        } catch (_) { /* no frame yet: start empty */ }
+                        const t = document.createElement("canvas"); t.width = W; t.height = H;
+                        const tx = t.getContext("2d");
+                        tx.fillStyle = selLayer.color || "#ff3b5c"; tx.fillRect(0, 0, W, H);
+                        tx.globalCompositeOperation = "destination-in"; tx.drawImage(selCanvas2D, 0, 0, W, H);
+                        cx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
+                        cx.drawImage(t, 0, 0);
+                        const res = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/frame_edit`, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ layer_id: selLayer.id, frame: idx, data: c.toDataURL("image/png") }) }).then(r => r.json());
+                        if (res.error) throw new Error(res.error);
+                        vlState2D.layers = res.layers || vlState2D.layers;
+                        const l2 = vlState2D.layers.find(x => x.id === selLayer.id); if (l2) l2.rev = `${l2.rev || ""}s${Date.now()}`;
+                        renderVideoLayersPanel2D(); updateVideoOverlays2D(); if (typeof render2DTimelineTrack === "function") render2DTimelineTrack();
+                        showToastNotification(subtract ? uiText(`Selection removed from «${selLayer.name}»`, `Выделение вычтено из «${selLayer.name}»`) : uiText(`Selection added to «${selLayer.name}»`, `Выделение добавлено в «${selLayer.name}»`));
+                    } catch (err) { showToastNotification(`${uiText("Selection → mask", "Выделение → маска")}: ${err.message || err}`, true); }
+                })();
+                return;
+            }
 
             push2DMaskUndo();
 
@@ -39853,6 +39916,7 @@ async function openNarrationEditor() {
                 is2DPainting = true;
 
                 const coords = getMaskCoords(e);
+                stabPt2D = { x: coords.x, y: coords.y };
 
                 lastPaintX = coords.x;
 
@@ -39932,7 +39996,7 @@ async function openNarrationEditor() {
 
                 if (!is2DPainting || vid2DTool !== "paint_mask" || !maskCtx) return;
 
-                const coords = getMaskCoords(e);
+                const coords = stab2D(getMaskCoords(e));
 
                 maskCtx.save();
 
@@ -41110,7 +41174,7 @@ async function openNarrationEditor() {
             const kx = paintCanvas2D.width / Math.max(1, pr2.width), ky = paintCanvas2D.height / Math.max(1, pr2.height);
             paintCtx2D.setTransform(kx, 0, 0, ky, 0, 0);
             paintScreenPt2D = (ev) => { const rr = paintCanvas2D.getBoundingClientRect(); return { x: ev.clientX - rr.left, y: ev.clientY - rr.top }; };
-            painting2D = true; paintLast2D = paintScreenPt2D(e);
+            painting2D = true; paintLast2D = paintScreenPt2D(e); stabPt2D = { ...paintLast2D };
 
             const editL = vlState2D.editMask ? vlState2D.layers.find(l => l.id === vlState2D.paintLayerId) : null;
 
@@ -41134,7 +41198,7 @@ async function openNarrationEditor() {
 
             if (!painting2D) return;
 
-            const pt = paintScreenPt2D(e);
+            const pt = stab2D(paintScreenPt2D(e));
 
             paintCtx2D.beginPath(); paintCtx2D.moveTo(paintLast2D.x, paintLast2D.y); paintCtx2D.lineTo(pt.x, pt.y); paintCtx2D.stroke();
 
@@ -41258,7 +41322,7 @@ async function openNarrationEditor() {
 
             e.preventDefault(); e.stopPropagation();
 
-            sizePopoverAt(e.clientX, e.clientY, toolsBar2D.querySelector("#inp-2d-brush-size"), uiText("Size", "Размер"), 1, 400, "brushSoft2D");
+            sizePopoverAt(e.clientX, e.clientY, toolsBar2D.querySelector("#inp-2d-brush-size"), uiText("Size", "Размер"), 0.1, 250, "brushSoft2D");
 
         }, true);
 
@@ -41286,7 +41350,7 @@ async function openNarrationEditor() {
 
         })();
 
-        attachSizePopover(toolsBar2D.querySelector("#inp-2d-brush-size"), uiText("Size", "Размер"), 1, 400, "brushSoft2D");
+        attachSizePopover(toolsBar2D.querySelector("#inp-2d-brush-size"), uiText("Size", "Размер"), 0.1, 250, "brushSoft2D");
 
         const autoKeyBtn2D = wrapper.querySelector("#btn-2d-autokey");
 
