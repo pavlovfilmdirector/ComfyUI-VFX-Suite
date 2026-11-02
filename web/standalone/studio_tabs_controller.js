@@ -65671,26 +65671,25 @@ function renderActiveCustomTab() {
                 <div style="display:flex; justify-content:space-between; align-items:center; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 6px 10px; border-radius: 4px;">
                     <div style="display:flex; align-items:center; gap:6px; font-weight:600; color:#fff;">
                         <span style="font-size:13px;">🧩</span>
-                        <span>${uiText("Deconstruction & Nuke Bridge", "Деконструкция и Выходы в Nuke")}</span>
+                        <span>${uiText("Outputs for Nuke", "Выходы в Nuke")}</span>
                     </div>
-                    <span id="dec-count-badge" style="background:#0284c7; color:#fff; font-size:9px; font-weight:700; padding:1px 6px; border-radius:10px;">${activeCount} ${uiText("active sockets", "активных выходов")}</span>
+                    <span id="dec-count-badge" style="background:#0284c7; color:#fff; font-size:9px; font-weight:700; padding:1px 6px; border-radius:10px;">${activeCount} ${uiText("active outputs", "активных выходов")}</span>
                 </div>
 
                 <div style="font-size:10px; color:rgba(255,255,255,0.55); line-height:1.4; padding: 2px 2px;">
                     ${uiText(
-                        "Every element marked with [✓ 🧩 Nuke] creates an output socket on the ComfyUI node and routes into Foundry Nuke. Double-click any row to jump directly to it and inspect or toggle it off.",
-                        "Каждый слой или трек с галочкой [✓ 🧩 Nuke] создает отдельный выход на ноде ComfyUI и экспортируется в Nuke. Двойной клик на строке открывает слой в проекте."
+                        "Click 🧩 on a video or a layer to list it here, give it an output name and tick it on. These will become the outputs of the KESHIKI node in Foundry Nuke (the Nuke plugin is in development). Double-click a row to jump to it.",
+                        "Нажмите 🧩 на видео или слое — он появится здесь. Задайте имя выхода и включите галочку. Эти элементы станут выходами ноды KESHIKI в Foundry Nuke (плагин для Nuke в разработке). Двойной клик по строке — перейти к элементу."
                     )}
                 </div>
 
                 <!-- Export to Nuke & Add Layer Buttons -->
                 <div style="display:flex; gap:6px; align-items:center;">
-                    <button class="vfx-btn vfx-btn-primary" id="btn-export-nuke"
-                        ${tipAttr("Export Foundry Nuke Script (.nk + .chan)", "Экспортировать скрипт Foundry Nuke (.nk + .chan)", "Generate complete Foundry Nuke composition script and camera .chan file with all routed passes.", "Сгенерировать готовый Nuke-скрипт композитинга и файл камеры .chan с подключенными пассами.")}
-                        style="flex:1; padding:7px; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <span>🚀</span>
-                        <span>${uiText("Export to Nuke (.nk + .chan)", "Экспорт в Nuke (.nk + .chan)")}</span>
-                    </button>
+                    <div ${tipAttr("Nuke plugin in development", "Плагин для Nuke в разработке", "A KESHIKI node for Nuke: video and masks in, these named outputs and the tracked 3D camera out.", "Нода KESHIKI для Nuke: на вход видео и маски, на выходе эти именованные элементы и 3D-камера из трекинга.")}
+                        style="flex:1; padding:7px; font-size:10.5px; display:flex; align-items:center; justify-content:center; gap:6px; border:1px dashed rgba(255,255,255,0.2); border-radius:4px; color:rgba(255,255,255,0.6);">
+                        <span>🧩</span>
+                        <span>${uiText("Nuke node — in development", "Нода для Nuke — в разработке")}</span>
+                    </div>
                     <button class="vfx-btn" id="btn-dec-add-layer"
                         ${tipAttr("Route layer from project to deconstruction", "Добавить слой из проекта в деконструкцию", "Select an existing 2D video layer, mask, 1D image layer, or 3D camera to route to Nuke outputs.", "Выбрать существующий слой видео, маску, слой фото или 3D-камеру для отправки на выходы деконструкции.")}
                         style="padding:7px 9px; font-size:11px; display:flex; align-items:center; gap:4px; background:rgba(2,132,199,0.18); border:1px solid rgba(2,132,199,0.4); color:#38bdf8; cursor:pointer;">
@@ -65730,7 +65729,7 @@ function renderActiveCustomTab() {
                                 style="display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:4px; background:${it.enabled !== false ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.3)'}; border:1px solid ${it.enabled !== false ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)'}; cursor:pointer; transition:all 0.15s ease;">
                                 
                                 <input type="checkbox" class="dec-chk-enable" data-id="${esc(it.id)}" ${it.enabled !== false ? "checked" : ""}
-                                    ${tipAttr("Toggle Socket Enabled", "Включить / отключить выход")}
+                                    ${tipAttr("Output on / off", "Включить / отключить выход")}
                                     style="cursor:pointer; accent-color:#0284c7; width:13px; height:13px;" />
                                 
                                 <div style="width:62px; flex-shrink:0;">${getTypeBadge(it.source_type || it.data_type)}</div>
@@ -65741,7 +65740,7 @@ function renderActiveCustomTab() {
 
                                 <input type="text" class="dec-inp-alias" data-id="${esc(it.id)}" value="${esc(it.alias || '')}"
                                     placeholder="alias_name"
-                                    ${tipAttr("Socket Name on ComfyUI Node & Nuke Output", "Имя выхода на ноде ComfyUI и имя ноды в Nuke")}
+                                    ${tipAttr("Output name in Nuke", "Имя выхода в Nuke")}
                                     style="width:110px; background:#000; border:1px solid rgba(255,255,255,0.18); border-radius:3px; color:#67e8f9; font-family:monospace; font-size:10px; padding:2px 5px;" />
 
                                 <div style="display:flex; align-items:center; justify-content:flex-end; gap:3px; width:40px;">
@@ -65757,33 +65756,6 @@ function renderActiveCustomTab() {
                     </div>
                 </div>
 
-                <!-- Quick Extract Passes Panel -->
-                <div style="background: #0f0f11; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 7px; display: flex; flex-direction: column; gap: 4px; margin-top:2px;">
-                    <div style="font-size:10px; font-weight:600; color:rgba(255,255,255,0.7); display:flex; align-items:center; gap:5px; margin-bottom:2px;">
-                        <i data-lucide="sparkles" style="width:11px; height:11px; color:#38bdf8;"></i>
-                        <span>${uiText("Automatic Pass Extractors", "Автоматические экстракторы пассов")}</span>
-                    </div>
-
-                    ${[
-                        ["chk-dec-glomap", "tracking_glomap", "GLOMAP 3D Camera & PointCloud", "3D Трекинг (GLOMAP)", "Reconstruct 3D camera trajectory, FOV, and sparse 3D pointcloud."],
-                        ["chk-dec-sam2", "mask_sam2_rough", "SAM 2.1 Object ID Masks", "Черновые маски (SAM 2.1)", "Segment characters, vehicles, and props into separate ID masks."],
-                        ["chk-dec-corridor", "mask_corridor_key", "CorridorKey Neural Matting", "Чистовой кеинг (CorridorKey)", "Extract fine hair strands, motion blur, and despilled foreground RGBA."],
-                        ["chk-dec-depth", "pass_depth", "3D Z-Depth Map", "Карта глубины (Z-Depth)", "Extract 16-bit depth pass for IC-LoRA and Z-Merge compositing."],
-                        ["chk-dec-canny", "pass_canny", "Canny / Lineart Edges", "Контур (Canny / Lineart)", "Extract structural edge pass for geometry preservation."],
-                        ["chk-dec-pose", "pass_pose", "DWPose Skeleton", "Скелет и Позы (DWPose)", "Extract 3D body/hand/face keypoints for character replacement."]
-                    ].map(([id, key, lEn, lRu, dEn]) => `
-                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding: 2px 0; font-size:10.5px;">
-                            <input type="checkbox" id="${id}" data-key="${key}" ${deconstructChecks[key] ? "checked" : ""} />
-                            <span>${uiText(lEn, lRu)}</span>
-                        </label>
-                    `).join("")}
-
-                    <button class="vfx-btn" id="btn-run-deconstruct"
-                        ${tipAttr("Extract and Route Selected Passes", "Извлечь и отправить выбранные пассы в деконструкцию")}
-                        style="margin-top: 4px; padding: 5px; font-size:10.5px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);">
-                        ${uiText("Run Extractors & Add to Hub", "Запустить экстракторы и добавить в выходы")}
-                    </button>
-                </div>
             `;
 
             // Wire Row Events
