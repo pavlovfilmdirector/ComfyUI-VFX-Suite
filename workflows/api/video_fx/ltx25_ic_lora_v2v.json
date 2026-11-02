@@ -169,12 +169,12 @@
   "inputs": {
    "merge_method": "add",
    "audio1": [
-    "5548:9006",
-    1
-   ],
-   "audio2": [
     "5548:9011",
     0
+   ],
+   "audio2": [
+    "5548:9006",
+    1
    ]
   },
   "class_type": "AudioMerge",
