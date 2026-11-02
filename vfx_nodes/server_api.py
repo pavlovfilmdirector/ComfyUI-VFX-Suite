@@ -8284,6 +8284,42 @@ def register_server_routes():
 
 
 
+        @routes.post("/vfx/scene_camera_matrices")
+        async def vfx_scene_camera_matrices(request):
+            """The tracked shot camera edited in the 3D studio -> passes/scene_data.json (original kept once as .orig)."""
+            try:
+                data = await request.json()
+                pid = _sanitize_id(str(data.get("project_id") or ""))
+                mats = data.get("matrices")
+                if not pid or not isinstance(mats, list) or not mats:
+                    raise ValueError("project_id and matrices are required")
+                for r in mats:
+                    if not (isinstance(r, list) and len(r) == 4 and all(isinstance(row, list) and len(row) == 4 for row in r)):
+                        raise ValueError("each matrix must be 4x4")
+                p_scene = os.path.join(get_project_dir(pid), "passes", "scene_data.json")
+                if not os.path.isfile(p_scene):
+                    raise FileNotFoundError("scene_data.json not found")
+                def _write():
+                    with open(p_scene, "r", encoding="utf-8") as f:
+                        sd = json.load(f)
+                    cam = sd.get("camera") or {}
+                    old = cam.get("matrices") or []
+                    if len(old) != len(mats):
+                        raise ValueError(f"frame count differs ({len(mats)} vs {len(old)})")
+                    orig = p_scene[:-5] + ".orig.json"
+                    if not os.path.exists(orig):
+                        shutil.copyfile(p_scene, orig)
+                    cam["matrices"] = [[[float(v) for v in row] for row in r] for r in mats]
+                    sd["camera"] = cam
+                    tmp = p_scene + ".tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(sd, f)
+                    os.replace(tmp, p_scene)
+                await asyncio.to_thread(_write)
+                return add_cors_headers(web.json_response({"ok": True}))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
         @routes.post("/vfx/video/{project_id}/{video_id}/import_media")
         async def vfx_video_import_media(request):
             import importlib

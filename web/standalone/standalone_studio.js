@@ -4255,6 +4255,18 @@ let lastMonitorRenderTime = 0;
 
     let lastInspectorThrottleTs = 0;
     let wholeAnimDrag = null;
+    // edits of the tracked shot camera (one frame or the whole path) are written back to the project's scene file
+    let persistTrackTimer = null;
+    function persistTrackedCamera() {
+        const pid = (window.currentProject && window.currentProject.id) || "";
+        if (!pid || !cameraMatrices || !cameraMatrices.length) return;
+        if (window.__vfxSceneOwner && window.__vfxSceneOwner !== pid) return;
+        clearTimeout(persistTrackTimer);
+        persistTrackTimer = setTimeout(() => {
+            fetch("/vfx/scene_camera_matrices", { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ project_id: pid, matrices: cameraMatrices }) }).catch(() => {});
+        }, 400);
+    }
     // shift every key by the same move / turn / scale the gizmo applied to the object (pivot = where the object started)
     function applyWholeAnimDrag() {
         const d = wholeAnimDrag;
@@ -4266,6 +4278,19 @@ let lastMonitorRenderTime = 0;
             d.scale.y ? obj.scale.y / d.scale.y : 1,
             d.scale.z ? obj.scale.z / d.scale.z : 1);
         const dp = obj.position.clone().sub(d.pos);
+        if (d.track) {
+            const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+            for (let i = 0; i < d.track.length && i < cameraMatrices.length; i++) {
+                const r = d.track[i]; if (!r) continue;
+                m.set(r[0][0], r[0][1], r[0][2], r[0][3], r[1][0], r[1][1], r[1][2], r[1][3], r[2][0], r[2][1], r[2][2], r[2][3], r[3][0], r[3][1], r[3][2], r[3][3]);
+                m.decompose(p, q, sc);
+                p.sub(d.pos).applyQuaternion(dq).add(d.pos).add(dp);
+                q.premultiply(dq);
+                m.compose(p, q, sc);
+                const e = m.elements;
+                cameraMatrices[i] = [[e[0], e[4], e[8], e[12]], [e[1], e[5], e[9], e[13]], [e[2], e[6], e[10], e[14]], [0, 0, 0, 1]];
+            }
+        }
         for (const it of d.keys) {
             it.k.position.copy(it.pos).sub(d.pos).applyQuaternion(dq).add(d.pos).add(dp);
             it.k.quaternion.copy(dq).multiply(it.quat);
@@ -4302,7 +4327,11 @@ let lastMonitorRenderTime = 0;
             }
             // container mode: remember where the object and every key started, so the drag can carry the whole animation
             wholeAnimDrag = null;
-            if (targetObj && window.__vfxMoveWholeAnim && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length > 0 && !targetObj.userData.isBaked) {
+            if (targetObj === shotCamera && window.__vfxMoveWholeAnim && cameraMatrices && cameraMatrices.length > 1) {
+                // tracked shot camera: its path is the per-frame track, carry all of it
+                wholeAnimDrag = { obj: targetObj, pos: targetObj.position.clone(), quat: targetObj.quaternion.clone(), scale: targetObj.scale.clone(),
+                    keys: [], track: cameraMatrices.map(r => r.map(row => row.slice())) };
+            } else if (targetObj && window.__vfxMoveWholeAnim && Array.isArray(targetObj.userData?.keyframes) && targetObj.userData.keyframes.length > 0 && !targetObj.userData.isBaked) {
                 wholeAnimDrag = {
                     obj: targetObj,
                     pos: targetObj.position.clone(),
@@ -4313,9 +4342,11 @@ let lastMonitorRenderTime = 0;
             }
         } else {
             const targetObj = transformControls.object;
+            if (targetObj === shotCamera && cameraMatrices && cameraMatrices.length) persistTrackedCamera();
             if (wholeAnimDrag && wholeAnimDrag.obj === targetObj) {
                 applyWholeAnimDrag();
                 wholeAnimDrag = null;
+                if (targetObj === shotCamera) persistTrackedCamera();
                 buildCameraTrajectoryPath();
                 evaluateAnimation();
                 updateKeyframeMarkers();
@@ -10220,6 +10251,7 @@ let lastMonitorRenderTime = 0;
             manifest: JSON.parse(JSON.stringify(exportManifest())),
             lidarDeleted: !!isLidarDeleted,
             trackedCamera: (cameraMatrices && cameraMatrices.length) ? true : false,
+            trackMatrices: (cameraMatrices && cameraMatrices.length) ? cameraMatrices.map(r => r.map(row => row.slice())) : null,
             shotCamera: {
                 position: [shotCamera.position.x, shotCamera.position.y, shotCamera.position.z],
                 quaternion: [shotCamera.quaternion.x, shotCamera.quaternion.y, shotCamera.quaternion.z, shotCamera.quaternion.w],
@@ -10313,6 +10345,12 @@ let lastMonitorRenderTime = 0;
                 }
                 applyCameraOptics(shotCamera, false);
                 updateCameraFrustumHelper(shotCamera);
+            }
+            // 2b. tracked camera path (moving the shot camera edits it)
+            if (Array.isArray(snap.trackMatrices) && cameraMatrices && cameraMatrices.length === snap.trackMatrices.length) {
+                cameraMatrices = snap.trackMatrices.map(r => r.map(row => row.slice()));
+                try { updateShotCameraPose(Math.min(currentFrame, cameraMatrices.length - 1)); } catch (_) {}
+                persistTrackedCamera();
             }
             // 3. Restore timelineContextEvents
             if (Array.isArray(snap.timelineContextEvents) && typeof timelineContextEvents !== "undefined") {
