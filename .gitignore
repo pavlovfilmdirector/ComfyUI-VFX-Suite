@@ -24,7 +24,6 @@ tools/DLSS-Enhancer/
 
 # Machine-specific paths written by install.py
 keshiki_local.json
-install_log.txt
 
 # dubbing working data / models
 dubbing/input/
@@ -62,3 +61,5 @@ workflows/LTX-2.5/LTX-2.3_-_V2V_inpainting_*.json
 tests/_*
 user_tools/
 docs/_ru_in_en_ui_backlog.txt
+tools/_downloads/
+install_log.txt

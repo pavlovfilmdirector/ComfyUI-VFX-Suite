@@ -276,6 +276,14 @@ def main():
     say("KESHIKI VFX Studio - installer")
     say(f"Python: {sys.executable} ({platform.python_version()})")
     comfy = find_comfy(a.comfy)
+    while not comfy and sys.stdin and sys.stdin.isatty():
+        say("ComfyUI was not found next to this folder.")
+        ans = input("Paste the ComfyUI folder (the one that has main.py), or press Enter to stop: ").strip().strip('"')
+        if not ans:
+            break
+        comfy = find_comfy(ans)
+        if not comfy:
+            say(f"  {ans} has no main.py / custom_nodes - try again.")
     if not comfy:
         say("ComfyUI not found. Put this folder into ComfyUI/custom_nodes or pass --comfy <ComfyUI folder>.")
         return 2

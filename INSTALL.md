@@ -2,12 +2,100 @@
 
 KESHIKI is a ComfyUI custom node pack with its own studio UI. It runs fully locally.
 
+New to the command line? Follow **Step by step** below. На русском: [INSTALL_RU.md](INSTALL_RU.md).
+
 ## Requirements
 
 - Windows 10/11 with an NVIDIA GPU (developed on an RTX 3090 Ti, 24 GB). 16 GB VRAM is the practical minimum for LTX-2.5.
 - A working ComfyUI (portable, desktop or a git install) on a recent version.
 - [Git](https://git-scm.com/) (the installer uses it to fetch the node packs below).
 - Optional: [Ollama](https://ollama.com/) for the AI Director chat (any local chat model, e.g. `ollama pull qwen3:8b`).
+
+## Step by step (no command-line experience needed)
+
+If you have never used a command line, follow this part only. Every command below is copied and pasted as is.
+
+### 1. Check that you have
+
+- **ComfyUI that already starts and works.** Find its folder: it is the one that contains `main.py` and a
+  `custom_nodes` folder. For the portable build it is `ComfyUI_windows_portable\ComfyUI`.
+- **Git.** Install it from [git-scm.com](https://git-scm.com/download/win) with the default options.
+  To check: open a command window (see step 2) and type `git --version` - it must print a version, not an error.
+
+### 2. Open a command window in the right folder
+
+1. Open the `custom_nodes` folder of your ComfyUI in Explorer.
+2. Click the address bar at the top of the window (where the path is shown), erase the path, type `cmd` and press **Enter**.
+3. A black window opens; its prompt ends with that folder, e.g. `D:\ComfyUI\custom_nodes>`.
+
+### 3. Download KESHIKI
+
+Paste this into the black window and press **Enter**:
+
+```
+git clone https://github.com/pavlovfilmdirector/ComfyUI-VFX-Suite.git
+```
+
+A new folder `ComfyUI-VFX-Suite` appears inside `custom_nodes`.
+
+### 4. Run the installer
+
+**ComfyUI portable:** open `custom_nodes\ComfyUI-VFX-Suite` and double-click `install.bat`. It finds the portable
+Python by itself. Wait until it prints `Done.` and press any key.
+
+**ComfyUI with its own Python (conda, venv, StabilityMatrix, a git install):** the installer must use the same
+Python that starts your ComfyUI. Typical places of that `python.exe`:
+
+| how ComfyUI was installed | python.exe |
+|---|---|
+| conda environment | `<miniconda folder>\envs\<environment name>\python.exe` |
+| venv next to ComfyUI | `<ComfyUI folder>\venv\Scripts\python.exe` |
+| StabilityMatrix | `<StabilityMatrix folder>\Data\Packages\ComfyUI\venv\Scripts\python.exe` |
+
+Not sure? Open the `.bat` file you start ComfyUI with in Notepad: it names the Python or the conda environment.
+
+Double-click `install.bat`. It asks `Path to python.exe:` - paste the full path from the table and press **Enter**.
+If it also asks for the ComfyUI folder (when KESHIKI is not inside `custom_nodes`), paste the folder that has `main.py`.
+
+The same with commands, for a conda environment (replace the paths with yours):
+
+```
+call D:\miniconda3\Scripts\activate.bat D:\miniconda3\envs\comfy
+cd /d D:\ComfyUI\custom_nodes\ComfyUI-VFX-Suite
+python install.py --comfy D:\ComfyUI --check
+python install.py --comfy D:\ComfyUI
+```
+
+`--check` only reports what is installed and changes nothing - a safe first look.
+
+**What the installer prints:** `ok` - already there; `+` - installed now; `MISSING` - still needed (the line says
+what to do). It also writes `keshiki_local.json` with your ComfyUI and Python paths, so the next steps need no questions.
+Everything it printed is saved in `install_log.txt`.
+
+### 5. Models
+
+Start the studio (step 6). On the first start a **model setup window** opens and lists what is found and what is missing:
+
+- **Already have the models** (another ComfyUI, a shared drive): choose to link a folder and pick the folder that
+  contains `checkpoints`, `loras`, `vae` and so on. Nothing is copied.
+- **Need them:** download from the window, or run `install.bat --download-models core` (~40 GB, see the table below).
+
+The window can be opened again later from the models manager.
+
+### 6. Start
+
+Double-click `run_keshiki_studio.bat` in the `ComfyUI-VFX-Suite` folder. It starts ComfyUI and opens the studio window.
+You can also start ComfyUI the usual way and open **http://127.0.0.1:8188/vfx/studio/** in the browser.
+
+### 7. If something goes wrong
+
+| message | what to do |
+|---|---|
+| `'git' is not recognized` | Git is not installed or the window was opened before installing it: install Git, close and reopen the window. |
+| `'python' is not recognized` | Use the full path to `python.exe` (step 4) instead of `python`. |
+| `ComfyUI not found` | Paste the ComfyUI folder when asked, or add `--comfy <ComfyUI folder>`. |
+| a red error in the black window | Take a screenshot and send it together with `install_log.txt` (in the `ComfyUI-VFX-Suite` folder). |
+
 
 ## Installation Modes
 
