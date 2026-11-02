@@ -410,3 +410,24 @@ def test_place_in_frame_keeps_original_size(vl):
     out = vl._place_in_frame(stretched, (40, 100), (200, 120))
     ys, xs = np.nonzero(out[..., 3])
     assert xs.max() - xs.min() + 1 == 40
+
+
+def test_import_media_as_layer_keeps_size(tmp_path, monkeypatch):
+    import cv2, numpy as np
+    from vfx_nodes import video_layers_service as vls
+    monkeypatch.setattr(vls, "PROJECTS_ROOT", str(tmp_path), raising=False)
+    img = np.full((200, 100, 3), 255, np.uint8)            # a vertical picture
+    p = tmp_path / "pic.png"; cv2.imwrite(str(p), img)
+    monkeypatch.setattr(vls, "resolve_media_path", lambda u: str(p))
+    monkeypatch.setattr(vls, "ensure_plate_registered", lambda *a, **k: None)
+    monkeypatch.setattr(vls.pps, "get_info", lambda *a, **k: {})
+    store = {"layers": []}
+    monkeypatch.setattr(vls, "load_manifest", lambda pid, vid: store)
+    monkeypatch.setattr(vls, "save_manifest", lambda pid, vid, m: store.update(m))
+    monkeypatch.setattr(vls, "_add_layer", lambda pid, vid, t, n, extra=None, **k: (store["layers"].append({"id": "vl_x", "type": t, "name": n}) or store["layers"][-1]))
+    out = tmp_path / "L"; monkeypatch.setattr(vls, "_layer_dir", lambda pid, vid, lid: str(out))
+    r = vls.import_media_as_layer("p", "v", "/vfx/project_file/p/pic.png", "", [400, 200], 0, 3)
+    assert r["frames"] == 3
+    fr = cv2.imread(str(out / "frame_0002.png"), cv2.IMREAD_UNCHANGED)
+    assert fr.shape == (200, 400, 4)
+    assert fr[100, 200, 3] == 255 and fr[100, 10, 3] == 0   # centred at original size, transparent around

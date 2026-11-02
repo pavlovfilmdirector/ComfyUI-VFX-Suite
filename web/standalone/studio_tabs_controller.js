@@ -43020,7 +43020,7 @@ async function openNarrationEditor() {
 
                 ${(masks.length || hasManual) ? `<select id="cp-mask" style="width: 100%; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">${masks.map(l => `<option value="${l.id}" ${vlState2D.selected === l.id ? "selected" : ""}>${esc(l.name || l.id)}</option>`).join("")}${hasManual ? `<option value="__manual__">${uiText("Hand-drawn mask", "Ручная маска")}</option>` : ""}</select>`
 
-                    : `<div style="color: #fbbf24;">${uiText("No mask yet: draw one with the mask brush or use SAM 3.1 (mask by text)", "Маски нет: нарисуйте её кистью маски или сделайте SAM 3.1 (маска по тексту)")}</div>`}
+                    : `<div style="color: #fbbf24;">${uiText("No mask yet: draw one with the mask brush or use SAM 3.1 (mask by text). To just put another shot in, use the «Add as a layer» button below.", "Маски нет: нарисуйте её кистью маски или сделайте SAM 3.1 (маска по тексту). Чтобы просто вставить другой шот — кнопка «Добавить слоем» внизу.")}</div>`}
 
                 <div>${uiText("Background", "Фон")}</div>${src("cp-bg", lastRgb)}
 
@@ -43034,7 +43034,35 @@ async function openNarrationEditor() {
 
                 <input id="cp-prompt" placeholder="${uiText("Scene description for the refine pass", "Описание сцены для рефайна")}" style="background: #0f0f11; color: #e2e8f0; border: 1px solid #333; border-radius: 4px; font-size: 10px; padding: 3px 6px;">
 
-                <button class="vfx-btn vfx-btn-primary" id="cp-go" style="padding: 4px;" ${(masks.length || hasManual) ? "" : "disabled"}>${uiText("Composite", "Свести")}</button>`, 300);
+                <button class="vfx-btn vfx-btn-primary" id="cp-go" style="padding: 4px;" ${(masks.length || hasManual) ? "" : "disabled"}>${uiText("Composite", "Свести")}</button>
+                <button class="vfx-btn" id="cp-add" style="padding: 4px;" disabled ${tipAttr("Put the chosen video / picture into this video as its own layer (original size, no stretching) — then move it, mask it or composite it", "Положить выбранное видео / картинку в это видео отдельным слоем (в исходном размере, без растяжения) — дальше его можно двигать, маскировать или сводить")}>${uiText("Add «Subject from» as a layer", "Добавить «Объект из» слоем")}</button>`, 300);
+            const addBtn = pop.querySelector("#cp-add");
+            const syncAdd = () => { addBtn.disabled = !String(pop.querySelector("#cp-fg").value || "").startsWith("/vfx/project_file/"); };
+            pop.querySelector("#cp-fg").addEventListener("change", () => setTimeout(syncAdd, 0));
+            const addTimer = setInterval(() => { if (pop.isConnected) syncAdd(); else clearInterval(addTimer); }, 400);
+            syncAdd();
+            addBtn.onclick = async () => {
+                const sel = pop.querySelector("#cp-fg");
+                const url = sel.value, label = (sel.options[sel.selectedIndex]?.textContent || "").replace(/^🖼\s*/, "").trim();
+                pop.remove();
+                const ve = wrapper.querySelector("#vfx-2d-html5-video") || wrapper.querySelector("#vfx-2d-seq-img");
+                const pOk = !!vlState2D.plate?.total_frames;
+                const dst = [(pOk && vlState2D.plate.width) || ve?.videoWidth || ve?.naturalWidth || vidObj.width || 1920,
+                    (pOk && vlState2D.plate.height) || ve?.videoHeight || ve?.naturalHeight || vidObj.height || 1080];
+                const nF = pOk ? 0 : (parseInt(vidObj.total_frames || vidObj.totalFrames, 10) || (ve && ve.duration ? Math.round(ve.duration * (vidObj.fps || 24)) : 0) || 0);
+                showToastNotification(uiText("Adding as a layer…", "Добавляю слоем…"));
+                const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_media`, { method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url, name: label, dst_size: dst, max_frames: nF }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                if (r.error) {
+                    showToastNotification(/404|not found/i.test(r.error) ? uiText("Restart ComfyUI once to enable this", "Перезапусти ComfyUI один раз, чтобы это заработало") : `${uiText("Add layer", "Добавить слой")}: ${r.error}`, true);
+                    return;
+                }
+                await refreshVideoState2D();
+                if (r.layer) { vlState2D.selected = r.layer.id; vlState2D.selLayerIds = [r.layer.id]; }
+                renderVideoLayersPanel2D(); updateVideoOverlays2D();
+                if (typeof render2DTimelineTrack === "function") render2DTimelineTrack();
+                showToastNotification(uiText(`Added as layer «${r.layer?.name || label}» (${r.frames} frames)`, `Добавлено слоем «${r.layer?.name || label}» (${r.frames} кадров)`));
+            };
 
             ["#cp-fg", "#cp-bg"].forEach(id => {
                 const selEl = pop.querySelector(id);

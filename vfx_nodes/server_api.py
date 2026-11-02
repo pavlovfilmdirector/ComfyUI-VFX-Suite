@@ -8284,6 +8284,21 @@ def register_server_routes():
 
 
 
+        @routes.post("/vfx/video/{project_id}/{video_id}/import_media")
+        async def vfx_video_import_media(request):
+            import importlib
+            from . import video_layers_service as _vls
+            importlib.reload(_vls)
+            pid = _sanitize_id(request.match_info["project_id"])
+            try:
+                data = await request.json()
+                res = await asyncio.to_thread(_vls.import_media_as_layer, pid, request.match_info["video_id"],
+                                              str(data.get("url") or ""), str(data.get("name") or ""), data.get("dst_size"),
+                                              int(data.get("start") or 0), int(data.get("max_frames") or 0))
+                return add_cors_headers(web.json_response(res))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"error": str(e)}, status=400))
+
         @routes.post("/vfx/video/{project_id}/{video_id}/layer_frames")
 
         async def vfx_video_layer_frames(request):

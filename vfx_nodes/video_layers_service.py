@@ -936,6 +936,71 @@ def import_layer_from_video(pid: str, target_vid: str, src_vid: str, src_lid: st
     return new_layer
 
 
+def import_media_as_layer(pid: str, vid: str, url: str, name: str = "", dst_size=None,
+                          start: int = 0, max_frames: int = 0) -> Dict[str, Any]:
+    """A project video (frame by frame) or a gallery picture -> a new rgb layer of this video, at its original size
+    (centred, transparent around, scaled down only if it does not fit), so it can be moved / masked / composited."""
+    path = resolve_media_path(url)
+    if not path or not os.path.isfile(path):
+        raise ProcessError("Media file not found")
+    ensure_plate_registered(pid, vid)
+    inf = pps.get_info(node_id_for(vid)) or {}
+    if inf.get("total_frames"):
+        tw, th, total = int(inf.get("width") or 0), int(inf.get("height") or 0), int(inf["total_frames"])
+    else:
+        tw, th = (int(dst_size[0]), int(dst_size[1])) if dst_size else (1920, 1080)
+        total = int(max_frames or 0) or 1
+    if max_frames:
+        total = min(total, int(max_frames)) if inf.get("total_frames") else int(max_frames)
+    start = max(0, int(start or 0))
+    is_img = os.path.splitext(path)[1].lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
+    title = name or os.path.splitext(os.path.basename(path))[0]
+    layer = _add_layer(pid, vid, "rgb", title[:80], extra={"source": "import", "media": url, "transparentBg": True})
+    out_dir = _layer_dir(pid, vid, layer["id"])
+    os.makedirs(out_dir, exist_ok=True)
+    png = [int(cv2.IMWRITE_PNG_COMPRESSION), 1]
+
+    def place(img):
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
+        elif img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+        h, w = img.shape[:2]
+        out = _place_in_frame(img, (w, h), (tw, th))
+        return img if out is None else out
+
+    n = 0
+    if is_img:
+        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            raise ProcessError("Cannot read the image")
+        fr = place(img)
+        for i in range(start, total):
+            cv2.imwrite(os.path.join(out_dir, f"frame_{i:04d}.png"), fr, png)
+            n += 1
+    else:
+        cap = cv2.VideoCapture(path)
+        i = start
+        while i < total:
+            ok, img = cap.read()
+            if not ok:
+                break
+            cv2.imwrite(os.path.join(out_dir, f"frame_{i:04d}.png"), place(img), png)
+            i += 1
+            n += 1
+        cap.release()
+        if not n:
+            raise ProcessError("Cannot read the video")
+    man = load_manifest(pid, vid)
+    for lay in man.get("layers", []):
+        if lay.get("id") == layer["id"]:
+            lay["frames"] = start + n
+            lay["visible"] = True
+            layer = lay
+    save_manifest(pid, vid, man)
+    return {"layer": layer, "frames": n}
+
+
 def _place_in_frame(img: np.ndarray, src_size, dst_size) -> Optional[np.ndarray]:
     """A layer frame of one video put into another video's frame at its original size (centred, transparent around;
     scaled down only if it does not fit) - a vertical layer pasted into a horizontal video is not stretched.
