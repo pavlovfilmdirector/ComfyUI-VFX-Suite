@@ -43052,9 +43052,11 @@ async function openNarrationEditor() {
                 const nF = pOk ? 0 : (parseInt(vidObj.total_frames || vidObj.totalFrames, 10) || (ve && ve.duration ? Math.round(ve.duration * (vidObj.fps || 24)) : 0) || 0);
                 showToastNotification(uiText("Adding as a layer…", "Добавляю слоем…"));
                 const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_media`, { method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ url, name: label, dst_size: dst, max_frames: nF }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                    body: JSON.stringify({ url, name: label, dst_size: dst, max_frames: nF }) })
+                    .then(async x => { if (x.status === 404 || x.status === 405) return { error: "__no_route__" }; const t = await x.text(); try { return JSON.parse(t); } catch (_) { return { error: t.slice(0, 120) }; } })
+                    .catch(err => ({ error: err.message }));
                 if (r.error) {
-                    showToastNotification(/404|not found/i.test(r.error) ? uiText("Restart ComfyUI once to enable this", "Перезапусти ComfyUI один раз, чтобы это заработало") : `${uiText("Add layer", "Добавить слой")}: ${r.error}`, true);
+                    showToastNotification(r.error === "__no_route__" ? uiText("Restart ComfyUI once to enable this", "Перезапусти ComfyUI один раз, чтобы это заработало") : `${uiText("Add layer", "Добавить слой")}: ${r.error}`, true);
                     return;
                 }
                 await refreshVideoState2D();
