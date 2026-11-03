@@ -3805,7 +3805,48 @@ let lastMonitorRenderTime = 0;
         }
     });
 
+    // right-click (a click, not a drag - RMB drag is the fly look) on the viewport: an edit menu for the selection
+    let rmbDownAt = null;
+    renderer.domElement.addEventListener("pointerdown", (e) => { if (e.button === 2) rmbDownAt = { x: e.clientX, y: e.clientY, t: Date.now() }; }, true);
+    function openViewportMenu3D(x, y) {
+        document.querySelectorAll(".vfx-3d-ctx").forEach(m => m.remove());
+        const m = document.createElement("div");
+        m.className = "vfx-3d-ctx";
+        m.style.cssText = `position: fixed; left: ${x}px; top: ${y}px; z-index: 100006; background: #16161b; border: 1px solid #3f3f46; border-radius: 6px; padding: 3px; display: flex; flex-direction: column; min-width: 190px; font-size: 11px; box-shadow: 0 10px 28px rgba(0,0,0,.65);`;
+        const has = !!selectedObject;
+        const clip = window.__vfxXformClip || {};
+        const item = (label, key, fn, dis) => {
+            const b = document.createElement("button");
+            b.className = "vfx-btn";
+            b.innerHTML = `<span>${label}</span><span style="opacity:.45; font-family: monospace;">${key || ""}</span>`;
+            b.disabled = !!dis;
+            b.style.cssText = `display: flex; justify-content: space-between; gap: 14px; text-align: left; padding: 5px 9px; background: transparent; border: none; ${dis ? "opacity: .35;" : ""}`;
+            b.onclick = () => { m.remove(); try { fn(); } catch (err) { logMsg(`menu: ${err.message}`); } };
+            m.appendChild(b);
+        };
+        if (!has) {
+            const d = document.createElement("div"); d.style.cssText = "padding: 5px 9px; opacity: .55;";
+            d.textContent = uiText("Select an object first (left click)", "Сначала выделите объект (левый клик)"); m.appendChild(d);
+        }
+        item(uiText("Duplicate", "Дублировать"), "Ctrl+D", () => duplicateSelectedObject(), !has || selectedObject === shotCamera);
+        item(uiText("Copy transform", "Копировать трансформ"), "Ctrl+Shift+C", () => window.__vfx3DCopyXform(), !has);
+        item(uiText("Paste transform", "Вставить трансформ"), "Ctrl+Shift+V", () => window.__vfx3DPasteXform(), !has || !(clip.pos || clip.rot || clip.scl));
+        item(uiText("Paste location only", "Вставить только позицию"), "", () => window.__vfx3DPasteXform(["pos"]), !has || !clip.pos);
+        item(uiText("Paste rotation only", "Вставить только поворот"), "", () => window.__vfx3DPasteXform(["rot"]), !has || !clip.rot);
+        item(uiText("Delete", "Удалить"), "Del", () => deleteSelectedObjects(), !has);
+        document.body.appendChild(m);
+        const r = m.getBoundingClientRect();
+        if (r.bottom > window.innerHeight) m.style.top = `${Math.max(4, y - r.height)}px`;
+        if (r.right > window.innerWidth) m.style.left = `${Math.max(4, x - r.width)}px`;
+        setTimeout(() => document.addEventListener("mousedown", function close(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", close, true); } }, true), 0);
+    }
     window.addEventListener("pointerup", (e) => {
+        if (e.button === 2 && rmbDownAt) {
+            const moved = Math.hypot(e.clientX - rmbDownAt.x, e.clientY - rmbDownAt.y);
+            const quick = Date.now() - rmbDownAt.t < 450;
+            rmbDownAt = null;
+            if (moved < 5 && quick && e.target === renderer.domElement) openViewportMenu3D(e.clientX, e.clientY);
+        }
         if (e.button === 2) {
             isRmbHeld = false;
             wasdKeys.forward = wasdKeys.backward = wasdKeys.left = wasdKeys.right = wasdKeys.up = wasdKeys.down = wasdKeys.boost = false;
