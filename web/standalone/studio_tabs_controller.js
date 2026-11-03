@@ -44656,7 +44656,7 @@ async function openNarrationEditor() {
                         {
                             // a whole scene prompt pasted into the character field breaks the template (positions are lost)
                             const dv = descEl.value.toLowerCase();
-                            const sceneWords = (dv.match(/\b(bench|tree|statue|park|lawn|sky|grass|building|street|room|скамейк|дерев|стату|парк|газон|небо|трав|улиц|комнат)/g) || []).length;
+                            const sceneWords = (dv.match(/(bench|tree|statue|park|lawn|sky|grass|building|street|room|скамейк|дерев|стату|парк|газон|небо|трав|улиц|комнат)/g) || []).length;
                             if (dv.length > 260 && sceneWords >= 2) showToastNotification(uiText("The character field looks like a whole scene description: put the objects in «What the 3D shapes become», keep only the character here", "В поле персонажа похоже описание всей сцены: предметы перенесите в строку «Во что превратить 3D-примитивы», здесь оставьте только персонажа"), true);
                         }
 
