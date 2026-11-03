@@ -138,6 +138,8 @@ def _dancers_text(d: Optional[Dict[str, Any]]) -> str:
 
 def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any]) -> Dict[str, Any]:
     v = _vls()
+    if p.get("steps"):
+        return run_free_plan(job_id, pid, vid, p)
     t_start = time.time()
     info = v.pps.get_info(v.node_id_for(vid)) or {}
     variants = [x for x in (p.get("variants") or []) if x in FIRST_FRAME_TEXT]
@@ -319,3 +321,185 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         _log(job_id, steps, i, "done", lay.get("name") or "")
     v._job_update(job_id, steps=[dict(s) for s in steps])
     return out
+
+
+# --------------------------------------------------------------------------------------------- #
+# Free plans: any chain of studio jobs the agent writes itself.                                  #
+#   steps: [{"id": "s1", "kind": "text_mask", "params": {"text": "person"}, "title": "..."},       #
+#           {"id": "s2", "kind": "track_camera", "params": {"mask_layers": ["$s1.layer"]}}, ...]  #
+#   "$s1.layer" = the layer id a step made, "$s1.image" = the still it made (url).                 #
+# Extra kinds besides the video jobs: image_edit (FLUX edit of a plate frame / image),            #
+# wait_3d_pose (wait for a Pose to Gen layer from 3D), merge_pose (several pose layers -> one).   #
+# --------------------------------------------------------------------------------------------- #
+PSEUDO_KINDS = {"image_edit", "wait_3d_pose", "merge_pose"}
+KNOWN_KINDS = ("prepare", "depth", "normal", "canny", "pose", "detect_all", "track_object", "corridor_key", "undistort", "redistort",
+               "track_camera", "ltx_alpha", "ltx_ic_lora", "fill", "render", "video_cutout", "layer_to_video", "mask_grow",
+               "merge_masks", "first_frame", "text_mask", "composite", "relight_frame", "montage")
+NO_PLAN_KINDS = {"shot_task", "montage"}
+REF_RX = __import__("re").compile(r"^\$(\w+)\.(layer|image|video)$")
+
+
+def job_kinds() -> List[str]:
+    import inspect
+    import re
+    try:
+        found = set(re.findall(r'"(\w+)":\s*_job_', inspect.getsource(_vls().start_job)))
+    except Exception:
+        found = set()
+    return sorted((found or set(KNOWN_KINDS)) | {"pose_cleanup", "layout_cleanup"})
+
+
+def validate_plan(steps: Any) -> List[str]:
+    """Problems a model's plan has (empty = runnable). Shown back to the model so it can fix the plan."""
+    errs: List[str] = []
+    if not isinstance(steps, list) or not steps:
+        return ["steps must be a non-empty list"]
+    if len(steps) > 25:
+        errs.append("at most 25 steps")
+    kinds = set(job_kinds()) | PSEUDO_KINDS
+    seen: List[str] = []
+    for n, st in enumerate(steps, 1):
+        if not isinstance(st, dict):
+            errs.append(f"step {n}: must be an object")
+            continue
+        sid = str(st.get("id") or f"s{n}")
+        k = st.get("kind")
+        if k not in kinds or k in NO_PLAN_KINDS:
+            errs.append(f"step {sid}: unknown kind '{k}' (allowed: {', '.join(sorted(kinds - NO_PLAN_KINDS))})")
+        prm = st.get("params") or {}
+        if not isinstance(prm, dict):
+            errs.append(f"step {sid}: params must be an object")
+            prm = {}
+
+        def walk(x):
+            if isinstance(x, str) and x.startswith("$"):
+                m = REF_RX.match(x)
+                if not m:
+                    errs.append(f"step {sid}: bad reference '{x}' (use $<step id>.layer or $<step id>.image)")
+                elif m.group(1) not in seen:
+                    errs.append(f"step {sid}: '{x}' points to a step that has not run before it")
+            elif isinstance(x, list):
+                for y in x:
+                    walk(y)
+            elif isinstance(x, dict):
+                for y in x.values():
+                    walk(y)
+        walk(prm)
+        if k == "ltx_ic_lora" and not prm.get("lora"):
+            errs.append(f"step {sid}: ltx_ic_lora needs params.lora")
+        if k == "text_mask" and not prm.get("text"):
+            errs.append(f"step {sid}: text_mask needs params.text (English object name)")
+        if k == "image_edit" and not prm.get("prompt"):
+            errs.append(f"step {sid}: image_edit needs params.prompt")
+        seen.append(sid)
+    return errs
+
+
+def _resolve(x, results: Dict[str, Dict[str, Any]]):
+    if isinstance(x, str):
+        m = REF_RX.match(x)
+        if m:
+            r = results.get(m.group(1)) or {}
+            val = r.get(m.group(2))
+            if val is None:
+                raise _vls().ProcessError(f"{x}: that step made no {m.group(2)}")
+            return val
+        return x
+    if isinstance(x, list):
+        return [_resolve(y, results) for y in x]
+    if isinstance(x, dict):
+        return {k: _resolve(y, results) for k, y in x.items()}
+    return x
+
+
+def _norm_result(kind: str, r: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    lay = r.get("layer")
+    if isinstance(lay, dict) and lay.get("id"):
+        out["layer"] = lay["id"]
+    img = r.get("image")
+    if isinstance(img, dict) and img.get("url"):
+        out["image"] = img["url"]
+    elif isinstance(img, str):
+        out["image"] = img
+    if r.get("video_url") or r.get("url"):
+        out["video"] = r.get("video_url") or r.get("url")
+    return out
+
+
+def run_free_plan(job_id: str, pid: str, vid: str, p: Dict[str, Any]) -> Dict[str, Any]:
+    v = _vls()
+    raw = p.get("steps") or []
+    errs = validate_plan(raw)
+    if errs:
+        raise v.ProcessError("Plan is not runnable: " + "; ".join(errs[:6]))
+    t_start = time.time()
+    steps = [{"key": str(s.get("id") or f"s{n}"), "title": str(s.get("title") or s["kind"]), "status": "todo", "kind": s["kind"]}
+             for n, s in enumerate(raw, 1)]
+    v._job_update(job_id, steps=[dict(s) for s in steps], plan=p)
+    results: Dict[str, Dict[str, Any]] = {}
+    info = v.pps.get_info(v.node_id_for(vid)) or {}
+    for i, st in enumerate(raw):
+        sid = steps[i]["key"]
+        k = st["kind"]
+        prm = _resolve(st.get("params") or {}, results)
+        _log(job_id, steps, i, "running")
+        if k != "prepare" and not info.get("total_frames"):
+            _run_child(job_id, "prepare", pid, vid, {"url": p.get("video_url", "")}, steps, i)
+            info = v.pps.get_info(v.node_id_for(vid)) or {}
+        if k == "image_edit":
+            try:
+                from .image_generate_service import run_image_generate
+            except ImportError:  # pragma: no cover
+                from image_generate_service import run_image_generate
+            import base64
+            if prm.get("image"):
+                path = v.resolve_media_path(str(prm["image"]))
+                src = cv2.imread(path, cv2.IMREAD_COLOR)
+            else:
+                src = v._layer_frame_bgr(pid, vid, str(prm.get("layer") or "plate_raw"), int(prm.get("frame", 0) or 0))
+            if src is None:
+                raise v.ProcessError(f"{sid}: no source image")
+            res = run_image_generate({"mode": "edit", "source": v._png_data_url(src), "megapixels": float(prm.get("megapixels", 1.0)),
+                                      "prompt": str(prm["prompt"]), "seed": prm.get("seed") or None, "run_tag": job_id})
+            folder = os.path.join(v.get_project_dir(pid), "storyboard")
+            os.makedirs(folder, exist_ok=True)
+            name = f"agent_{sid}_{time.strftime('%Y%m%d_%H%M%S')}.png"
+            with open(os.path.join(folder, name), "wb") as f:
+                f.write(base64.b64decode(res["image"].split(",", 1)[1]))
+            results[sid] = {"image": f"/vfx/project_file/{pid}/storyboard/{name}"}
+            steps[i]["image"] = results[sid]["image"]
+        elif k == "wait_3d_pose":
+            wait_s = float(prm.get("wait_min", 40)) * 60
+            t0, found = time.time(), None
+            while time.time() - t0 < wait_s:
+                if v._cancelled(job_id):
+                    raise v.ProcessError("Stopped")
+                if (v.get_job(job_id) or {}).get("skip_wait"):
+                    break
+                found = _find_layer(pid, vid, lambda l: l.get("type") == "pose" and l.get("source") == "3d"
+                                    and float(l.get("created_at") or 0) >= t_start - 5)
+                if found:
+                    break
+                _log(job_id, steps, i, "waiting_user", str(prm.get("ask") or "жду слой Pose to Gen из 3D"))
+                time.sleep(5)
+            if found:
+                time.sleep(3)
+                results[sid] = {"layer": found["id"]}
+            else:
+                results[sid] = {}
+                _log(job_id, steps, i, "skipped", "слой из 3D не пришёл")
+                continue
+        elif k == "merge_pose":
+            lids = [x for x in (prm.get("layers") or []) if x]
+            total = int(info.get("total_frames") or 0)
+            lay = _merge_pose_layers(pid, vid, lids, str(prm.get("name") or "merged pose"), int(prm.get("start", 0) or 0),
+                                     min(total - 1, int(prm.get("end", total - 1))))
+            results[sid] = {"layer": lay["id"]}
+        else:
+            results[sid] = _norm_result(k, _run_child(job_id, k, pid, vid, prm, steps, i))
+            if k == "prepare":
+                info = v.pps.get_info(v.node_id_for(vid)) or {}
+        steps[i]["result"] = results[sid]
+        _log(job_id, steps, i, "done")
+    return {"results": results}

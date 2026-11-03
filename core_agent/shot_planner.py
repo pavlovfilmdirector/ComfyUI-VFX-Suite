@@ -265,3 +265,43 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
     return {"response_ru": reply + f"\n\n▶ Запустил (задача `{job['id']}`).", "studio_actions": [],
             "decision": {"action": "shot_task", "params": plan, "confirm": False}, "shot_task": {"job_id": job["id"], "video_id": video["id"]},
             "model_used": "rules"}
+
+
+def _task_module():
+    vls = _vls()
+    if vls is None:
+        return None
+    import importlib
+    pkg = vls.__name__.rsplit(".", 1)[0] if "." in vls.__name__ else ""
+    try:
+        return importlib.import_module((pkg + "." if pkg else "") + "agent_shot_task")
+    except Exception:
+        return None
+
+
+def start_free_plan(params: Dict[str, Any], pid: str, project_dir: str, studio_ctx: Dict[str, Any], st: Dict[str, Any],
+                    user_message: str = "") -> Dict[str, Any]:
+    """The model's own plan (action run_plan) -> one server job. Returns {job_id, video} or {errors}."""
+    mod, vls = _task_module(), _vls()
+    if mod is None or vls is None:
+        return {"errors": ["the video job service is not loaded (start the studio through ComfyUI)"]}
+    steps = params.get("steps")
+    errs = mod.validate_plan(steps)
+    want = str(params.get("video_id") or "")
+    video, vids = resolve_video(want or user_message, project_dir, studio_ctx)
+    if want and not any(v.get("id") == want for v in vids):
+        hit = next((v for v in vids if str(v.get("title") or "").lower() == want.lower()), None)
+        video = hit or video
+    if not video:
+        errs.append("video_id: which video? (" + ", ".join(f"{v.get('id')} = {v.get('title')}" for v in vids[:10]) + ")")
+    if errs:
+        return {"errors": errs}
+    job = vls.start_job("shot_task", pid, video["id"], {"steps": steps, "video_url": video.get("videoUrl") or "",
+                                                        "title": params.get("title") or ""})
+    st["shot_task_job"] = job["id"]
+    st["shot_task_video"] = video["id"]
+    return {"job_id": job["id"], "video": video}
+
+
+def plan_lines(steps: List[Dict[str, Any]]) -> str:
+    return "\n".join(f"{n}. {s.get('title') or s.get('kind')} (`{s.get('kind')}`)" for n, s in enumerate(steps or [], 1))

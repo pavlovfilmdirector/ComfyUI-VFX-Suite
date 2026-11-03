@@ -59,7 +59,16 @@ KNOWLEDGE_DIR = os.path.join(_HERE, "knowledge_studio")
 # --------------------------------------------------------------------------- #
 
 ACTIONS: Dict[str, Dict[str, Any]] = {
-
+    "run_plan": {
+        "title": "МНОГОШАГОВАЯ задача над видео (2+ процесса подряд, результат шага идёт в следующий): сервер выполнит шаги по очереди сам",
+        "params": {
+            "video_id": "id или название видео (по умолчанию открытое)",
+            "title": "короткое имя задачи (рус)",
+            "steps": "список шагов [{id:'s1', kind:'<kind из таблицы процессов или image_edit / wait_3d_pose / merge_pose>', "
+                     "title:'по-русски', params:{...}}]; результат прошлого шага: \"$s1.layer\" (id слоя) или \"$s1.image\" (url кадра)",
+        },
+        "heavy": False,
+    },
     "generate_image": {
 
         "title": "Сгенерировать изображение (FLUX.3 Klein / Qwen Edit) — по тексту, скетчу, позе (OpenPose/DWPose) или референсу",
@@ -530,13 +539,13 @@ class AgentMemory:
 
 # --------------------------------------------------------------------------- #
 
-def load_knowledge(max_chars: int = 22000) -> str:
-
+def load_knowledge(max_chars: int = 30000) -> str:
     parts = []
-
     if os.path.isdir(KNOWLEDGE_DIR):
-
-        for fn in sorted(os.listdir(KNOWLEDGE_DIR)):
+        first = ["role.md", "studio.md", "pipelines.md"]   # who you are -> what exists -> how to chain it
+        names = [n for n in first if os.path.isfile(os.path.join(KNOWLEDGE_DIR, n))] + \
+                sorted(n for n in os.listdir(KNOWLEDGE_DIR) if n.endswith(".md") and n not in first)
+        for fn in names:
 
             if fn.endswith(".md"):
 
@@ -898,6 +907,7 @@ OUTPUT_RULES = """
   * Если пользователь просит 3D-меш (сгенерируй 3д меш, создай 3d модель и т.д.) — вызывай mesh3d (engine: "trellis2", image_source: ссылка или имя референса).
   * Если пользователь просит генерацию изображения — вызывай generate_image.
   * Если пользователь просит генерацию видео — вызывай generate_video (mode: layout_to_render, t2v или i2v).
+  * Если задача требует 2+ процессов над видео подряд (маска → трекинг → кадр → видео и т.п.) — ОДИН action run_plan со всеми шагами (см. «Как писать run_plan» и «Рецепты»), а не только первый шаг.
   * Если пользователь просит расставить 3D-сцену — вызывай setup_3d_layout (не сбрасывай сцену, если пользователь просил сохранить существующие объекты).
   * Для генерации видео LTX-2.5 диффузия выполняется за один проход до 97 кадров без швов.
 
@@ -963,7 +973,7 @@ def build_system_prompt(studio_ctx: Dict[str, Any], mem_state: Dict[str, Any], u
 
 
 
-def dialogue_messages(log: List[Dict[str, Any]], start: int, budget_chars: int = 350000) -> List[Dict[str, str]]:
+def dialogue_messages(log: List[Dict[str, Any]], start: int, budget_chars: int = 60000) -> List[Dict[str, str]]:
     """Newest turns verbatim within the 80k context budget; older ones as digests."""
     turns = log[start:]
     verbatim, used = [], 0
@@ -1300,7 +1310,8 @@ def get_agent_tools() -> List[Dict[str, Any]]:
         import keshiki_mcp as km
 
         for t in km.TOOLS:
-
+            if t[0] in ("ask_studio_agent",):   # that tool is this agent itself
+                continue
             tools.append({
 
                 "type": "function",
@@ -1414,7 +1425,10 @@ def ollama_chat(model: str, messages: List[Dict[str, Any]], agent_config: Dict[s
 
     url = re.sub(r"/(v1|api)$", "", url) + "/api/chat"
 
-    payload = {"model": model, "messages": messages, "stream": False, "keep_alive": keep_alive, "think": False,
+    think = bool(agent_config.get("think", True)) and max_tokens >= 1500   # short service calls stay fast
+    if think:
+        max_tokens = max(max_tokens, 6000)   # the reasoning counts against num_predict
+    payload = {"model": model, "messages": messages, "stream": False, "keep_alive": keep_alive, "think": think,
 
                "options": {"num_ctx": num_ctx, "num_predict": max_tokens, "temperature": temperature}}
 
@@ -1563,7 +1577,8 @@ def to_studio_actions(action: str, params: Dict[str, Any], studio_ctx: Dict[str,
     extra: Dict[str, Any] = {}
 
     acts: List[Dict[str, Any]] = []
-
+    if action == "run_plan":   # the steps run on the server (shot_planner.start_free_plan); the UI just shows the video's layers
+        return [{"type": "switch_dimension", "dimension": "2D"}], extra
     if action in ("generate_image", "edit_image"):
 
         prompt = str(params.get("prompt") or "").strip()
@@ -3076,10 +3091,33 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
 
         st["pending"] = {"action": action, "params": params, "ts": time.time()}
 
+    elif action == "run_plan":
+        import shot_planner as _sp
+        _pid = str(studio_ctx.get("project_id") or os.path.basename(os.path.normpath(project_dir)))
+        started = _sp.start_free_plan(params, _pid, project_dir, studio_ctx, st, user_message)
+        if started.get("errors") and local:
+            # one repair round: the model sees exactly what is wrong with its plan
+            try:
+                fix = ollama_chat(model, messages + [{"role": "assistant", "content": text},
+                    {"role": "user", "content": "Служебно: план не запустился, ошибки: " + "; ".join(started["errors"][:8]) +
+                     ". Исправь и выведи ТОЛЬКО JSON-блок решения с action run_plan."}], agent_config, num_ctx=num_ctx, max_tokens=4000)
+                _, d2 = parse_decision(fix if "```" in fix else f"```json\n{fix.strip()}\n```")
+                if d2.get("action") == "run_plan" and isinstance(d2.get("params"), dict):
+                    params = d2["params"]
+                    started = _sp.start_free_plan(params, _pid, project_dir, studio_ctx, st, user_message)
+            except Exception as _fe:
+                started = {"errors": started.get("errors", []) + [str(_fe)]}
+        if started.get("job_id"):
+            prose = (prose or "Беру задачу.") + f"\n\n▶ Запустил план из {len(params.get('steps') or [])} шагов на «" + \
+                    f"{started['video'].get('title') or started['video'].get('id')}» (задача `{started['job_id']}`):\n" + \
+                    _sp.plan_lines(params.get("steps")) + "\n\nХод — спросите «статус», остановить — «стоп задачу»."
+            extra = {"shot_task": {"job_id": started["job_id"], "video_id": started["video"].get("id")}}
+            acts = [{"type": "switch_dimension", "dimension": "2D"}]
+        else:
+            prose = (prose or "") + "\n\n⚠ План не запустился: " + "; ".join(started.get("errors", [])[:5])
+        st["pending"] = None
     elif action:
-
         acts, extra = to_studio_actions(action, params, studio_ctx)
-
         st["pending"] = None
 
         if is_visualize and acts:
