@@ -44241,7 +44241,26 @@ async function openNarrationEditor() {
 
                     pop.querySelector("#g2-use-ff").addEventListener("change", renderRef);
 
-                    pop.querySelector("#g2-two").addEventListener("change", (e) => { pop.querySelector("#g2-two-box").style.display = e.target.checked ? "flex" : "none"; });
+                    pop.querySelector("#g2-two").addEventListener("change", async (e) => {
+                        pop.querySelector("#g2-two-box").style.display = e.target.checked ? "flex" : "none";
+                        // also offer the layers of the other project videos (copied into this video on launch)
+                        const s2 = pop.querySelector("#g2-s2");
+                        if (!e.target.checked || !s2 || s2.dataset.filled) return;
+                        s2.dataset.filled = "1";
+                        const pidX = vlPid ? decodeURIComponent(vlPid()) : (currentProject?.id || "sandbox_playground");
+                        for (const v of (Array.isArray(mediaVideos2D) ? mediaVideos2D : []).filter(v => v && v.id && v.id !== vidObj.id && !String(v.id).startsWith("vid_3d_"))) {
+                            try {
+                                const st = await fetch(`/vfx/video/${encodeURIComponent(pidX)}/${encodeURIComponent(v.id)}/state`).then(r => r.ok ? r.json() : null);
+                                (st && st.layers || []).filter(l => ["pose", "rgb", "depth", "paint"].includes(l.type)).forEach(l => {
+                                    const o = document.createElement("option");
+                                    o.value = `${v.id}|${l.id}`; o.textContent = `↪ ${(v.title || v.id).slice(0, 30)} › ${l.name || l.id}${l.type === "pose" ? " (pose)" : ""}`;
+                                    s2.appendChild(o);
+                                });
+                            } catch (_) {}
+                        }
+                        if (!s2.value && s2.options.length) s2.value = ([...s2.options].find(o => /\(pose\)/.test(o.textContent)) || s2.options[0]).value;
+                        if (!s2.options.length) { const o = document.createElement("option"); o.value = ""; o.textContent = uiText("No layers — render Pose to Gen in 3D first", "Слоёв нет — сначала Pose to Gen в 3D"); s2.appendChild(o); }
+                    });
                     {
                         const mSel = pop.querySelector("#g2-model"), devBox = pop.querySelector("#g2-dev-box");
                         try { const saved = localStorage.getItem("vfx_ltx_model_variant"); if (saved) mSel.value = saved; } catch (_) {}
@@ -44355,7 +44374,7 @@ async function openNarrationEditor() {
 
                     renderRef();
 
-                    pop.querySelector("#g2-go").onclick = () => {
+                    pop.querySelector("#g2-go").onclick = async () => {
 
                         const idx = pop.querySelector('input[name="g2-mode"]:checked')?.value;
 
@@ -44370,7 +44389,16 @@ async function openNarrationEditor() {
                         const extraModel = variant === "dev" ? { model_variant: "dev", steps: +pop.querySelector("#g2-steps").value, cfg: +pop.querySelector("#g2-cfg").value,
                             negative: (pop.querySelector("#g2-neg").value || "").trim() || undefined } : (variant === "dev_lora" ? { model_variant: "dev_lora" } : {});
 
-                        const extra2 = two ? { lora2: pop.querySelector("#g2-l2").value, source_layer2: pop.querySelector("#g2-s2").value, lora2_attention: +pop.querySelector("#g2-a2").value } : {};
+                        let src2 = two ? (pop.querySelector("#g2-s2").value || "") : "";
+                        if (two && !src2) { showToastNotification(uiText("Choose the input of the second control", "Выберите вход второго управления"), true); return; }
+                        if (two && src2.includes("|")) {
+                            const [fromVid, fromLid] = src2.split("|");
+                            const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ src_vid: fromVid, src_lid: fromLid }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                            if (r.error || !r.layer) { showToastNotification(`${uiText("Second control", "Второе управление")}: ${r.error || "import failed"}`, true); return; }
+                            src2 = r.layer.id;
+                        }
+                        const extra2 = two ? { lora2: pop.querySelector("#g2-l2").value, source_layer2: src2, lora2_attention: +pop.querySelector("#g2-a2").value } : {};
 
                         const src = pop.querySelector("#g2-src").value;
 
