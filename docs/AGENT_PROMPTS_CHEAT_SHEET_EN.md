@@ -5,6 +5,24 @@ This document contains ready-to-use user prompts that the built-in AI Director (
 
 ---
 
+## 0. A whole shot task (the agent plans and runs it)
+
+### 📝 Requests:
+```text
+Shot AICinematicStudio_00007-au: track the camera, replace the background with a gritty ghetto street, add two skeletons dancing capoeira behind her, and give me three variants: new background, new character, both.
+```
+```text
+In this shot cut the girl out onto a transparent background with clean hair.
+```
+
+### ⚡ What the agent does:
+1. Finds the shot by name (or takes the open one) and checks which layers it already has.
+2. Writes a plan and runs it as one server job, e.g. mask → camera track → pose → first frame (FLUX) → video (LTX union-control).
+3. Where a human is needed (skeletons in 3D → **Pose to Gen**) it says what to click, waits, and carries on.
+4. "status" shows the steps, "skip the skeletons" continues without the 3D step, "stop the task" stops it.
+
+---
+
 ## 1. End-to-End Concept-to-Video: 2D Reference → 3D Scene → TRELLIS.2 → Camera Orbit → Layout-to-Render
 
 Used when you have one or two concept images (props or an environment) and want the AI Director to autonomously build the 3D scene, generate 3D assets, set up the camera trajectory, and trigger the two-stage distilled video render.

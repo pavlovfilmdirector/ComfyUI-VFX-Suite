@@ -82,6 +82,37 @@ The prompts, seeds and LoRA settings are the ones that made the example clip. A 
 2. In `pipeline.json`, set `video_id` in `variables` to that video, and put the two new layer ids in stages 1 and 3 (`layout_source` / `source_layer` for the layout, `pose_layer` / `source_layer2` for the pose).
 3. Rewrite the two prompts for your character and set, then press Run in **My Pipelines**.
 
+## Talking to the agent
+
+The studio agent (bottom dock, local model through Ollama) takes whole tasks in plain words, in Russian or English:
+
+> *"Shot AICinematicStudio_00007: track the camera, replace the background with a gritty ghetto street, add two skeletons dancing capoeira behind her, and give me three variants: new background, new character, both."*
+
+1. **It reads the task.** Which shot (by name, or the one that is open), what you want at the end, and what the shot already has. Masks, poses, depth and a solved camera are reused, not made again.
+2. **It shows the plan and runs it.** A task of two or more steps runs on the server as one job, and the result of each step feeds the next one. For example, mask → camera track → pose → first frame (FLUX) → video (LTX). New layers appear on the clip in the Video view.
+3. **It asks you when a step needs your hands.** Example: placing skeletons in 3D. It says exactly what to click (*Pose to Gen*), waits, and picks up the new layer by itself.
+
+In the chat:
+
+| You type | The agent |
+|---|---|
+| `status` / `статус` | lists the steps: ✅ done · ⏳ running · 🙋 waiting for you |
+| `skip the skeletons` / `пропусти скелеты` | goes on without the 3D step |
+| `stop the task` / `стоп задачу` | stops the job |
+| `how do I …?` | answers from the user guide and offers to run it |
+
+**What it knows** is plain Markdown in `core_agent/knowledge_studio/`:
+
+- `role.md`: how to think about a request;
+- `studio.md`: every process with its real parameters;
+- `pipelines.md`: tested recipes.
+
+Add your own recipes there and the agent uses them on the next message, with no restart.
+
+**Model.** Thinking is on. A bigger model plans better: a Qwen 27–32B class model is recommended, while 7–9B handles single commands. Before FLUX / LTX steps the chat model is unloaded from VRAM.
+
+The same tasks can come from any external AI agent over MCP (the `shot_task` video job), see [docs/MCP.md](docs/MCP.md). Ready-made phrasings are in [docs/AGENT_PROMPTS_CHEAT_SHEET.md](docs/AGENT_PROMPTS_CHEAT_SHEET.md).
+
 ## Models
 
 | Role | Model | Notes |

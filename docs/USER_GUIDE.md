@@ -142,6 +142,32 @@ Build a graph in ComfyUI ("Open ComfyUI" in the My tools window). Title the load
 
 ## Talking to the agent
 
+**Whole tasks in one message.** Describe the shot and the result in plain words. Example: *"Shot
+AICinematicStudio_00007: track it, replace the background with a ghetto street, add two skeletons dancing capoeira
+behind her, and give me three variants: new background, new character, both."*
+
+1. **It finds the shot** by name, or takes the open one, and checks what the shot already has. Existing masks,
+   poses, depth and camera tracks are reused.
+2. **It writes the plan and runs it** as one server job. The steps run in order and each result feeds the next
+   step. New layers appear on the clip in the Video view.
+3. **When a step needs your hands,** such as skeletons in 3D, it tells you what to click (3D → animated skeletons
+   in the tracked camera's view → **Pose to Gen**), waits, and picks up the new layer by itself.
+
+While a task runs, type:
+
+- **"status"** to see the steps: ✅ done · ⏳ running · 🙋 waiting for you;
+- **"skip the skeletons"** to continue without the 3D step;
+- **"stop the task"** to stop it.
+
+**What the agent knows** is plain text in `core_agent/knowledge_studio/`:
+
+- `role.md`: how to think about a request;
+- `studio.md`: every process with its parameters;
+- `pipelines.md`: tested recipes.
+
+Add your own recipe there and the agent reads it on the next message, with no restart.
+
+**More tips:**
 - Say what you want in plain words: "mask the girl", "replace the background with a winter street", "show me how to dub this".
 - The agent sees the open clip, its layers and the project files. It picks the right layer itself; if one is missing it offers to make it.
 - Heavy jobs (LTX, tracking, relight, dubbing, TRELLIS) are described first, then it asks "shall I run it?". Answer "yes", "go", "ok".

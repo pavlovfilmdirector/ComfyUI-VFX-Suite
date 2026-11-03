@@ -232,14 +232,14 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
     if job_id and vls is not None:
         job = vls.get_job(job_id)
         if job.get("status") != "not_found":
-            if re.search(r"пропусти\w*\s+скелет|без\s+скелет|скелеты\s+не\s+нужн", m):
+            if re.search(r"пропусти\w*\s+скелет|без\s+скелет|скелеты\s+не\s+нужн|skip\s+(the\s+)?(skeleton|3d|wait)", m):
                 with vls._JOBS_LOCK:
                     vls._JOBS[job_id]["skip_wait"] = True
                 return {"response_ru": "Ок, скелеты пропускаю — иду к вариантам.", "studio_actions": [], "decision": {"action": None}}
-            if re.search(r"^(стоп|останови)\w*\s+задач|отмени\w*\s+задач", m):
+            if re.search(r"^(стоп|останови)\w*\s+задач|отмени\w*\s+задач|^stop\s+(the\s+)?task|^cancel\s+(the\s+)?task", m):
                 vls.cancel_job(job_id)
                 return {"response_ru": "Останавливаю задачу.", "studio_actions": [], "decision": {"action": None}}
-            if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы", m):
+            if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы|^status\b|progress|how\s+is\s+it\s+going", m):
                 return {"response_ru": status_text(job), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
     if not looks_like_shot_task(user_message):
         return None
