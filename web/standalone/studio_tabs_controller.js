@@ -40996,7 +40996,8 @@ async function openNarrationEditor() {
 
                 if (vlState2D.paintLayerId && !pl) { vlState2D.paintLayerId = null; paintCtx2D.clearRect(0, 0, paintCanvas2D.width, paintCanvas2D.height); }
 
-                paintCanvas2D.style.visibility = (pl && pl.visible === false) ? "hidden" : "visible";
+                // nothing may linger on screen: the paint canvas shows only a visible paint layer (or while painting a new one)
+                paintCanvas2D.style.visibility = ((pl && pl.visible === false) || (!pl && vid2DTool !== "paint_image")) ? "hidden" : "visible";
 
                 if (vid2DTool === "paint_image" && idx !== paintIdx2D && !painting2D) reloadPaintCanvas2D();
 
@@ -41086,7 +41087,9 @@ async function openNarrationEditor() {
 
             vlState2D.layers.forEach((l, i) => {
 
-                if (solo ? l.id !== solo : (l.visible === false || (!l.frames && !l.inverted))) return;
+                // layers made by jobs / pasted from another video may not carry a frame count yet: draw them anyway
+                // (a missing frame just hides its picture) - they used to stay invisible until the playhead moved
+                if (solo ? l.id !== solo : (l.visible === false || (l.frames === 0 && !l.inverted && !l.still))) return;
 
                 if (alphaBy && l.id === alphaBy.id && !solo) return; // it is cutting the video, not drawn on top
 
@@ -41103,6 +41106,7 @@ async function openNarrationEditor() {
                     el.style.cssText = "position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill;";
 
                     el.onload = () => { el.style.visibility = (vid2DTool === "paint_image" && l.id === vlState2D.paintLayerId) ? "hidden" : "visible"; };
+                    el.onerror = () => { el.style.visibility = "hidden"; };
 
                     vlOverlay2D.appendChild(el);
 
@@ -41660,13 +41664,12 @@ async function openNarrationEditor() {
                 return;
             }
             ghostOverlay2D.style.display = "block";
-
-            const l = (typeof vlState2D !== "undefined" && vlState2D.layers) ? (
+            const l0 = (typeof vlState2D !== "undefined" && vlState2D.layers) ? (
                 vlState2D.layers.find(x => x.id === vlState2D.paintLayerId)
                 || vlState2D.layers.find(x => x.id === vlState2D.selected && (x.type === "paint" || x.type === "mask"))
                 || vlState2D.layers.find(x => x.type === "paint")
             ) : null;
-
+            const l = (l0 && l0.visible !== false) ? l0 : null;   // a hidden layer leaves no ghost behind
             const isMaskMode = (vid2DTool === "paint_mask" || vid2DTool === "lasso");
             const curIdx = plateIdx2D();
 
