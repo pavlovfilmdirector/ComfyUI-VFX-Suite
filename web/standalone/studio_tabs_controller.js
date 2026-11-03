@@ -3017,7 +3017,7 @@ export function initStudioArchitecture(ctx) {
                     const dx = Math.abs(b.x - a.x);
                     const k = b.x >= a.x ? Math.min(120, Math.max(25, dx * 0.45)) : Math.min(160, 60 + dx * 0.25);
                     const d = Math.abs(b.y - a.y) < 2 && b.x > a.x ? `M ${a.x} ${a.y} L ${b.x} ${b.y}` : `M ${a.x} ${a.y} C ${a.x + k} ${a.y}, ${b.x - k} ${b.y}, ${b.x} ${b.y}`;
-                    paths += `<path d="${d}" fill="none" stroke="url(#pw)" stroke-width="2.2" stroke-linecap="round" opacity=".9"/>
+                    paths += `<path d="${d}" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" opacity=".9"/>
                         <circle r="3" fill="#e9d5ff"><animateMotion dur="2.4s" repeatCount="indefinite" path="${d}"/></circle>`;
                 });
             });
