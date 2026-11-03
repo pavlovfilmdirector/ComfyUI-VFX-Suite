@@ -70008,20 +70008,21 @@ function renderActiveCustomTab() {
         try {
 
             const last = JSON.parse(localStorage.getItem("vfx_last_project") || "null");
-
-            if (last && last.project_id) {
-
+            // the browser remembers the last project, but after a reinstall it may not exist on this server any more:
+            // opening it would quietly create an empty project with that name - only reopen it if the server has it
+            const known = (Array.isArray(projects) && projects.length) ? projects.some(p => p && (p.id === last?.project_id || p.name === last?.project_id)) : true;
+            if (last && last.project_id && known) {
                 await selectProject(last);
-
                 loaded = true;
-
+            } else if (last && last.project_id) {
+                try { localStorage.removeItem("vfx_last_project"); } catch (_) {}
             }
 
         } catch (_) {}
 
         if (!loaded && Array.isArray(projects) && projects.length > 0) {
 
-            const preferred = projects.find(p => p.id === "New_Movie_Shot") || projects.find(p => p.id !== "sandbox_playground") || projects[0];
+            const preferred = projects.find(p => p.id === "sandbox_playground") || projects[0];
 
             if (preferred) {
 
