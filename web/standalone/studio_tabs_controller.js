@@ -9669,12 +9669,12 @@ async function openNarrationEditor() {
 
     window.__vfxDeleteProjectMediaAsset = (type, item) => deleteProjectMediaAsset(type, item);
     async function deleteProjectMediaAsset(type, item) {
-
         if (!item) return;
-
         const pid = currentProject?.id || "sandbox_playground";
-
         markAssetAsDeletedLocal(item, pid);
+        if (item.mode === "track" && typeof window.__vfxRemoveTrack === "function") {
+            try { window.__vfxRemoveTrack(item.videoId); } catch (_) {}   // the card goes -> its camera and cloud leave the 3D scene too
+        }
 
 
 

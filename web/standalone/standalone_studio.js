@@ -3283,6 +3283,15 @@ let lastMonitorRenderTime = 0;
 
             let pts = data.points;
             let cols = data.colors || [];
+            // which solve this is: a deleted camera / cloud stays deleted only for THAT solve - a new track shows again
+            const trackSig = `${data.source_video || ""}|${data.total_frames || 0}|${JSON.stringify(((data.camera && data.camera.matrices) || [])[0] || []).slice(0, 120)}|${(data.points || []).length}`;
+            window.__vfxSceneSig = trackSig;
+            try {
+                const delSig = localStorage.getItem("vfx_3d_deleted_track_sig");
+                if (delSig && delSig !== trackSig) {
+                    ["vfx_3d_lidar_deleted", "vfx_3d_shot_cam_deleted", "vfx_3d_deleted_track_sig"].forEach(k => localStorage.removeItem(k));
+                }
+            } catch (_) {}
             isLidarDeleted = localStorage.getItem("vfx_3d_lidar_deleted") === "true";
             isShotCameraDeleted = localStorage.getItem("vfx_3d_shot_cam_deleted") === "true";
 
@@ -5000,7 +5009,7 @@ let lastMonitorRenderTime = 0;
     function deleteShotCamera() {
         pushUndoState("Delete Shot Camera");
         isShotCameraDeleted = true;
-        try { localStorage.setItem("vfx_3d_shot_cam_deleted", "true"); } catch (_) {}
+        try { localStorage.setItem("vfx_3d_shot_cam_deleted", "true"); localStorage.setItem("vfx_3d_deleted_track_sig", window.__vfxSceneSig || ""); } catch (_) {}
         transformControls.detach();
         if (camBodyMesh) {
             camBodyMesh.visible = false;
@@ -5029,11 +5038,20 @@ let lastMonitorRenderTime = 0;
         }
     }
 
+    // deleting a camera-track card in the gallery removes what it brought into the scene: the shot camera and the cloud
+    window.__vfxRemoveTrack = (videoId) => {
+        const src = (window.__vfxSceneSource && window.__vfxSceneSource.video) || "";
+        if (videoId && src && src !== videoId) return false;   // the scene shows another shot's track: leave it
+        let did = false;
+        if (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) { deleteShotCamera(); did = true; }
+        if (cloudMesh) { deletePointCloud(); did = true; }
+        return did;
+    };
     function deletePointCloud() {
         if (!cloudMesh) return;
         pushUndoState("Delete LiDAR Cloud");
         isLidarDeleted = true;
-        try { localStorage.setItem("vfx_3d_lidar_deleted", "true"); } catch (_) {}
+        try { localStorage.setItem("vfx_3d_lidar_deleted", "true"); localStorage.setItem("vfx_3d_deleted_track_sig", window.__vfxSceneSig || ""); } catch (_) {}
         transformControls.detach();
         scene.remove(cloudMesh);
         if (cloudMesh.geometry) {
