@@ -296,8 +296,11 @@ def start_free_plan(params: Dict[str, Any], pid: str, project_dir: str, studio_c
         errs.append("video_id: which video? (" + ", ".join(f"{v.get('id')} = {v.get('title')}" for v in vids[:10]) + ")")
     if errs:
         return {"errors": errs}
-    job = vls.start_job("shot_task", pid, video["id"], {"steps": steps, "video_url": video.get("videoUrl") or "",
-                                                        "title": params.get("title") or ""})
+    try:
+        job = vls.start_job("shot_task", pid, video["id"], {"steps": steps, "video_url": video.get("videoUrl") or "",
+                                                            "title": params.get("title") or ""})
+    except Exception as e:   # e.g. ComfyUI not restarted after an update: the job kind is unknown yet
+        return {"errors": [f"could not start: {e} (restart ComfyUI)"]}
     st["shot_task_job"] = job["id"]
     st["shot_task_video"] = video["id"]
     return {"job_id": job["id"], "video": video}
