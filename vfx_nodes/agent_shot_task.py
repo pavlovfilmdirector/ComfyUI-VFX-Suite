@@ -44,9 +44,29 @@ def _log(job_id: str, steps: List[Dict[str, Any]], i: int, status: str, note: st
                   message=f"{i + 1}/{len(steps)} · {steps[i]['title']}" + (f" — {note}" if note else ""))
 
 
+def _unload_ollama():
+    """The chat model (Ollama, up to ~20 GB) must not sit in VRAM while FLUX / LTX run."""
+    import json as _json
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/ps", timeout=2) as r:
+            models = [m.get("name") for m in _json.loads(r.read().decode()).get("models", [])]
+        for m in models:
+            req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=_json.dumps({"model": m, "keep_alive": 0}).encode(),
+                                         headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=10).read()
+    except Exception:
+        pass
+
+
+HEAVY = {"ltx_ic_lora", "ltx_alpha", "track_camera", "relight_frame", "first_frame", "depth", "text_mask", "corridor_key"}
+
+
 def _run_child(job_id: str, kind: str, pid: str, vid: str, params: Dict[str, Any], steps, i) -> Dict[str, Any]:
     """Starts a normal studio job and waits for it, showing its progress inside this step."""
     v = _vls()
+    if kind in HEAVY:
+        _unload_ollama()
     child = v.start_job(kind, pid, vid, params)
     cid = child["id"]
     steps[i]["job_id"] = cid
@@ -295,6 +315,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         _log(job_id, steps, i, "running")
         instr = FIRST_FRAME_TEXT[var].format(subject=subject, subject_it=subject_it, background=bg, character=ch,
                                              dancers=_dancers_text(dancers))
+        _unload_ollama()
         res = run_image_generate({"mode": "edit", "source": v._png_data_url(plate0), "megapixels": 1.0, "prompt": instr,
                                   "seed": p.get("seed") or None, "run_tag": job_id})
         name = f"agent_{var}_{v._safe(vid)[:30]}_{time.strftime('%Y%m%d_%H%M%S')}.png"
@@ -460,6 +481,7 @@ def run_free_plan(job_id: str, pid: str, vid: str, p: Dict[str, Any]) -> Dict[st
                 src = v._layer_frame_bgr(pid, vid, str(prm.get("layer") or "plate_raw"), int(prm.get("frame", 0) or 0))
             if src is None:
                 raise v.ProcessError(f"{sid}: no source image")
+            _unload_ollama()
             res = run_image_generate({"mode": "edit", "source": v._png_data_url(src), "megapixels": float(prm.get("megapixels", 1.0)),
                                       "prompt": str(prm["prompt"]), "seed": prm.get("seed") or None, "run_tag": job_id})
             folder = os.path.join(v.get_project_dir(pid), "storyboard")
