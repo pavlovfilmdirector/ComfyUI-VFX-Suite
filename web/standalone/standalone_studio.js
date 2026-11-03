@@ -3369,6 +3369,7 @@ let lastMonitorRenderTime = 0;
                 }
 
                 cameraMatrices = data.camera.matrices;
+                window.__vfxPreferFreeCam = false;   // a freshly solved track: look through the shot camera
                 totalFrames = Math.max(1, cameraMatrices.length);
                 timelineSlider.max = Math.max(0, totalFrames - 1);
                 hudFrameLabel.innerText = `Frame: [ ${String(currentFrame).padStart(3, '0')} / ${totalFrames} ]`;
@@ -4480,8 +4481,15 @@ let lastMonitorRenderTime = 0;
     }
 
     function getActiveMonitorCameraActor() {
+        // paused + a camera picked by the user (outliner / camera list): look through it - that is the manual switch.
+        // During playback the camera cuts decide.
+        if (!isPlaying && selectedObject && selectedObject.userData && selectedObject.userData.type === "camera"
+            && (selectedObject.userData.camera || selectedObject === shotCamera)) {
+            if (selectedObject === shotCamera) { if (!isShotCameraDeleted) return shotCamera; }
+            else return selectedObject;
+        }
         {
-            // camera cuts on the timeline decide who is on air (a selected camera no longer pins the monitor)
+            // camera cuts on the timeline decide who is on air
             let cutCam = null;
             try { cutCam = cutActorAt(currentFrame); } catch (_) {}
             if (cutCam) return cutCam;
@@ -4491,6 +4499,10 @@ let lastMonitorRenderTime = 0;
                 return !isShotCameraDeleted ? shotCamera : null;
             }
             return selectedObject;
+        }
+        // a solved camera track: the shot camera is the camera of this shot unless the user picked another one
+        if (!isShotCameraDeleted && cameraMatrices && cameraMatrices.length && !window.__vfxPreferFreeCam) {
+            return shotCamera;
         }
         if (lastActiveFreeCamGroup && threeObjectsMap.has(lastActiveFreeCamGroup.userData?.id)) {
             return lastActiveFreeCamGroup;
@@ -4541,9 +4553,15 @@ let lastMonitorRenderTime = 0;
         return cuts.filter(c => Number.isFinite(c.frame)).sort((a, b) => a.frame - b.frame);
     }
     // the camera that is "on air" at frame f (null when the timeline has no cuts)
+    // a cut list that names only ONE camera switches nothing - it must not pin the monitor (or Pose to Gen) to that
+    // camera, e.g. a free 9:16 camera left with a stray cut while the shot now has a tracked 16:9 camera
+    function cameraCutsActive() {
+        const cuts = getCameraCuts();
+        return new Set(cuts.map(c => c.camId)).size >= 2;
+    }
     function cutActorAt(f) {
         const cuts = getCameraCuts();
-        if (!cuts.length) return null;
+        if (!cuts.length || !cameraCutsActive()) return null;
         let c = cuts[0];
         for (const k of cuts) { if (k.frame <= f) c = k; else break; }
         return camActorById(c.camId);
@@ -4959,8 +4977,10 @@ let lastMonitorRenderTime = 0;
         if (selectedObject) {
             if (selectedObject === shotCamera) {
                 lastActiveFreeCamGroup = null;
+                window.__vfxPreferFreeCam = false;
             } else if (selectedObject.userData && selectedObject.userData.type === "camera") {
                 lastActiveFreeCamGroup = selectedObject;
+                window.__vfxPreferFreeCam = true;   // the user chose a free camera: it stays on the monitor after deselect
             }
             transformControls.attach(selectedObject);
         } else {
@@ -6446,7 +6466,7 @@ let lastMonitorRenderTime = 0;
             ].filter((c, idx, arr) => c && arr.indexOf(c) === idx);
             // camera cuts on the timeline (or an explicit camera): each frame is seen through the camera on air
             const forcedCam = opts.cameraId ? cameraObjOf(camActorById(opts.cameraId)) : null;
-            const cutsOn = !forcedCam && getCameraCuts().length > 0;
+            const cutsOn = !forcedCam && cameraCutsActive();
             if (forcedCam) candidateCams.splice(0, candidateCams.length, forcedCam);
             else if (cutsOn) { const c0 = cameraObjOf(cutActorAt(0)); if (c0) candidateCams.splice(0, candidateCams.length, c0); }
             const camAspects = new Map();
@@ -6600,7 +6620,7 @@ let lastMonitorRenderTime = 0;
             throw new Error(uiText("No target video in project", "В проекте нет целевого видео"));
         }
         const forcedCam = opts.cameraId ? cameraObjOf(camActorById(opts.cameraId)) : null;
-        const cutsOn = !forcedCam && getCameraCuts().length > 0;
+        const cutsOn = !forcedCam && cameraCutsActive();
         let cam = forcedCam || (cutsOn ? cameraObjOf(cutActorAt(0)) : null)
             || ((!isShotCameraDeleted && cameraMatrices && cameraMatrices.length) ? shotCamera : (getActiveMonitorCamera() || shotCamera));
         const cam0 = cam, camAspects = new Map();
@@ -11044,7 +11064,7 @@ let lastMonitorRenderTime = 0;
         }
 
         const targetCamActor = getActiveMonitorCameraActor();
-        const cutsOn = getCameraCuts().length > 0;      // camera cuts: each frame through the camera on air
+        const cutsOn = cameraCutsActive();      // camera cuts: each frame through the camera on air
         let cam = (cutsOn ? cameraObjOf(cutActorAt(0)) : null) || getActiveMonitorCamera() || ((!isShotCameraDeleted && shotCamera) ? shotCamera : null);
         const cam0 = cam, camAspects = new Map();
         if (!cam) {
