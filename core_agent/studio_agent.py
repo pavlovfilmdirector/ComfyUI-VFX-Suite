@@ -1427,7 +1427,7 @@ def ollama_chat(model: str, messages: List[Dict[str, Any]], agent_config: Dict[s
 
     think = bool(agent_config.get("think", True)) and max_tokens >= 1500   # short service calls stay fast
     if think:
-        max_tokens = max(max_tokens, 6000)   # the reasoning counts against num_predict
+        max_tokens = max(max_tokens, 12000)   # the reasoning counts against num_predict (a run_plan JSON is long too)
     payload = {"model": model, "messages": messages, "stream": False, "keep_alive": keep_alive, "think": think,
 
                "options": {"num_ctx": num_ctx, "num_predict": max_tokens, "temperature": temperature}}
@@ -3020,12 +3020,10 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
         try:
 
             fix = ollama_chat(model, messages + [{"role": "assistant", "content": text},
-
                 {"role": "user", "content": "Служебно: выведи ТОЛЬКО JSON-блок решения для своего последнего ответа "
-
                  "в формате {\"action\": ..., \"params\": {...}, \"confirm\": ..., \"remember\": [...]}. Если ты пообещал что-то запустить — "
-
-                 "укажи это действие и полный английский промпт."}], agent_config, num_ctx=num_ctx, max_tokens=700)
+                 "укажи это действие и полный английский промпт. Если в ответе план из 2+ шагов над видео — это action run_plan "
+                 "со всеми шагами (steps)."}], agent_config, num_ctx=num_ctx, max_tokens=1400)
 
             _, decision = parse_decision(fix if "```" in fix else f"```json\n{fix.strip()}\n```")
 
@@ -3038,13 +3036,23 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
             mem.append("debug", text[:4000])
 
     action = decision.get("action")
-
     action = action if action in ACTIONS else None
-
     params = decision.get("params") if isinstance(decision.get("params"), dict) else {}
-
-
-
+    # the model described a plan over the shot but its decision block got lost: do NOT fall back to guessing
+    # (that used to launch a 3D layout render with a generic prompt). Say so and keep the plan for a "go".
+    _plan_words = re.search(r"union-control|image_edit|run_plan|первый кадр|first frame|план\s*\(|plan\s*\(|\n\s*1\.\s", text or "", re.I)
+    _wants_3d = re.search(r"3d|3д|лейаут|layout|сцен[уае]\s+в\s+3|блокаут", (user_message or "").lower())
+    _hijack = action == "generate_video" and str(params.get("mode") or "") == "layout_to_render"
+    if (not action or _hijack) and _plan_words and not _wants_3d:
+        _ru = bool(re.search(r"[а-яё]", (user_message or "").lower()))
+        prose = (prose or "") + ("\n\n⚠ Я расписал план, но не смог оформить команду запуска. Напишите «запускай» — соберу её заново."
+                                 if _ru else "\n\n⚠ I wrote the plan but could not form the launch command. Type \"go\" and I will build it again.")
+        st["pending"] = None
+        mem.append("user", user_message)
+        mem.append("assistant", prose)
+        mem.save_state(st)
+        return {"response_ru": prose, "studio_actions": [], "decision": {"action": None}, "model_used": model,
+                "seconds": round(time.time() - t0, 1)}
     if not action:
 
         synth = synthesize_intent_actions(text, studio_ctx, st, log)
