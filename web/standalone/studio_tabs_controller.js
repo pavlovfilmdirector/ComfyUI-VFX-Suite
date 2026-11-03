@@ -2739,7 +2739,16 @@ export function initStudioArchitecture(ctx) {
 
               <!-- Stage Cards Chain -->
 
-              <div id="pipe-stages-list" style="display:flex; flex-direction:column; gap:12px;">
+              <style>
+                #pipe-stages-list .pipe-in-ctl { font-size: 10.5px; }
+                #pipe-stages-list .pipe-in-ctl label { font-size: 10px !important; }
+                #pipe-stages-list .pipe-in-ctl textarea { min-height: 30px !important; font-size: 10px !important; padding: 4px 6px !important; }
+                #pipe-stages-list .pipe-in-ctl input, #pipe-stages-list .pipe-in-ctl select { font-size: 10px !important; padding: 3px 6px !important; }
+                #pipe-stages-list .pipe-in-ctl .pa-thumb { width: 34px !important; height: 26px !important; flex: none !important; }
+                #pipe-stages-list .pipe-in-ctl .vfx-btn { padding: 2px 5px !important; }
+                #pipe-stages-list .pipe-in-ctl .pipe-asset { padding: 4px !important; gap: 6px !important; }
+              </style>
+              <div id="pipe-stages-list" style="display:flex; flex-direction:column; gap:0; padding:24px 0 30px; border-radius:10px; background: radial-gradient(circle, #26262c 1px, transparent 1px) 0 0 / 22px 22px, #121214; overflow-x:auto;">
 
                 ${stages.length === 0 ? `<div style="padding:30px; text-align:center; border:2px dashed #27272a; border-radius:8px; color:#71717a;">${uiText("No stages yet. Click below to add your first workflow stage.", "В пайплайне пока нет этапов. Нажмите кнопку ниже, чтобы добавить первый воркфлоу.")}</div>` : ""}
 
@@ -2823,6 +2832,9 @@ export function initStudioArchitecture(ctx) {
             return "";
         };
         const renderStageCard = (st, idx, allStages) => {
+            // ComfyUI-style node: narrow card, outputs at the top right, then one row per input with its socket on the
+            // left edge; a linked input is just its socket + label (like a connected input in ComfyUI); the node grows
+            // with its settings. Nodes go down in a gentle staircase so the wires read from one node to the next.
             const meta = builtinStages.find(b => b.id === st.stage_type) || {};
             const icon = meta.icon || "⚙️";
             const inputsDef = meta.inputs || [
@@ -2831,49 +2843,44 @@ export function initStudioArchitecture(ctx) {
             ];
             const outputsDef = meta.outputs || [{ id: "output", label: "Result", kind: "media" }];
             const rs = stageRunState(st, idx);
-            const ring = { idle: "#2a2a35", running: "#22d3ee", done: "#22c55e", error: "#ef4444" }[rs];
-            const badge = { idle: "", running: `<span style="color:#67e8f9;">◉ ${uiText("running", "идёт")}</span>`, done: `<span style="color:#4ade80;">✓ ${uiText("done", "готово")}</span>`, error: `<span style="color:#f87171;">✗ ${uiText("error", "ошибка")}</span>` }[rs];
+            const ring = { idle: "#3f3f46", running: "#22d3ee", done: "#22c55e", error: "#ef4444" }[rs];
+            const dot = { idle: "#71717a", running: "#22d3ee", done: "#22c55e", error: "#ef4444" }[rs];
             const prev = stagePreviewHtml(st);
-            const sock = (cls, attrs, color) => `<span class="${cls}" ${attrs} style="position:absolute; width:12px; height:12px; border-radius:50%; background:#09090b; border:2px solid ${color}; box-shadow:0 0 6px ${color}55;"></span>`;
+            const KCOL = { video: "#c084fc", video_id: "#c084fc", image: "#60a5fa", layer: "#f472b6", text: "#facc15", audio: "#34d399", "3d": "#fb923c", number: "#a1a1aa" };
+            const kcol = (k) => KCOL[k] || "#a1a1aa";
+            const shift = (idx % 5) * 70;
+            const label = (inp) => esc(uiText(inp.label || inp.id, inp.label_ru || inp.label || inp.id));
+            const inRows = inputsDef.map(inp => {
+                const v = (st.inputs || {})[inp.id];
+                const linked = v && typeof v === "object" && v.from_stage;
+                const sockEl = `<span class="sock-in" data-stage-idx="${idx}" data-inp="${esc(inp.id)}" style="position:absolute; left:-6px; top:${linked ? 7 : 6}px; width:10px; height:10px; border-radius:50%; background:${linked ? kcol(inp.kind) : "#18181b"}; border:2px solid ${kcol(inp.kind)};"></span>`;
+                if (linked) {
+                    const fi = (currentPipe.stages || []).findIndex(s2 => (s2.id || "") === v.from_stage);
+                    return `<div class="pipe-in" style="position:relative; padding:4px 10px 4px 14px; display:flex; align-items:center; gap:6px; font-size:11px;">${sockEl}
+                        <span style="color:#e4e4e7;">${label(inp)}</span><span style="opacity:.45; font-size:9.5px; margin-left:auto;">← #${fi + 1}</span>
+                        <button class="vfx-btn pin-unlink" data-stage-idx="${idx}" data-inp="${esc(inp.id)}" title="${uiText("Unlink", "Отвязать")}" style="padding:0 4px; font-size:9px; opacity:.6;">✕</button></div>`;
+                }
+                return `<div class="pipe-in" style="position:relative; padding:3px 10px 5px 14px;">${sockEl}
+                    <div class="pipe-in-ctl">${renderInputControl(inp, st, idx, allStages)}</div></div>`;
+            }).join("");
+            const outRows = outputsDef.map(o => `<div style="position:relative; text-align:right; padding:3px 14px 3px 10px; font-size:10.5px; color:#e4e4e7;">
+                    ${esc(uiText(o.label || o.id, o.label_ru || o.label || o.id))} <span style="opacity:.45; text-transform:uppercase; font-size:9px;">${esc(o.kind || "")}</span>
+                    <span class="sock-out" data-stage-id="${esc(st.id || "")}" data-out="${esc(o.id)}" style="position:absolute; right:-6px; top:6px; width:10px; height:10px; border-radius:50%; background:${kcol(o.kind)}; border:2px solid ${kcol(o.kind)};"></span></div>`).join("");
             return `
-              <div class="stage-card pipe-node" data-idx="${idx}" data-stage-id="${esc(st.id || "")}" style="position:relative; background:linear-gradient(180deg,#16161d,#111116); border:1.5px solid ${ring}; border-radius:12px; padding:0; display:flex; flex-direction:column; box-shadow:0 8px 24px rgba(0,0,0,.45)${rs === "running" ? ", 0 0 18px rgba(34,211,238,.25)" : ""}; margin: 0 26px;">
-                <!-- node header -->
-                <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #23232c; background:rgba(124,58,237,0.08); border-radius:12px 12px 0 0;">
-                  <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                    <span style="font-weight:700; font-size:10.5px; padding:2px 7px; border-radius:10px; background:#2e1065; color:#c4b5fd; border:1px solid #6b21a8;">${idx + 1}</span>
-                    <span style="font-size:15px;">${icon}</span>
-                    <b style="font-size:12px; color:#f3e8ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(st.title || meta.title_ru || meta.name || `Stage ${idx+1}`)}</b>
-                    <span style="font-size:9.5px; opacity:.5; font-family:monospace;">${esc(st.stage_type || "workflow")}</span>
-                    ${badge}
-                  </div>
-                  <div style="display:flex; align-items:center; gap:4px;">
-                    <button class="vfx-btn st-move-up" data-idx="${idx}" ${idx === 0 ? 'disabled style="opacity:.3;"' : ''} style="padding:2px 6px; font-size:10px;">▲</button>
-                    <button class="vfx-btn st-move-down" data-idx="${idx}" ${idx === allStages.length - 1 ? 'disabled style="opacity:.3;"' : ''} style="padding:2px 6px; font-size:10px;">▼</button>
-                    <button class="vfx-btn st-remove" data-idx="${idx}" style="padding:2px 6px; font-size:10px; color:#fca5a5; margin-left:6px;">✕</button>
-                  </div>
+              <div class="stage-card pipe-node" data-idx="${idx}" data-stage-id="${esc(st.id || "")}" style="position:relative; width:360px; margin-left:${30 + shift}px; background:#2a2a2e; border:1.5px solid ${ring}; border-radius:10px; box-shadow:0 10px 26px rgba(0,0,0,.55)${rs === "running" ? ", 0 0 16px rgba(34,211,238,.3)" : ""}; display:flex; flex-direction:column;">
+                <div style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-bottom:1px solid #3a3a40;">
+                  <span style="width:9px; height:9px; border-radius:50%; background:${dot};"></span>
+                  <b style="font-size:12px; color:#fafafa; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${icon} ${esc(st.title || meta.title_ru || meta.name || `Stage ${idx + 1}`)}</b>
+                  <span style="font-size:9.5px; opacity:.45; font-family:monospace;">#${idx + 1}</span>
+                  <button class="vfx-btn st-move-up" data-idx="${idx}" ${idx === 0 ? "disabled" : ""} style="padding:0 5px; font-size:9px; ${idx === 0 ? "opacity:.3;" : ""}">▲</button>
+                  <button class="vfx-btn st-move-down" data-idx="${idx}" ${idx === allStages.length - 1 ? "disabled" : ""} style="padding:0 5px; font-size:9px; ${idx === allStages.length - 1 ? "opacity:.3;" : ""}">▼</button>
+                  <button class="vfx-btn st-remove" data-idx="${idx}" style="padding:0 5px; font-size:9px; color:#fca5a5;">✕</button>
                 </div>
-                <!-- node body: inputs | preview + outputs -->
-                <div style="display:flex; gap:12px; padding:10px 12px 12px;">
-                  <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:8px;">
-                    <div style="font-size:9.5px; color:#a1a1aa; text-transform:uppercase; letter-spacing:.05em;">⇢ ${uiText("Inputs", "Входы")}</div>
-                    ${inputsDef.map(inp => `<div class="pipe-in" data-stage-idx="${idx}" data-inp="${esc(inp.id)}" style="position:relative;">
-                        ${sock("sock-in", `data-stage-idx="${idx}" data-inp="${esc(inp.id)}"`, "#a855f7").replace("position:absolute;", "position:absolute; left:-31px; top:9px;")}
-                        ${renderInputControl(inp, st, idx, allStages)}</div>`).join("")}
-                  </div>
-                  <div style="width:190px; flex-shrink:0; display:flex; flex-direction:column; gap:8px;">
-                    <div style="font-size:9.5px; color:#a1a1aa; text-transform:uppercase; letter-spacing:.05em;">${uiText("Preview", "Превью")}</div>
-                    <div style="width:100%; aspect-ratio:16/10; background:#050507; border:1px solid #23232c; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:#52525b; font-size:10px;">
-                      ${prev || (rs === "running" ? `<i data-lucide="loader" class="vfx-spin" style="width:18px; height:18px; color:#22d3ee;"></i>` : uiText("no result yet", "пока нет результата"))}
-                    </div>
-                    <div style="font-size:9.5px; color:#a1a1aa; text-transform:uppercase; letter-spacing:.05em; text-align:right;">${uiText("Outputs", "Выходы")} ⇢</div>
-                    ${outputsDef.map(o => `<div style="position:relative; text-align:right; font-size:10.5px; color:#c4b5fd; padding:3px 8px; background:#18181b; border:1px solid #3b0764; border-radius:6px;">
-                        ${esc(o.label_ru || o.label)} <span style="opacity:.5;">(${esc(o.kind || "")})</span>
-                        ${sock("sock-out", `data-stage-id="${esc(st.id || "")}" data-out="${esc(o.id)}"`, "#22d3ee").replace("position:absolute;", "position:absolute; right:-31px; top:5px;")}
-                      </div>`).join("")}
-                  </div>
-                </div>
+                <div style="padding-top:4px;">${outRows}</div>
+                <div style="padding-bottom:4px;">${inRows}</div>
+                ${prev || rs === "running" ? `<div style="margin:0 10px 10px; aspect-ratio:16/10; background:#0b0b0d; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center;">${prev || `<i data-lucide="loader" class="vfx-spin" style="width:18px; height:18px; color:#22d3ee;"></i>`}</div>` : ""}
               </div>
-              ${idx < allStages.length - 1 ? `<div style="height:22px;"></div>` : ""}
+              ${idx < allStages.length - 1 ? `<div style="height:34px;"></div>` : ""}
             `;
         };
         // wires: output socket of a stage -> the input it feeds (an input stored as {from_stage, output_key})
@@ -2886,7 +2893,7 @@ export function initStudioArchitecture(ctx) {
             svg.classList.add("pipe-wires");
             svg.setAttribute("style", `position:absolute; left:0; top:0; width:${list.scrollWidth}px; height:${list.scrollHeight}px; pointer-events:none; overflow:visible; z-index:2;`);
             const base = list.getBoundingClientRect();
-            const ctr = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - base.left + r.width / 2, y: r.top - base.top + r.height / 2 }; };
+            const ctr = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - base.left + list.scrollLeft + r.width / 2, y: r.top - base.top + list.scrollTop + r.height / 2 }; };
             let paths = "";
             (currentPipe.stages || []).forEach((st, idx) => {
                 Object.entries(st.inputs || {}).forEach(([inpId, val]) => {
@@ -3398,6 +3405,11 @@ export function initStudioArchitecture(ctx) {
 
         const wireEvents = () => {
             setTimeout(drawPipeWires, 30); setTimeout(drawPipeWires, 600);
+            ov.querySelectorAll(".pin-unlink").forEach(b => b.onclick = (e) => {
+                e.stopPropagation();
+                const st = currentPipe?.stages?.[+b.dataset.stageIdx];
+                if (st && st.inputs) { st.inputs[b.dataset.inp] = ""; render(); }
+            });
             try { refreshLucideIcons(); } catch (_) {}
             wireAssetControls();
 
