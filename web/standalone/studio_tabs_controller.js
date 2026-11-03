@@ -8125,6 +8125,7 @@ async function openNarrationEditor() {
 
                     </button>
 
+                    <button class="vfx-btn" id="btn-genvideo-layers" ${tipAttr("The same window as the ✨ button over a 2D video: IC-LoRA on the layers of the chosen video (layout, pose, depth...), second control from any video, first frame, model, resolution, frames per pass", "То же окно, что кнопка ✨ над видео в 2D: IC-LoRA по слоям выбранного видео (лейаут, поза, глубина…), второе управление из любого видео, первый кадр, модель, разрешение, кадров за проход")} style="padding: 5px 12px; font-size: 10.5px; color: #c4b5fd; border-color: rgba(167,139,250,0.5);">✨ ${uiText("By video layers…", "По слоям видео…")}</button>
                     <button class="vfx-btn" id="btn-genvideo-cancel" style="padding: 5px 12px; font-size: 10.5px;">${uiText("Cancel", "Отмена")}</button>
 
                     <button class="vfx-btn vfx-btn-primary" id="btn-genvideo-launch" style="padding: 5px 16px; font-size: 10.5px; display: inline-flex; align-items: center; gap: 5px;">
@@ -8627,6 +8628,22 @@ async function openNarrationEditor() {
         panel.querySelector("#btn-genvideo-close")?.addEventListener("click", () => panel.remove());
 
         panel.querySelector("#btn-genvideo-cancel")?.addEventListener("click", () => panel.remove());
+        // a duplicate entry to the ✨ window of the 2D canvas (that button stays where it is)
+        panel.querySelector("#btn-genvideo-layers")?.addEventListener("click", () => {
+            const vId = panel.querySelector("#sel-genvideo-source-vid")?.value || activeVideoId;
+            panel.remove();
+            if (vId && mediaVideos2D.some(v => v.id === vId)) activeVideoId = vId;
+            if (mainViewDim !== "2D") switchMainDimension("2D");
+            try { renderMainViewport(); renderTopViewportBar(); } catch (_) {}
+            let tries = 0;
+            const openIt = () => {
+                const b = document.querySelector("#btn-2d-notes-generate");
+                if (b) { b.click(); return; }
+                if (++tries < 20) setTimeout(openIt, 150);
+                else showToastNotification(uiText("Open a video in the 2D tab first", "Сначала откройте видео во вкладке 2D"), true);
+            };
+            setTimeout(openIt, 200);
+        });
 
         panel.querySelector("#btn-genvideo-purge-vram")?.addEventListener("click", () => {
 
