@@ -1342,8 +1342,10 @@ def _first_frame_qwen(job_id, pid, vid, p, scene_bgr, idx):
         from image_generate_service import run_qwen_edit
     ref = str(p.get("ref_image") or "")
     ch = cv2.imread(resolve_media_path(ref), cv2.IMREAD_COLOR) if ref else None
-    if ch is None:
-        raise ProcessError("Pick the character reference image")
+    desc = str(p.get("prompt") or "").strip()
+    scene_txt = str(p.get("scene") or "").strip()
+    if ch is None and not desc:
+        raise ProcessError("Pick the character image or describe the character")
     pose_txt = ""
     scene = scene_bgr.copy()
     if p.get("pose_layer"):
@@ -1353,13 +1355,23 @@ def _first_frame_qwen(job_id, pid, vid, p, scene_bgr, idx):
             pz = cv2.resize(pz, (scene.shape[1], scene.shape[0]))
             m = pz.max(axis=2) > 30
             scene[m] = pz[m]
-            pose_txt = (", replacing the coloured stick-figure skeleton: she stands exactly where the skeleton is, "
+            pose_txt = (", replacing the coloured stick-figure skeleton: she is exactly where the skeleton is, "
                         "in exactly its pose (same limb positions and size)")
-    imgs = [_png_data_url(ch), _png_data_url(scene)]
-    user = str(p.get("prompt") or "").strip()
-    instruction = QWEN_FIRST_FRAME.format(pose=pose_txt, scene=f": {user}" if user else "")
+    if ch is not None:
+        imgs = [_png_data_url(ch), _png_data_url(scene)]
+        extra = "; ".join(x for x in (desc, scene_txt) if x)
+        instruction = QWEN_FIRST_FRAME.format(pose=pose_txt, scene=f": {extra}" if extra else "")
+        size_from = 1
+    else:
+        # no character picture: the character is described in words, the layout (with the skeleton) is the only image
+        imgs = [_png_data_url(scene)]
+        instruction = (f"Replace the coloured stick-figure skeleton with {desc}{pose_txt[len(', replacing the coloured stick-figure skeleton'):] if pose_txt else ''}. "
+                       "Keep the camera angle, framing and the position and size of every object, but turn the plain "
+                       f"coloured 3D shapes into real objects{': ' + scene_txt if scene_txt else ''}. "
+                       "One single photorealistic frame, no skeleton lines, no text.")
+        size_from = 0
     _job_update(job_id, message="Qwen Image Edit: first frame…", progress=15)
-    res = run_qwen_edit(imgs, instruction, seed=p.get("seed") or None, size_from=1,
+    res = run_qwen_edit(imgs, instruction, seed=p.get("seed") or None, size_from=size_from,
                         megapixels=float(p.get("megapixels", 0.6)), run_tag=job_id)
     return {"image": _save_first_frame(pid, vid, res["image"]), "seed": res["seed"], "model": "qwen",
             "seconds": res["seconds"], "prompt_used": instruction}
