@@ -3064,6 +3064,9 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     r0 = max(0, int(p.get("start", 0) or 0))
     r1 = min(len(frames) - 1, int(p.get("end", len(frames) - 1)))
     frames = frames[r0:r1 + 1]
+    # several results of the same mode used to get the same name: add the time and the model so they can be told apart
+    _variant = {"dev": "full", "dev_lora": "full+LoRA"}.get(str(p.get("model_variant") or ""), "")
+    lname = f"{lname} · {time.strftime('%H:%M')}" + (f" · {_variant}" if _variant else "") + (" · 2 ctrl" if p.get("lora2") else "")
     layer = _add_layer(pid, vid, ltype, lname,
                        color="#f472b6" if is_matte else "", extra={"source": "ltx_ic_lora", "lora": lora, **({"lora2": lora2} if lora2 else {})})
     out_dir = _layer_dir(pid, vid, layer["id"])
