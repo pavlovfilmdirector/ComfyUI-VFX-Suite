@@ -10648,6 +10648,78 @@ async function openNarrationEditor() {
         } catch (_) {}
     }
     window.__vfxSyncGeneratedFrames = syncGeneratedFramesToGallery;
+    // "Generations": a small pill (bottom-left) that shows how many jobs run, and opens the list of this session's
+    // generations - what, for which video, status / progress, where the result went - with a button to open it
+    (function setupGenerationsPill() {
+        if (document.getElementById("vfx-gen-pill")) return;
+        const pill = document.createElement("button");
+        pill.id = "vfx-gen-pill";
+        pill.className = "vfx-btn";
+        pill.style.cssText = "position: fixed; left: 14px; bottom: 46px; z-index: 99990; padding: 4px 10px; font-size: 10.5px; border-radius: 14px; background: rgba(15,15,20,0.92); border: 1px solid #3f3f46; color: #e4e4e7; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.5);";
+        pill.innerHTML = `🕘 <span id="vfx-gen-pill-txt">${uiText("Generations", "Генерации")}</span>`;
+        document.body.appendChild(pill);
+        let panel = null, items = [];
+        const esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const KIND = { ltx_ic_lora: ["🎬", "LTX IC-LoRA"], first_frame: ["🖼", uiText("First frame", "Первый кадр")], relight_frame: ["💡", uiText("Relight", "Релайт")],
+            track_camera: ["🎥", uiText("Camera tracking", "Трекинг камеры")], composite: ["🧩", uiText("Composite", "Сведение")], storyboard: ["🖼", uiText("Image", "Изображение")],
+            ltx_alpha: ["◐", uiText("Alpha matte", "Альфа-матт")], corridor_key: ["🟩", "CorridorKey"] };
+        const fmt = (t) => { if (!t) return ""; const d = new Date(t * 1000); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+        const vidTitle = (id) => { const v = (Array.isArray(mediaVideos2D) ? mediaVideos2D : []).find(x => x.id === id); return v ? (v.title || id) : (id || ""); };
+        const render = () => {
+            if (!panel) return;
+            const pid = currentProject?.id || "sandbox_playground";
+            const mine = items.filter(it => !it.project || it.project === pid);
+            panel.querySelector(".gl-list").innerHTML = mine.length ? mine.map((it, i) => {
+                const [ic, label] = KIND[it.kind] || ["⚙", it.kind || "job"];
+                const st = it.status === "running" ? `<span style="color:#67e8f9;">◉ ${it.progress != null ? Math.round(it.progress) + "%" : ""}</span>`
+                    : it.status === "done" ? `<span style="color:#4ade80;">✓</span>` : `<span style="color:#f87171;">✗</span>`;
+                const where = it.layer ? `${uiText("layer", "слой")} «${esc(it.layer)}»` : (it.image ? uiText("picture in the gallery", "картинка в галерее") : "");
+                const canOpen = !!it.video && it.status === "done";
+                return `<div style="padding: 6px 8px; border-bottom: 1px solid #1f1f23; display: flex; gap: 8px; align-items: flex-start;">
+                    <span style="font-size: 14px;">${ic}</span>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; justify-content: space-between; gap: 6px;"><b style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(it.name || label)}</b><span style="opacity: .55; font-family: monospace;">${fmt(it.started)}</span></div>
+                        <div style="opacity: .65; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${st} ${esc(label)}${it.video ? " · " + esc(vidTitle(it.video)) : ""}${where ? " → " + where : ""}</div>
+                        ${it.status !== "done" && it.message ? `<div style="opacity: .5; font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(it.message)}</div>` : ""}
+                    </div>
+                    ${canOpen ? `<button class="vfx-btn gl-open" data-i="${i}" style="padding: 1px 7px; font-size: 10px;">${uiText("Open", "Открыть")}</button>` : ""}
+                </div>`;
+            }).join("") : `<div style="padding: 12px; opacity: .55;">${uiText("No generations in this session yet", "В этой сессии генераций ещё не было")}</div>`;
+            panel.querySelectorAll(".gl-open").forEach(b => b.onclick = () => {
+                const it = mine[+b.dataset.i];
+                if (!it || !it.video) return;
+                try {
+                    activeVideoId = it.video;
+                    if (typeof switchMainDimension === "function") switchMainDimension("2D");
+                    if (typeof renderMainViewport === "function") renderMainViewport();
+                    if (typeof renderTopViewportBar === "function") renderTopViewportBar();
+                } catch (_) {}
+            });
+        };
+        const poll = async () => {
+            try {
+                const r = await fetch("/vfx/process/history").then(x => x.ok ? x.json() : null);
+                if (r && Array.isArray(r.items)) items = r.items;
+            } catch (_) {}
+            const run = items.filter(it => it.status === "running");
+            const txt = pill.querySelector("#vfx-gen-pill-txt");
+            txt.textContent = run.length ? `${uiText("Generating", "Генерация")}: ${run.length} · ${Math.round(run[0].progress || 0)}%` : uiText("Generations", "Генерации");
+            pill.style.borderColor = run.length ? "#22d3ee" : "#3f3f46";
+            render();
+        };
+        pill.onclick = () => {
+            if (panel) { panel.remove(); panel = null; return; }
+            panel = document.createElement("div");
+            panel.style.cssText = "position: fixed; left: 14px; bottom: 78px; z-index: 99991; width: 380px; max-height: 60vh; overflow-y: auto; background: rgba(12,12,16,0.97); border: 1px solid #3f3f46; border-radius: 8px; box-shadow: 0 14px 36px rgba(0,0,0,.7); color: #e4e4e7; font-size: 11px;";
+            panel.innerHTML = `<div style="padding: 7px 9px; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between;"><b>🕘 ${uiText("Generations (this session)", "Генерации (эта сессия)")}</b><button class="vfx-btn gl-x" style="padding: 0 6px;">✕</button></div><div class="gl-list"></div>`;
+            document.body.appendChild(panel);
+            panel.querySelector(".gl-x").onclick = () => { panel.remove(); panel = null; };
+            render();
+            poll();
+        };
+        setInterval(poll, 3000);
+        poll();
+    })();
     async function syncStudioCanvasesToGallery() {
         try {
             const pid = (currentProject && currentProject.id) || "sandbox_playground";

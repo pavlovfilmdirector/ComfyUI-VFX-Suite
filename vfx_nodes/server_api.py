@@ -9091,6 +9091,38 @@ def register_server_routes():
 
 
 
+        @routes.get("/vfx/process/history")
+        async def vfx_process_history(request):
+            """Every 2D/3D job of this ComfyUI session (running, done, failed) + recent image runs: the studio's
+            'Generations' list, so one can see what was made, for which video, and where the result went."""
+            from .progress_tracker import snapshot
+            items = []
+            try:
+                from .video_layers_service import _JOBS as _VJOBS
+                for j in list(_VJOBS.values()):
+                    res = j.get("result") if isinstance(j.get("result"), dict) else {}
+                    lay = res.get("layer") if isinstance(res.get("layer"), dict) else {}
+                    img = res.get("image") if isinstance(res.get("image"), dict) else {}
+                    items.append({"id": j.get("id"), "kind": j.get("kind"), "status": j.get("status"), "progress": j.get("progress"),
+                                  "message": j.get("message"), "started": j.get("started"), "updated": j.get("updated") or j.get("started"),
+                                  "project": j.get("project"), "video": j.get("video"), "name": j.get("name"),
+                                  "layer": lay.get("name"), "layer_id": lay.get("id"), "image": img.get("url")})
+            except Exception:
+                pass
+            snap = snapshot()
+            for r in (snap.get("recent") or []):
+                if r.get("label") in ("video_fx",):
+                    continue   # the video jobs above already cover these
+                items.append({"id": r.get("prompt_id"), "kind": r.get("label"), "status": r.get("status"), "progress": 100 if r.get("status") == "done" else None,
+                              "started": r.get("started"), "updated": r.get("updated"), "image_run": True})
+            run = snap.get("running")
+            if run and run.get("label") not in ("video_fx",):
+                items.append({"id": run.get("prompt_id"), "kind": run.get("label"), "status": "running",
+                              "progress": int(100 * (run.get("done_nodes") or 0) / max(1, run.get("total_nodes") or 1)),
+                              "message": run.get("node_title") or "", "started": run.get("started"), "updated": run.get("updated"), "image_run": True})
+            items.sort(key=lambda x: x.get("started") or 0, reverse=True)
+            return add_cors_headers(web.json_response({"items": items[:60]}))
+
         @routes.get("/vfx/process/preview/{prompt_id}")
 
         async def vfx_process_preview(request):
