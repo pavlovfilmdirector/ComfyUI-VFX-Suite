@@ -5148,10 +5148,11 @@ let lastMonitorRenderTime = 0;
                 const pt = hits[0].point.clone();
                 if (picked3Pts.length >= 3) clear3PtMarkers();   // a 4th click starts a new triangle
                 picked3Pts.push(pt);
-                const sphere = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.08, 12, 12),
-                    new THREE.MeshBasicMaterial({ color: 0xffffff })
-                );
+                // a small fixed-size coloured dot (same size on screen at any distance) instead of a big white ball
+                const dotGeo = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+                const sphere = new THREE.Points(dotGeo, new THREE.PointsMaterial({ color: [0xf43f5e, 0xfacc15, 0x22d3ee][picked3Pts.length - 1] || 0x22d3ee,
+                    size: 9, sizeAttenuation: false, depthTest: false }));
+                sphere.renderOrder = 999;
                 sphere.position.copy(pt);
                 scene.add(sphere);
                 picked3PtMarkers.push(sphere);

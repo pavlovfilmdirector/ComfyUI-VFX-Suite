@@ -1322,12 +1322,12 @@ QWEN_FIRST_FRAME = ("Place the character from image 1 into the scene from image 
                     "One single frame, no skeleton lines, no text.")
 
 
-def _save_first_frame(pid, vid, data_url):
+def _save_first_frame(pid, vid, data_url, prefix="first_frame"):
     import base64
     raw = base64.b64decode(data_url.split(",", 1)[1])
     folder = os.path.join(get_project_dir(pid), "storyboard")
     os.makedirs(folder, exist_ok=True)
-    name = f"first_frame_{_safe(vid)[:40]}_{time.strftime('%Y%m%d_%H%M%S')}.png"
+    name = f"{prefix}_{_safe(vid)[:40]}_{time.strftime('%Y%m%d_%H%M%S')}.png"
     with open(os.path.join(folder, name), "wb") as f:
         f.write(raw)
     return {"url": f"/vfx/project_file/{pid}/storyboard/{name}", "title": name}
@@ -1474,7 +1474,7 @@ def _job_relight_frame(job_id, kind, pid, vid, p):
         res = run_qwen_edit([_png_data_url(src)], prompt, seed=p.get("seed") or None, size_from=0,
                             megapixels=float(p.get("megapixels", 1.0)), run_tag=job_id)
     _free_vram()   # Qwen Edit (40 GB, partly offloaded) leaves VRAM fragmented: the next LTX run crawled at ~4 min/step
-    return {"image": _save_first_frame(pid, vid, res["image"]), "seed": res["seed"], "seconds": res["seconds"]}
+    return {"image": _save_first_frame(pid, vid, res["image"], prefix="relight"), "seed": res["seed"], "seconds": res["seconds"]}
 
 
 def _free_vram():

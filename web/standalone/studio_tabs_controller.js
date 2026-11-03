@@ -10627,6 +10627,27 @@ async function openNarrationEditor() {
     }
     window.__vfxSyncGeneratedImagesToGallery = syncGeneratedImagesToGallery;
     // videos the studio made itself (camera renders with Layout / Pose / Depth layers) that lost their gallery card
+    async function syncGeneratedFramesToGallery() {
+        try {
+            const pid = (currentProject && currentProject.id) || "sandbox_playground";
+            const r = await fetch(`/vfx/projects/${encodeURIComponent(pid)}/generated_frames`).then(x => x.ok ? x.json() : null);
+            if (!r || !Array.isArray(r.files)) return;
+            let changed = false;
+            for (const f of r.files) {
+                if (mediaImages1D.some(i => i.url === f.url || String(i.url || "").split("?")[0] === f.url)) continue;
+                if (typeof isAssetDeletedLocal === "function" && (isAssetDeletedLocal(f.url, pid) || isAssetDeletedLocal(f.name, pid))) continue;
+                // a relight saved before relights got their own prefix is a first_frame_ file: the name cannot tell them apart
+                const isRelight = f.name.startsWith("relight_");
+                const t = new Date(f.mtime * 1000);
+                const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+                mediaImages1D.unshift({ id: `img_ff_${f.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`, title: `${isRelight ? uiText("Relight", "Релайт") : uiText("First frame", "Первый кадр")} · ${hhmm}`,
+                    badge: isRelight ? uiText("RELIGHT", "РЕЛАЙТ") : uiText("FIRST FRAME", "ПЕРВЫЙ КАДР"), url: f.url, fallbackUrl: null, comment: f.name, layerDataUrl: null, layerVisible: true });
+                changed = true;
+            }
+            if (changed) { try { saveProject1DImages(pid); } catch (_) {} if (currentProject) currentProject.mediaImages1D = mediaImages1D; try { renderTopViewportBar(); } catch (_) {} }
+        } catch (_) {}
+    }
+    window.__vfxSyncGeneratedFrames = syncGeneratedFramesToGallery;
     async function syncStudioCanvasesToGallery() {
         try {
             const pid = (currentProject && currentProject.id) || "sandbox_playground";
@@ -10660,7 +10681,7 @@ async function openNarrationEditor() {
         try { renderTopViewportBar(); } catch (_) {}
     };
 
-    setTimeout(() => { try { syncTrackScenes(); syncGeneratedMeshesToScenes3D(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); } catch (_) {} ensureDefaultLevelExists(); } catch (_) {} }, 1500);
+    setTimeout(() => { try { syncTrackScenes(); syncGeneratedMeshesToScenes3D(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); syncGeneratedFramesToGallery(); } catch (_) {} ensureDefaultLevelExists(); } catch (_) {} }, 1500);
 
     let activeScene3DId = mediaScenes3D[0]?.id || null;
 
@@ -68506,7 +68527,7 @@ function renderActiveCustomTab() {
                 return (best && bestScore > 0) ? best.id : (mediaScenes3D[0]?.id || null);
             })();
 
-            setTimeout(() => { try { syncTrackScenes(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); } catch (_) {} } catch (_) {} }, 800);
+            setTimeout(() => { try { syncTrackScenes(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); syncGeneratedFramesToGallery(); } catch (_) {} } catch (_) {} }, 800);
 
 
 

@@ -894,6 +894,20 @@ def register_server_routes():
 
 
 
+        @routes.get("/vfx/projects/{project_id}/generated_frames")
+        async def vfx_project_generated_frames(request):
+            """First frames and relights saved by the generation dialogs (storyboard/first_frame_*, relight_*):
+            the gallery adds the ones it does not show yet (ComfyUI's history is gone after a restart)."""
+            pid = _sanitize_id(request.match_info["project_id"])
+            folder = os.path.join(get_project_dir(pid), "storyboard")
+            out = []
+            if os.path.isdir(folder):
+                for fn in os.listdir(folder):
+                    if fn.lower().endswith(".png") and (fn.startswith("first_frame_") or fn.startswith("relight_")):
+                        out.append({"name": fn, "url": f"/vfx/project_file/{pid}/storyboard/{fn}", "mtime": os.path.getmtime(os.path.join(folder, fn))})
+            out.sort(key=lambda x: x["mtime"])
+            return add_cors_headers(web.json_response({"files": out}))
+
         @routes.get("/vfx/project_file/{project_id}/{subpath:.+}")
 
         async def serve_project_file(request):
