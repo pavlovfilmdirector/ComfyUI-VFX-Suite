@@ -44498,6 +44498,28 @@ async function openNarrationEditor() {
                     const wantsFF = () => { const m = curMode(); return !!m && (m.needs === "first_frame" || (m.needs === "control" && pop.querySelector("#g2-use-ff").checked)); };
 
                     const wantsAudio = () => { const m = curMode(); return !!m && (m.needs === "audio" || m.key === "dubit" || (m.file && m.file.includes("dubit"))); };
+                    // layout-to-render works best like the demo pipeline: pose as the second control (union-control),
+                    // the first frame on, 49 frames per pass - set that up when the video has a pose layer
+                    const demoDefaults = () => {
+                        const m = curMode();
+                        if (!m || !/layout-to-render/i.test(m.file || "")) return;
+                        const pose = vlState2D.layers.find(l => l.type === "pose");
+                        const uni = [...pop.querySelectorAll("#g2-l2 option")].find(o => /union-control/i.test(o.value));
+                        const two = pop.querySelector("#g2-two");
+                        if (pose && uni && two && !two.dataset.userSet) {
+                            two.checked = true;
+                            two.dispatchEvent(new Event("change"));
+                            pop.querySelector("#g2-l2").value = uni.value;
+                            const s2 = pop.querySelector("#g2-s2"); if (s2) s2.value = pose.id;
+                            const a2 = pop.querySelector("#g2-a2"); if (a2) { a2.value = "0.9"; const v = pop.querySelector("#g2-a2v"); if (v) v.textContent = "0.90"; }
+                            const ps = pop.querySelector("#g2-pass"); if (ps && !ps.value) ps.value = "49";
+                            const ff = pop.querySelector("#g2-use-ff"); if (ff && !ff.checked) { ff.checked = true; ff.dispatchEvent(new Event("change")); }
+                            showToastNotification(uiText("Layout-to-render: pose added as the second control, first frame on, 49 frames per pass (like the demo)", "Layout-to-render: поза включена вторым управлением, первый кадр включён, 49 кадров за проход (как в демо)"));
+                        }
+                    };
+                    setTimeout(demoDefaults, 0);
+                    pop.querySelectorAll('input[name="g2-mode"]').forEach(r => r.addEventListener("change", () => setTimeout(demoDefaults, 0)));
+                    setTimeout(() => { const two = pop.querySelector("#g2-two"); if (two) two.addEventListener("click", () => { two.dataset.userSet = "1"; }); }, 0);
 
                     const renderRef = () => {
 
