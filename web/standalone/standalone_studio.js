@@ -6247,7 +6247,10 @@ let lastMonitorRenderTime = 0;
         const depth = (o) => { let d = 0; while (o.parent) { d++; o = o.parent; } return d; };
         pairs.sort((a, b) => depth(a.tb) - depth(b.tb));
         const action = src.mixer.clipAction(srcClip); action.play();
-        return { src, pivot, pairs, hip, hipSrcRest: wp(hip.sb), ratio: tgtH / srcH, action, clip: srcClip };
+        // the character's own rotation when the retarget was built: later turns of the object are applied on top
+        const owner0 = rig.obj || (rig.zUp && rig.zUp.parent) || null;
+        const objQ0 = owner0 ? wq(owner0) : new THREE.Quaternion();
+        return { src, pivot, pairs, hip, hipSrcRest: wp(hip.sb), ratio: tgtH / srcH, action, clip: srcClip, objQ0 };
     }
 
     function applyRetarget(rig, t) {
@@ -6257,13 +6260,18 @@ let lastMonitorRenderTime = 0;
         if (rig.obj) rig.obj.updateMatrixWorld(true);
         rig.zUp.updateMatrixWorld(true);
         const tmpQ = new THREE.Quaternion(), parentQ = new THREE.Quaternion();
+        // the source animation is solved in world space, so a rotated character used to snap back to the clip's facing:
+        // turn the whole solved pose (and the hip travel) by how much the object was rotated since the retarget was built
+        const owner = rig.obj || (rig.zUp && rig.zUp.parent) || null;
+        const objQ = owner ? owner.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
+        const turn = objQ.multiply((R.objQ0 || new THREE.Quaternion()).clone().invert());
         R.pairs.forEach(p => {
             const sNow = p.sb.getWorldQuaternion(tmpQ.clone());
             // Source rotation delta from rest
             const sDelta = sNow.multiply(p.sRest.clone().invert());
             p.tb.parent.getWorldQuaternion(parentQ);
             // Target world rotation = delta applied through corr onto target rest orientation
-            const world = sDelta.multiply(p.corr).multiply(p.tRest);
+            const world = turn.clone().multiply(sDelta.multiply(p.corr).multiply(p.tRest));
             p.tb.quaternion.copy(parentQ.invert().multiply(world));
             p.tb.updateMatrixWorld(true);
         });
@@ -6277,7 +6285,7 @@ let lastMonitorRenderTime = 0;
             R.hip.tb.updateMatrixWorld(true);
         } else {
             const sHip = R.hip.sb.getWorldPosition(new THREE.Vector3());
-            const sHipDelta = sHip.sub(R.hipSrcRest).multiplyScalar(R.ratio);
+            const sHipDelta = sHip.sub(R.hipSrcRest).multiplyScalar(R.ratio).applyQuaternion(turn);
             if (charObj && charObj.userData && charObj.userData.bakeRootMode === "pivot") {
                 sHipDelta.x = 0;
                 sHipDelta.y = 0;
