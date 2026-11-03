@@ -7950,10 +7950,10 @@ async function openNarrationEditor() {
                         <div id="genvideo-lora-second-box" style="display: none; flex-direction: column; gap: 4px; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
 
                             <select id="sel-genvideo-lora2-file" class="vfx-interp-select" style="padding: 3px 5px; font-size: 10px;">
-
                                 ${lorasList.map(l => `<option value="${esc(l.file)}">${esc(uiText(l.title_en, l.title_ru))}</option>`).join("")}
-
                             </select>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 9.5px;">${uiText("Its control (layer or video)", "Её вход (слой или видео)")}
+                                <select id="sel-genvideo-lora2-src" class="vfx-interp-select" style="flex: 1; min-width: 0; padding: 3px 5px; font-size: 10px;"><option value="">${uiText("— loading… —", "— загрузка… —")}</option></select></label>
 
                             <div style="display: flex; align-items: center; gap: 6px; font-size: 9.5px;">
 
@@ -8411,13 +8411,34 @@ async function openNarrationEditor() {
 
         });
 
+        // the second IC-LoRA needs its own control input: a layer of the source video, or a layer / plate of any other project video
+        const fillLora2Sources = async () => {
+            const sel = panel.querySelector("#sel-genvideo-lora2-src");
+            if (!sel) return;
+            const pid = currentProject?.id || "sandbox_playground";
+            const srcVid = panel.querySelector("#sel-genvideo-source-vid")?.value || "";
+            const vids = (Array.isArray(mediaVideos2D) ? mediaVideos2D : []).filter(v => v && v.id && !String(v.id).startsWith("vid_3d_") && v.id !== "baked_layout_sequence");
+            const opts = [];
+            for (const v of [vids.find(x => x.id === srcVid), ...vids.filter(x => x.id !== srcVid)].filter(Boolean)) {
+                let layers = [];
+                try {
+                    const st = await fetch(`/vfx/video/${encodeURIComponent(pid)}/${encodeURIComponent(v.id)}/state`).then(r => r.ok ? r.json() : null);
+                    layers = (st && Array.isArray(st.layers)) ? st.layers.filter(l => l.type === "pose" || l.type === "rgb" || l.type === "depth" || l.type === "paint") : [];
+                } catch (_) {}
+                const label = (v.title || v.id).slice(0, 40);
+                const same = v.id === srcVid;
+                layers.forEach(l => opts.push(`<option value="${same ? "" : esc(v.id) + "|"}${esc(l.id)}">${same ? "" : "↪ " + esc(label) + " › "}${esc(l.name || l.id)}${l.type === "pose" ? " (pose)" : ""}</option>`));
+            }
+            sel.innerHTML = opts.length ? opts.join("") : `<option value="">${uiText("No layers found — render Pose to Gen in 3D first", "Слоёв нет — сначала сделайте Pose to Gen в 3D")}</option>`;
+            const pose = [...sel.options].find(o => /\(pose\)/.test(o.textContent) && !o.value.includes("|")) || [...sel.options].find(o => /\(pose\)/.test(o.textContent));
+            if (pose) sel.value = pose.value;
+        };
         panel.querySelector("#chk-genvideo-lora-second")?.addEventListener("change", (e) => {
-
             const box = panel.querySelector("#genvideo-lora-second-box");
-
             if (box) box.style.display = e.target.checked ? "flex" : "none";
-
+            if (e.target.checked) fillLora2Sources();
         });
+        panel.querySelector("#sel-genvideo-source-vid")?.addEventListener("change", () => { if (panel.querySelector("#chk-genvideo-lora-second")?.checked) fillLora2Sources(); });
 
         panel.querySelector("#rng-genvideo-lora2-strength")?.addEventListener("input", (e) => {
 
@@ -8603,7 +8624,7 @@ async function openNarrationEditor() {
 
 
 
-        panel.querySelector("#btn-genvideo-launch")?.addEventListener("click", () => {
+        panel.querySelector("#btn-genvideo-launch")?.addEventListener("click", async () => {
 
             const promptText = (panel.querySelector("#inp-genvideo-prompt")?.value || "").trim();
 
@@ -8697,10 +8718,21 @@ async function openNarrationEditor() {
 
                 const lora2Attn = two ? parseFloat(panel.querySelector("#rng-genvideo-lora2-strength")?.value || "0.8") : undefined;
 
-                const extra2 = two ? { lora2: lora2File, lora2_attention: lora2Attn } : {};
-
-
-
+                let lora2Src = two ? (panel.querySelector("#sel-genvideo-lora2-src")?.value || "") : "";
+                if (two && !lora2Src) {
+                    showToastNotification(uiText("Choose the input of the second IC-LoRA (e.g. the Pose to Gen layer)", "Выберите вход второй IC-LoRA (например слой Pose to Gen)"), true);
+                    return;
+                }
+                if (two && lora2Src.includes("|")) {
+                    // a layer of another video: copy it into this one first (kept at its own size, centred)
+                    const [fromVid, fromLid] = lora2Src.split("|");
+                    const pidI = currentProject?.id || "sandbox_playground";
+                    const r = await fetch(`/vfx/video/${encodeURIComponent(pidI)}/${encodeURIComponent(vidObj.id)}/import_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ src_vid: fromVid, src_lid: fromLid }) }).then(x => x.json()).catch(err => ({ error: err.message }));
+                    if (r.error || !r.layer) { showToastNotification(`${uiText("Second IC-LoRA input", "Вход второй IC-LoRA")}: ${r.error || "import failed"}`, true); return; }
+                    lora2Src = r.layer.id;
+                }
+                const extra2 = two ? { lora2: lora2File, lora2_attention: lora2Attn, source_layer2: lora2Src } : {};
                 panel.remove();
 
 
