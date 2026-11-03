@@ -44458,6 +44458,12 @@ async function openNarrationEditor() {
                                 <option value="">${uiText("Auto (49 with two controls, 97 with one)", "Авто (49 с двумя управлениями, 97 с одним)")}</option>
                                 ${[33, 49, 65, 81, 97, 121].map(n => `<option value="${n}">${n}${n === 49 ? uiText(" — recommended with two controls", " — рекомендуется с двумя управлениями") : n === 97 ? uiText(" — recommended with one control", " — рекомендуется с одним управлением") : ""}</option>`).join("")}
                             </select></label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;" ${tipAttr("Generation resolution (short side)", "Разрешение генерации (короткая сторона)", "Higher = sharper hands and faces, slower and more video memory. With union-control (ref0.5) the size is rounded to 128.", "Выше — чётче руки и лица, но дольше и больше видеопамяти. С union-control (ref0.5) размер округляется до 128.")}>${uiText("Resolution", "Разрешение")}
+                            <select id="g2-res" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">
+                                <option value="">${uiText("Auto (512 / 576) — fastest", "Авто (512 / 576) — быстрее всего")}</option>
+                                <option value="640">640 — ${uiText("~1.5x time", "~1,5× дольше")}</option>
+                                <option value="768">768 — ${uiText("~2.2x time, a lot of VRAM", "~2,2× дольше, много видеопамяти")}</option>
+                            </select></label>
                         <div id="g2-pass-warn" style="display: none; font-size: 9.5px; color: #fbbf24;">${uiText("Two controls with more than 49 frames per pass: very slow (30+ min) and may stall on 24 GB.", "Два управления и больше 49 кадров за проход: очень долго (30+ мин) и может зависнуть на 24 ГБ.")}</div>
                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;" ${tipAttr("Which LTX-2.5 model runs the generation", "Какая модель LTX-2.5 делает генерацию", "Fast: the distilled model, 8 steps, the negative prompt has no effect. Full + 8-step LoRA: the full model with the distilled LoRA, as fast, often a little more detail. Full: the full model with its own steps and CFG, the negative prompt works, several times slower.", "Быстрая: дистиллированная модель, 8 шагов, негативный промпт не действует. Полная + 8-шаговая LoRA: полная модель с дистиллирующей LoRA, так же быстро, часто чуть детальнее. Полная: своё число шагов и CFG, негативный промпт работает, в разы медленнее.")}>${uiText("Model", "Модель")}
                             <select id="g2-model" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;">
@@ -44687,6 +44693,8 @@ async function openNarrationEditor() {
                         const variant = pop.querySelector("#g2-model").value;
                         const passN = parseInt(pop.querySelector("#g2-pass")?.value || "", 10);
                         const extraPass = passN ? { max_one_pass: passN } : {};
+                        const resN = parseInt(pop.querySelector("#g2-res")?.value || "", 10);
+                        if (resN) extraPass.short_side = resN;
                         const extraModel = variant === "dev" ? { model_variant: "dev", steps: +pop.querySelector("#g2-steps").value, cfg: +pop.querySelector("#g2-cfg").value,
                             negative: (pop.querySelector("#g2-neg").value || "").trim() || undefined } : (variant === "dev_lora" ? { model_variant: "dev_lora" } : {});
 

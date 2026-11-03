@@ -3076,6 +3076,8 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     # otherwise the guide encode fails with "can't divide axis ... in chunks of 2".
     mult = 128 if ("ref0.5" in str(lora).lower() or "ref0.5" in lora2.lower()) else 64
     th = 512 if mult == 128 else 576
+    if p.get("short_side"):   # chosen by hand: rounded to what the VAE / guide accept
+        th = max(mult, int(round(float(p["short_side"]) / mult)) * mult)
     tw = max(mult, int(round(w * th / max(1, h) / mult)) * mult)
     if h > w:  # portrait: fix the width instead
         tw = th
