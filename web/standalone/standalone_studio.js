@@ -5070,6 +5070,22 @@ let lastMonitorRenderTime = 0;
     let picked3Pts = [];
     const picked3PtMarkers = [];
 
+    // the plane through the picked points: centred on them, sized to their spread, normal pointing up
+    function build3PtPlane(preview) {
+        if (picked3Pts.length < 3) return null;
+        const [p1, p2, p3] = picked3Pts;
+        const center = new THREE.Vector3().addVectors(p1, p2).add(p3).divideScalar(3);
+        const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(p2, p1), new THREE.Vector3().subVectors(p3, p1)).normalize();
+        if (!isFinite(normal.x) || normal.lengthSq() < 0.5) return null;
+        if (normal.z < 0) normal.negate();
+        const size = Math.max(1, 1.6 * Math.max(p1.distanceTo(p2), p2.distanceTo(p3), p3.distanceTo(p1)));
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), preview
+            ? new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+            : new THREE.MeshStandardMaterial({ color: 0x888888, side: THREE.DoubleSide, roughness: 0.6 }));
+        mesh.position.copy(center);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        return mesh;
+    }
     function clear3PtMarkers() {
         picked3PtMarkers.forEach(m => scene.remove(m));
         picked3PtMarkers.length = 0;
@@ -5130,6 +5146,7 @@ let lastMonitorRenderTime = 0;
             const hits = raycaster.intersectObject(cloudMesh, false);
             if (hits.length > 0) {
                 const pt = hits[0].point.clone();
+                if (picked3Pts.length >= 3) clear3PtMarkers();   // a 4th click starts a new triangle
                 picked3Pts.push(pt);
                 const sphere = new THREE.Mesh(
                     new THREE.SphereGeometry(0.08, 12, 12),
@@ -5144,7 +5161,12 @@ let lastMonitorRenderTime = 0;
                 if (picked3Pts.length === 3) {
                     const act = document.getElementById("vfx-3pt-actions");
                     if (act) act.style.display = "flex";
+                    // preview of the plane through the three points + how to confirm (the picker bar may be hidden in this layout)
+                    const pv = build3PtPlane(true);
+                    if (pv) { scene.add(pv); picked3PtMarkers.push(pv); }
+                    if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("Plane preview: Enter = create, Esc = cancel, click again = new points", "Превью плоскости: Enter — создать, Esc — отмена, новый клик — заново"), false);
                 }
+                monitorNeedsRender = true;
             }
             return;
         }
@@ -5216,28 +5238,19 @@ let lastMonitorRenderTime = 0;
         if (btnConfirm3Pt) {
             btnConfirm3Pt.onclick = () => {
                 if (picked3Pts.length < 3) return;
+                const planeMesh = build3PtPlane(false);
+                if (!planeMesh) { if (typeof window.__vfxToast === "function") window.__vfxToast(uiText("The 3 points are on one line - pick again", "Три точки на одной линии — выберите заново"), true); clear3PtMarkers(); return; }
                 pushUndoState("Create 3-Point Plane");
-                const [p1, p2, p3] = picked3Pts;
-                const center = new THREE.Vector3().addVectors(p1, p2).add(p3).divideScalar(3);
-                const v1 = new THREE.Vector3().subVectors(p2, p1).normalize();
-                const v2 = new THREE.Vector3().subVectors(p3, p1);
-                const normal = new THREE.Vector3().crossVectors(v1, v2).normalize();
-                if (normal.z < 0) normal.negate();
-
-                const planeMesh = new THREE.Mesh(
-                    new THREE.PlaneGeometry(3, 3),
-                    new THREE.MeshStandardMaterial({ color: 0x888888, side: THREE.DoubleSide, roughness: 0.6 })
-                );
-                planeMesh.position.copy(center);
-                const upVec = new THREE.Vector3(0, 0, 1);
-                planeMesh.quaternion.setFromUnitVectors(upVec, normal);
                 registerObject(planeMesh, `Plane3Pt_${nextObjId}`, "plane");
+                syncSceneData();
+                monitorNeedsRender = true;
 
                 is3PtPlaneMode = false;
                 bar3Pt.style.display = "none";
                 clear3PtMarkers();
                 logMsg("Created aligned Reference Plane from 3 Point Cloud points");
             };
+            window.__vfx3PtConfirm = btnConfirm3Pt.onclick;   // Enter works even if the picker bar is rebuilt or hidden
         }
     }
 
@@ -10122,6 +10135,12 @@ let lastMonitorRenderTime = 0;
         if ((tag === "INPUT" && !(nonText && isUndoKey)) || tag === "SELECT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
         if (nonText && isUndoKey) { try { e.target.blur(); } catch (_) {} }
 
+        if (is3PtPlaneMode && (code === "Enter" || code === "NumpadEnter" || code === "Escape")) {
+            e.preventDefault();
+            if (code === "Escape") { is3PtPlaneMode = false; clear3PtMarkers(); const b = document.getElementById("vfx-3pt-picker-bar"); if (b) b.style.display = "none"; monitorNeedsRender = true; }
+            else if (typeof window.__vfx3PtConfirm === "function") window.__vfx3PtConfirm();
+            return;
+        }
         if ((code === "KeyZ" || k === "z" || k === "я") && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             if (e.shiftKey) {
