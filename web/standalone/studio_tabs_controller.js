@@ -43751,26 +43751,58 @@ async function openNarrationEditor() {
             if (res.error) { showToastNotification(`${kind}: ${res.error}`, true); return null; }
 
             Object.assign(vlJob2D, { id: res.id, kind, message: res.message, progress: 0 });
-
             renderVideoLayersPanel2D();
-
+            // the "generation canvas": a card over the video while a heavy job runs - name, stage, progress, time and
+            // ComfyUI's live preview of the frames being denoised
+            const HEAVY = ["ltx_ic_lora", "ltx_alpha", "first_frame", "relight_frame", "composite", "corridor_key", "depth", "fill"];
+            let genCard = null;
+            if (HEAVY.includes(kind) && wrapper) {
+                genCard = document.createElement("div");
+                genCard.className = "vfx-gen-canvas";
+                genCard.style.cssText = "position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; width: min(440px, 80%); background: rgba(10,10,14,0.88); border: 1px solid rgba(34,211,238,0.45); border-radius: 10px; padding: 10px 12px; color: #e4e4e7; font-size: 11px; box-shadow: 0 16px 40px rgba(0,0,0,.6); pointer-events: auto;";
+                genCard.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;"><b>⚡ ${String(params.name || kind).replace(/</g, "&lt;")}</b>
+                    <span><span class="gc-t" style="font-family: monospace; opacity: .7;">0:00</span> <button class="vfx-btn gc-min" style="padding: 0 6px; margin-left: 6px;" title="${uiText("Hide (the job keeps running)", "Скрыть (генерация продолжится)")}">–</button></span></div>
+                    <div style="position: relative; background: #050507; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center;">
+                        <img class="gc-prev" style="max-width: 100%; max-height: 100%; display: none;"><i data-lucide="loader" class="vfx-spin gc-spin" style="width: 22px; height: 22px; color: #22d3ee;"></i></div>
+                    <div style="height: 5px; background: #18181b; border-radius: 3px; margin-top: 7px; overflow: hidden;"><div class="gc-bar" style="height: 100%; width: 2%; background: linear-gradient(90deg,#22d3ee,#a78bfa); transition: width .5s;"></div></div>
+                    <div class="gc-msg" style="margin-top: 5px; opacity: .7; font-size: 10px; min-height: 13px;"></div>`;
+                (mediaBox2D && mediaBox2D.parentElement ? mediaBox2D.parentElement : wrapper).appendChild(genCard);
+                try { refreshLucideIcons(genCard); } catch (_) {}
+                genCard.querySelector(".gc-min").onclick = () => { genCard.style.display = "none"; };
+            }
+            const genT0 = Date.now();
+            const updateGenCard = async (st) => {
+                if (!genCard || !genCard.isConnected) return;
+                const sec = Math.round((Date.now() - genT0) / 1000);
+                genCard.querySelector(".gc-t").textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+                genCard.querySelector(".gc-bar").style.width = `${Math.max(2, st.progress || 0)}%`;
+                genCard.querySelector(".gc-msg").textContent = `${Math.round(st.progress || 0)}% · ${st.message || ""}`;
+                try {
+                    const pr = await fetch("/vfx/process/progress").then(r => r.json());
+                    const run = pr && pr.running;
+                    if (run && run.has_preview && run.prompt_id) {
+                        const im = genCard.querySelector(".gc-prev");
+                        im.src = `/vfx/process/preview/${encodeURIComponent(run.prompt_id)}?t=${Date.now()}`;
+                        im.style.display = "block";
+                        genCard.querySelector(".gc-spin").style.display = "none";
+                    }
+                } catch (_) {}
+            };
             let misses = 0;
             while (true) {
 
                 await new Promise(r => setTimeout(r, 1000));
 
-                if (vlJob2D.id !== res.id) return null;   // stopped from the panel (lost job)
+                if (vlJob2D.id !== res.id) { if (genCard) genCard.remove(); return null; }   // stopped from the panel (lost job)
                 let st = await fetch(`/vfx/video/job/${res.id}`).then(r => r.json()).catch(() => null);
 
                 if (!st) { if (++misses < 90) continue; st = { status: "error", message: uiText("Server not responding", "Сервер не отвечает") }; }
                 misses = 0;
 
                 Object.assign(vlJob2D, { message: st.message, progress: st.progress || 0 });
-
                 if (wrapper.isConnected) renderVideoLayersPanel2D();
-
-                if (st.status === "running") continue;
-
+                if (st.status === "running") { updateGenCard(st); continue; }
+                if (genCard) genCard.remove();
                 vlJob2D.id = null;
 
                 if (st.status === "done") {
