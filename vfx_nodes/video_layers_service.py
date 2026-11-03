@@ -126,6 +126,9 @@ def get_state(pid: str, vid: str) -> Dict[str, Any]:
     info = pps.get_info(node_id_for(vid))
     man = load_manifest(pid, vid)
     for l in man["layers"]:
+        if l.get("id") == "plate_undist":   # virtual layer: the plate's undistorted frames
+            l["frames"] = _count_frames(pps.get_dirs(node_id_for(vid)).get("undist", ""))
+            continue
         d = _layer_dir(pid, vid, l["id"])
         l["frames"] = _count_frames(d)
         g = l.get("grow") or {}
@@ -1623,7 +1626,63 @@ def _job_undistort(job_id, kind, pid, vid, p):
     else:
         k1, k2 = float(p.get("k1", 0)), float(p.get("k2", 0))
     _job_update(job_id, message=f"Undistorting (k1={k1:.3f}, k2={k2:.3f})…", progress=50)
-    return pps.apply_undistortion(k1, k2, node_id=node_id_for(vid))
+    res = pps.apply_undistortion(k1, k2, node_id=node_id_for(vid))
+    try:
+        _job_update(job_id, message="Writing the lens data and ST-maps for Nuke…", progress=90)
+        _publish_undistort(pid, vid, k1, k2)
+    except Exception as e:   # the undistort itself is done; the extras must not fail the job
+        _job_update(job_id, message=f"Undistorted (lens data not written: {e})")
+    return res
+
+
+def _publish_undistort(pid: str, vid: str, k1: float, k2: float) -> Dict[str, Any]:
+    """The undistorted plate as a layer over the original (compare / work on top of it), plus the lens description
+    and two ST-maps (16-bit PNG, Nuke STMap convention: R = u, G = 1 - v) to undistort / re-distort in Nuke."""
+    info = pps.get_info(node_id_for(vid)) or {}
+    w, h = int(info.get("width") or 1920), int(info.get("height") or 1080)
+    total = int(info.get("total_frames") or 0)
+    cx, cy, focal = w / 2.0, h / 2.0, float(max(w, h))
+    K = np.array([[focal, 0, cx], [0, focal, cy], [0, 0, 1]], np.float64)
+    dist = np.array([k1, k2, 0, 0, 0], np.float64)
+    out_dir = os.path.join(video_root(pid, vid), "lens")
+    os.makedirs(out_dir, exist_ok=True)
+
+    def stmap(mx, my):
+        img = np.zeros((h, w, 3), np.uint16)
+        img[..., 2] = np.clip((mx + 0.5) / w * 65535, 0, 65535).astype(np.uint16)          # R (BGR order)
+        img[..., 1] = np.clip((1.0 - (my + 0.5) / h) * 65535, 0, 65535).astype(np.uint16)  # G
+        return img
+    # undistort: for every pixel of the straight image, where to read in the original
+    mx, my = cv2.initUndistortRectifyMap(K, dist, None, K, (w, h), cv2.CV_32FC1)
+    cv2.imwrite(os.path.join(out_dir, "stmap_undistort.png"), stmap(mx, my))
+    # re-distort: for every pixel of the original (lens) image, where to read in the straight image
+    gx, gy = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    pts = np.stack([gx.ravel(), gy.ravel()], axis=1).reshape(-1, 1, 2)
+    und = cv2.undistortPoints(pts, K, dist, P=K).reshape(h, w, 2)
+    cv2.imwrite(os.path.join(out_dir, "stmap_redistort.png"), stmap(und[..., 0], und[..., 1]))
+    lens = {"model": "OpenCV radial (Brown-Conrady, k1 k2)", "k1": float(k1), "k2": float(k2),
+            "width": w, "height": h, "focal_px": focal, "cx": cx, "cy": cy,
+            "note": "focal_px is the reference used for the distortion maths (max side); the real focal length comes from camera tracking",
+            "stmap_undistort": "stmap_undistort.png", "stmap_redistort": "stmap_redistort.png",
+            "stmap_convention": "Nuke STMap: R = u, G = 1 - v (16-bit PNG, pixel centres)"}
+    try:   # if the camera is tracked, its focal length / sensor belong here too
+        sd = json.load(open(os.path.join(video_root(pid, vid), "track", "scene_data.json"), encoding="utf-8"))
+        cam = sd.get("camera") or {}
+        lens.update({k: cam.get(k) for k in ("focal_mm", "sensor_width_mm", "fps") if cam.get(k) is not None})
+    except Exception:
+        pass
+    with open(os.path.join(out_dir, "lens.json"), "w", encoding="utf-8") as f:
+        json.dump(lens, f, indent=2)
+    # the layer: frames come from the plate's undistorted folder (frame_path knows "plate_undist")
+    man = load_manifest(pid, vid)
+    lay = next((l for l in man["layers"] if l.get("id") == "plate_undist"), None)
+    name = f"Undistort · k1 {k1:+.3f} k2 {k2:+.3f}"
+    if lay is None:
+        lay = {"id": "plate_undist", "type": "rgb", "name": name, "visible": True, "opacity": 1.0, "color": "", "created_at": time.time(), "source": "undistort"}
+        man["layers"].append(lay)
+    lay.update({"name": name, "lens": lens, "frames": total, "lens_url": f"/vfx/project_file/{pid}/video/{vid}/lens/lens.json"})
+    save_manifest(pid, vid, man)
+    return lens
 
 
 def _source_frames_dir(vid: str) -> str:

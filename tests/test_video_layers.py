@@ -431,3 +431,24 @@ def test_import_media_as_layer_keeps_size(tmp_path, monkeypatch):
     fr = cv2.imread(str(out / "frame_0002.png"), cv2.IMREAD_UNCHANGED)
     assert fr.shape == (200, 400, 4)
     assert fr[100, 200, 3] == 255 and fr[100, 10, 3] == 0   # centred at original size, transparent around
+
+
+def test_publish_undistort_writes_layer_lens_and_stmaps(tmp_path, monkeypatch):
+    import json as _json, cv2
+    from vfx_nodes import video_layers_service as vls
+    monkeypatch.setattr(vls, "video_root", lambda pid, vid: str(tmp_path / vid))
+    monkeypatch.setattr(vls.pps, "get_info", lambda *a, **k: {"width": 64, "height": 48, "total_frames": 5})
+    store = {"layers": []}
+    monkeypatch.setattr(vls, "load_manifest", lambda pid, vid: store)
+    monkeypatch.setattr(vls, "save_manifest", lambda pid, vid, m: store.update(m))
+    lens = vls._publish_undistort("p", "v", -0.12, 0.03)
+    assert lens["k1"] == -0.12 and lens["width"] == 64
+    lay = store["layers"][0]
+    assert lay["id"] == "plate_undist" and lay["frames"] == 5 and "k1 -0.120" in lay["name"]
+    st = cv2.imread(str(tmp_path / "v" / "lens" / "stmap_undistort.png"), cv2.IMREAD_UNCHANGED)
+    assert st.shape == (48, 64, 3) and st.dtype.name == "uint16"
+    # the centre pixel maps (almost) to itself
+    assert abs(st[24, 32, 2] / 65535 * 64 - 32.5) < 1.0
+    assert _json.load(open(tmp_path / "v" / "lens" / "lens.json"))["stmap_convention"].startswith("Nuke")
+    vls._publish_undistort("p", "v", 0.05, 0.0)   # again: the same layer is updated, not duplicated
+    assert len(store["layers"]) == 1

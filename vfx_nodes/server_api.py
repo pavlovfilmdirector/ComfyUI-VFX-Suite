@@ -198,8 +198,13 @@ class _ConsoleStreamTee:
             if "\n" in self._line_buffer or "\r" in self._line_buffer:
 
                 parts = re.split(r"[\r\n]+", self._line_buffer)
-
                 self._line_buffer = parts.pop()
+                # tqdm redraws its bar as "\r 25%|###| 2/8": the newest state has no line end yet and used to wait in
+                # the buffer for the NEXT step (the studio terminal lagged a sampling step or more behind the console)
+                tail = self._line_buffer.strip()
+                if tail and ("%|" in tail or "it/s" in tail or "s/it" in tail):
+                    parts.append(tail)
+                    self._line_buffer = ""
 
                 now_s = time.strftime("%H:%M:%S")
 
