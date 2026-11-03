@@ -243,7 +243,24 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
             if re.search(r"^(стоп|останови)\w*\s+задач|отмени\w*\s+задач|^stop\s+(the\s+)?task|^cancel\s+(the\s+)?task", m):
                 vls.cancel_job(job_id)
                 return {"response_ru": T("Останавливаю задачу.", "Stopping the task."), "studio_actions": [], "decision": {"action": None}}
-            if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы|^status\b|progress|how\s+is\s+it\s+going", m):
+            waiting = next((x for x in (job.get("steps") or []) if x.get("status") == "waiting_user"), None)
+            if waiting and job.get("status") == "running" and not looks_like_shot_task(user_message):
+                # the task waits for the user: every message gets a clear answer about what is missing.
+                # "skeletons are in / done / placed" -> run Pose to Gen for them right away.
+                placed = re.search(r"скелет\w*\s+(в\s+сцен|постав|добав|готов|на\s+мест)|постави\w*|добави\w*|готово|сделал\w*|"
+                                   r"нажми|сам\w*\s+сдела|давай|skeletons?\s+(are\s+)?(in|placed|ready)|done|placed|go\s+ahead", m)
+                if placed:
+                    return {"response_ru": T("Запускаю Pose to Gen через камеру трекинга — как только слой появится, задача пойдёт дальше сама. "
+                                             "Если увидите ошибку «Персонажи не попадают в кадр» — подвиньте скелеты в кадр камеры шота.",
+                                             "Running Pose to Gen through the tracked camera - the task continues by itself once the layer lands. "
+                                             "If you see 'characters are not in the camera view', move the skeletons into the shot camera's frame."),
+                            "studio_actions": [{"type": "switch_dimension", "dimension": "3D"}, {"type": "project_skeleton_to_pose"}],
+                            "decision": {"action": "project_pose", "params": {}}, "shot_task": {"job_id": job_id}}
+                return {"response_ru": T("Задача ждёт вас: ", "The task is waiting for you: ") + str(waiting.get("note") or waiting.get("title")) +
+                        T("\n\nНапишите «готово» — я сам нажму Pose to Gen, или «пропусти скелеты».",
+                          "\n\nType \"done\" and I will run Pose to Gen myself, or \"skip the skeletons\".") + "\n\n" + status_text(job, lang),
+                        "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
+            if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы|^status\b|progress|how\s+is\s+it\s+going|ждешь|ждёшь|завис|подвис|waiting|stuck", m):
                 return {"response_ru": status_text(job, lang), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
     if not looks_like_shot_task(user_message):
         return None

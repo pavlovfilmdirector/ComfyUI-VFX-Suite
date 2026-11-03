@@ -1467,7 +1467,15 @@ def ollama_chat(model: str, messages: List[Dict[str, Any]], agent_config: Dict[s
             res = call(payload)
 
     msg = res.get("message", {}) or {}
-
+    if think and not str(msg.get("content", "")).strip() and not msg.get("tool_calls"):
+        # the model spent its whole budget thinking and said nothing: ask again without thinking
+        payload["think"] = False
+        payload["options"]["num_predict"] = 2000
+        try:
+            res = call(payload)
+            msg = res.get("message", {}) or {}
+        except Exception:
+            pass
     text_content = str(msg.get("content", "")).strip()
 
     text_content = re.sub(r"<think>.*?</think>", "", text_content, flags=re.S).strip()
@@ -2927,7 +2935,19 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
         if provider == "mock" or agent_config.get("mock"):
             text = "Mock LLM Director response."
         else:
-            raise RuntimeError("LLM returned nothing")
+            # never leave the user with an empty bubble: say what happened and what is running
+            _ru = bool(re.search(r"[а-яё]", (user_message or "").lower()))
+            text = ("Модель не дала ответа (Ollama вернула пустой ответ). Попробуйте переформулировать или проверьте, что Ollama запущена."
+                    if _ru else "The model gave no answer (Ollama returned nothing). Rephrase, or check that Ollama is running.")
+            try:
+                import shot_planner as _sp0
+                _vls0 = _sp0._vls()
+                if st.get("shot_task_job") and _vls0 is not None:
+                    _j0 = _vls0.get_job(st["shot_task_job"])
+                    if _j0.get("status") == "running":
+                        text += "\n\n" + _sp0.status_text(_j0, "ru" if _ru else "en")
+            except Exception:
+                pass
 
 
 
