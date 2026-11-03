@@ -9508,8 +9508,8 @@ async function openNarrationEditor() {
         tracks.forEach(t => {
 
             const trkId = `trk_${t.video_id}`;
-
-            if (typeof isAssetDeletedLocal === "function" && isAssetDeletedLocal(trkId)) return;
+            // a deleted track card stays hidden only for THAT solve: a new camera track of the same video (new mtime) shows again
+            if (typeof isAssetDeletedLocal === "function" && isAssetDeletedLocal(`${trkId}@${t.mtime}`)) return;
 
             const vtitle = (mediaVideos2D.find(v => v.id === t.video_id) || {}).title || t.video_id;
 
@@ -9597,11 +9597,9 @@ async function openNarrationEditor() {
         if (extractedFn) set.add(extractedFn);
 
         if (typeof item === "string") {
-
             set.add(item);
-
         } else {
-
+            if (item.mode === "track" && item.id) set.add(`${item.id}@${item.mtime}`);   // see syncTracks: per solve, not forever
             if (item.id) set.add(String(item.id));
 
             if (item.filename && item.filename !== "view") set.add(String(item.filename));
@@ -9641,7 +9639,7 @@ async function openNarrationEditor() {
         const set = getDeletedAssetsSet(pid);
 
         if (set.size === 0) return false;
-
+        if (item && typeof item === "object" && item.mode === "track" && item.id) return set.has(`${item.id}@${item.mtime}`);   // per solve
         const extractedFn = extractFilenameFromAsset(item);
         if (extractedFn && set.has(extractedFn)) return true;
 
