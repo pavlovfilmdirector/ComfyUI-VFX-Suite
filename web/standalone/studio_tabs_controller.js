@@ -23425,13 +23425,16 @@ async function openNarrationEditor() {
 
 
 
+    // ONE media filter for every tab: it starts with everything on and then changes only when the user clicks it
+    // (switching 1D / 2D / 3D / audio used to swap in another filter set - annoying). Remembered across sessions.
     function getActiveGalleryFilters() {
-
-        const vk = getGalleryViewKey();
-
+        const vk = "ALL";
+        if (!galleryFilterStates[vk]) {
+            try { const saved = JSON.parse(localStorage.getItem("vfx_gallery_filters_v2") || "null"); if (saved && typeof saved === "object") galleryFilterStates[vk] = saved; } catch (_) {}
+        }
         if (!galleryFilterStates[vk]) {
 
-            const def = defaultFiltersByView[vk] || { images: true, videos: true, tracking: true, maps: true, scenes: true, audio: true, texts: true };
+            const def = { images: true, videos: true, tracking: true, maps: true, scenes: true, audio: true, texts: true };
 
             galleryFilterStates[vk] = Object.assign({}, def);
 
@@ -25806,6 +25809,7 @@ async function openNarrationEditor() {
         };
 
         const curFilters = getActiveGalleryFilters();
+        try { localStorage.setItem("vfx_gallery_filters_v2", JSON.stringify(curFilters)); } catch (_) {}
         const showImages = !!curFilters.images;
         const showVideos = !!curFilters.videos;
         const showTracking = curFilters.tracking !== undefined ? !!curFilters.tracking : !!curFilters.scenes;
