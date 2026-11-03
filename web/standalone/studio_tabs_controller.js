@@ -44247,7 +44247,7 @@ async function openNarrationEditor() {
                         const s2 = pop.querySelector("#g2-s2");
                         if (!e.target.checked || !s2 || s2.dataset.filled) return;
                         s2.dataset.filled = "1";
-                        const pidX = vlPid ? decodeURIComponent(vlPid()) : (currentProject?.id || "sandbox_playground");
+                        const pidX = currentProject?.id || "sandbox_playground";
                         for (const v of (Array.isArray(mediaVideos2D) ? mediaVideos2D : []).filter(v => v && v.id && v.id !== vidObj.id && !String(v.id).startsWith("vid_3d_"))) {
                             try {
                                 const st = await fetch(`/vfx/video/${encodeURIComponent(pidX)}/${encodeURIComponent(v.id)}/state`).then(r => r.ok ? r.json() : null);
