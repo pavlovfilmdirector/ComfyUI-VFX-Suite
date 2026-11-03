@@ -275,10 +275,11 @@ def main():
 
     say("KESHIKI VFX Studio - installer")
     say(f"Python: {sys.executable} ({platform.python_version()})")
-    comfy = find_comfy(a.comfy)
+    comfy = find_comfy(str(a.comfy or "").strip().strip('"\'').strip())
     while not comfy and sys.stdin and sys.stdin.isatty():
         say("ComfyUI was not found next to this folder.")
-        ans = input("Paste the ComfyUI folder (the one that has main.py), or press Enter to stop: ").strip().strip('"')
+        # a pasted path may carry spaces, tabs or quotes at either end (also "  B:\\..."): strip all of them
+        ans = input("Paste the ComfyUI folder (the one that has main.py), or press Enter to stop: ").strip().strip('"\'').strip()
         if not ans:
             break
         comfy = find_comfy(ans)
