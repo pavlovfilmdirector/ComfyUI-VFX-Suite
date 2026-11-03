@@ -5150,8 +5150,11 @@ let lastMonitorRenderTime = 0;
                 picked3Pts.push(pt);
                 // a small fixed-size coloured dot (same size on screen at any distance) instead of a big white ball
                 const dotGeo = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+                // drawn like a cloud point (same disc, same perspective) but a bit bigger and in a bright colour, on top of it
+                const baseSize = (pointCloudMaterial && pointCloudMaterial.size) || cloudPointSize || 0.02;
                 const sphere = new THREE.Points(dotGeo, new THREE.PointsMaterial({ color: [0xf43f5e, 0xfacc15, 0x22d3ee][picked3Pts.length - 1] || 0x22d3ee,
-                    size: 9, sizeAttenuation: false, depthTest: false }));
+                    size: baseSize * 1.7, sizeAttenuation: true, map: (typeof lidarDiscTexture !== "undefined" ? lidarDiscTexture : null) || null,
+                    alphaTest: 0.08, transparent: true, depthTest: false }));
                 sphere.renderOrder = 999;
                 sphere.position.copy(pt);
                 scene.add(sphere);
