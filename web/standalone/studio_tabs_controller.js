@@ -2506,7 +2506,7 @@ export function initStudioArchitecture(ctx) {
         let selectedPipeId = prefill?.pipeline_id || null;
 
         let currentPipe = null;
-
+        const pipeView = { x: 0, y: 0, z: 1, fitted: false, pid: null };
         let isRunning = false;
 
         let activeJobId = null;
@@ -2748,14 +2748,21 @@ export function initStudioArchitecture(ctx) {
                 #pipe-stages-list .pipe-in-ctl .vfx-btn { padding: 2px 5px !important; }
                 #pipe-stages-list .pipe-in-ctl .pipe-asset { padding: 4px !important; gap: 6px !important; }
               </style>
-              <div id="pipe-stages-list" style="display:flex; flex-direction:column; gap:0; padding:24px 0 30px; border-radius:10px; background: radial-gradient(circle, #26262c 1px, transparent 1px) 0 0 / 22px 22px, #121214; overflow-x:auto;">
+              <div id="pipe-stages-list" style="position:relative; height:68vh; min-height:360px; overflow:hidden; border-radius:10px; border:1px solid #27272a; background: radial-gradient(circle, #2a2a31 1px, transparent 1px) ${pipeView.x}px ${pipeView.y}px / ${22 * pipeView.z}px ${22 * pipeView.z}px, #121214; cursor:grab; user-select:none;">
+                <div class="pipe-canvas-hud" style="position:absolute; right:8px; top:8px; z-index:5; display:flex; gap:4px; align-items:center; font-size:10px; color:#a1a1aa;">
+                  <span class="pipe-zoom-lbl" style="opacity:.7;">${Math.round(pipeView.z * 100)}%</span>
+                  <button class="vfx-btn pipe-fit" title="${uiText("Fit all nodes", "Показать все ноды")}" style="padding:2px 7px; font-size:10px;">⤢</button>
+                  <button class="vfx-btn pipe-relayout" title="${uiText("Reset node positions", "Расставить ноды заново")}" style="padding:2px 7px; font-size:10px;">↺</button>
+                </div>
+                <div style="position:absolute; left:10px; bottom:8px; z-index:5; font-size:9.5px; color:#71717a; pointer-events:none;">${uiText("Drag a node by its header · drag empty space to pan · wheel to zoom", "Тащите ноду за шапку · пустое место — двигать холст · колесо — масштаб")}</div>
+                <div class="pipe-world" style="position:absolute; left:0; top:0; width:1px; height:1px; transform-origin:0 0; transform:translate(${pipeView.x}px, ${pipeView.y}px) scale(${pipeView.z});">
 
-                ${stages.length === 0 ? `<div style="padding:30px; text-align:center; border:2px dashed #27272a; border-radius:8px; color:#71717a;">${uiText("No stages yet. Click below to add your first workflow stage.", "В пайплайне пока нет этапов. Нажмите кнопку ниже, чтобы добавить первый воркфлоу.")}</div>` : ""}
+                ${stages.length === 0 ? `<div style="position:absolute; left:20px; right:20px; top:40px; padding:30px; text-align:center; border:2px dashed #27272a; border-radius:8px; color:#71717a;">${uiText("No stages yet. Click below to add your first workflow stage.", "В пайплайне пока нет этапов. Нажмите кнопку ниже, чтобы добавить первый воркфлоу.")}</div>` : ""}
 
 
 
                 ${stages.map((st, idx) => renderStageCard(st, idx, stages)).join("")}
-
+                </div>
               </div>
 
 
@@ -2867,8 +2874,8 @@ export function initStudioArchitecture(ctx) {
                     ${esc(uiText(o.label || o.id, o.label_ru || o.label || o.id))} <span style="opacity:.45; text-transform:uppercase; font-size:9px;">${esc(o.kind || "")}</span>
                     <span class="sock-out" data-stage-id="${esc(st.id || "")}" data-out="${esc(o.id)}" style="position:absolute; right:-6px; top:6px; width:10px; height:10px; border-radius:50%; background:${kcol(o.kind)}; border:2px solid ${kcol(o.kind)};"></span></div>`).join("");
             return `
-              <div class="stage-card pipe-node" data-idx="${idx}" data-stage-id="${esc(st.id || "")}" style="position:relative; width:360px; margin-left:${30 + shift}px; background:#2a2a2e; border:1.5px solid ${ring}; border-radius:10px; box-shadow:0 10px 26px rgba(0,0,0,.55)${rs === "running" ? ", 0 0 16px rgba(34,211,238,.3)" : ""}; display:flex; flex-direction:column;">
-                <div style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-bottom:1px solid #3a3a40;">
+              <div class="stage-card pipe-node" data-idx="${idx}" data-stage-id="${esc(st.id || "")}" style="position:absolute; left:${st.ui && Number.isFinite(st.ui.x) ? st.ui.x : 30 + shift}px; top:${st.ui && Number.isFinite(st.ui.y) ? st.ui.y : 0}px; ${st.ui && Number.isFinite(st.ui.y) ? "" : "visibility:hidden;"} width:360px; background:#2a2a2e; cursor:default; user-select:text; border:1.5px solid ${ring}; border-radius:10px; box-shadow:0 10px 26px rgba(0,0,0,.55)${rs === "running" ? ", 0 0 16px rgba(34,211,238,.3)" : ""}; display:flex; flex-direction:column;">
+                <div class="pipe-node-head" data-idx="${idx}" style="display:flex; align-items:center; gap:7px; padding:7px 10px; border-bottom:1px solid #3a3a40; cursor:move; user-select:none; background:#323238; border-radius:9px 9px 0 0;">
                   <span style="width:9px; height:9px; border-radius:50%; background:${dot};"></span>
                   <b style="font-size:12px; color:#fafafa; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${icon} ${esc(st.title || meta.title_ru || meta.name || `Stage ${idx + 1}`)}</b>
                   <span style="font-size:9.5px; opacity:.45; font-family:monospace;">#${idx + 1}</span>
@@ -2880,20 +2887,123 @@ export function initStudioArchitecture(ctx) {
                 <div style="padding-bottom:4px;">${inRows}</div>
                 ${prev || rs === "running" ? `<div style="margin:0 10px 10px; aspect-ratio:16/10; background:#0b0b0d; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center;">${prev || `<i data-lucide="loader" class="vfx-spin" style="width:18px; height:18px; color:#22d3ee;"></i>`}</div>` : ""}
               </div>
-              ${idx < allStages.length - 1 ? `<div style="height:34px;"></div>` : ""}
-            `;
+              `;
         };
         // wires: output socket of a stage -> the input it feeds (an input stored as {from_stage, output_key})
-        const drawPipeWires = () => {
+        // nodes without a saved position (new / old pipelines) are placed in a staircase under the previous node
+        const layoutPipeNodes = () => {
+            const world = ov.querySelector("#pipe-stages-list .pipe-world");
+            if (!world || !currentPipe) return false;
+            let y = 30, changed = false;
+            (currentPipe.stages || []).forEach((st, idx) => {
+                const el = world.querySelector(`.pipe-node[data-idx="${idx}"]`);
+                if (!el) return;
+                if (!st.ui || !Number.isFinite(st.ui.x) || !Number.isFinite(st.ui.y)) {
+                    st.ui = { x: 30 + (idx % 5) * 70, y };
+                    el.style.left = st.ui.x + "px"; el.style.top = st.ui.y + "px";
+                    changed = true;
+                }
+                el.style.visibility = "";
+                y = Math.max(y, st.ui.y + el.offsetHeight + 40);
+            });
+            return changed;
+        };
+        const applyPipeView = () => {
             const list = ov.querySelector("#pipe-stages-list");
+            const world = list?.querySelector(".pipe-world");
+            if (!world) return;
+            world.style.transform = `translate(${pipeView.x}px, ${pipeView.y}px) scale(${pipeView.z})`;
+            list.style.backgroundPosition = `${pipeView.x}px ${pipeView.y}px`;
+            list.style.backgroundSize = `${22 * pipeView.z}px ${22 * pipeView.z}px`;
+            const lbl = list.querySelector(".pipe-zoom-lbl");
+            if (lbl) lbl.textContent = Math.round(pipeView.z * 100) + "%";
+        };
+        const fitPipeView = () => {
+            const list = ov.querySelector("#pipe-stages-list");
+            const nodes = list ? [...list.querySelectorAll(".pipe-node")] : [];
+            if (!nodes.length) { pipeView.x = 0; pipeView.y = 0; pipeView.z = 1; applyPipeView(); return; }
+            let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+            nodes.forEach(n => { x0 = Math.min(x0, n.offsetLeft); y0 = Math.min(y0, n.offsetTop); x1 = Math.max(x1, n.offsetLeft + n.offsetWidth); y1 = Math.max(y1, n.offsetTop + n.offsetHeight); });
+            const W = list.clientWidth, H = list.clientHeight, pad = 40;
+            pipeView.z = Math.max(0.25, Math.min(1.2, Math.min((W - 2 * pad) / Math.max(1, x1 - x0), (H - 2 * pad) / Math.max(1, y1 - y0))));
+            pipeView.x = (W - (x1 - x0) * pipeView.z) / 2 - x0 * pipeView.z;
+            pipeView.y = pad - y0 * pipeView.z;
+            applyPipeView();
+        };
+        const markPipeMoved = () => {
+            const sb = ov.querySelector("#pipe-save-btn");
+            if (sb && !sb.dataset.dirtyMark) { sb.dataset.dirtyMark = "1"; sb.style.boxShadow = "0 0 0 2px #f59e0b"; sb.title = uiText("Node positions changed — save the pipeline", "Позиции нод изменились — сохраните пайплайн"); }
+        };
+        const wirePipeCanvas = () => {
+            const list = ov.querySelector("#pipe-stages-list");
+            const world = list?.querySelector(".pipe-world");
+            if (!world || list.dataset.wired) return;
+            list.dataset.wired = "1";
+            if (layoutPipeNodes() && !pipeView.fitted) { pipeView.fitted = true; fitPipeView(); }
+            else if (!pipeView.fitted) { pipeView.fitted = true; fitPipeView(); }
+            drawPipeWires();
+            list.querySelector(".pipe-fit")?.addEventListener("click", (e) => { e.stopPropagation(); fitPipeView(); });
+            list.querySelector(".pipe-relayout")?.addEventListener("click", (e) => {
+                e.stopPropagation();
+                (currentPipe.stages || []).forEach(st => { delete st.ui; });
+                layoutPipeNodes(); fitPipeView(); drawPipeWires(); markPipeMoved();
+            });
+            list.addEventListener("wheel", (e) => {
+                if (e.target.closest("textarea, select, .pipe-in-ctl [style*='overflow']")) return;
+                e.preventDefault();
+                const r = list.getBoundingClientRect();
+                const mx = e.clientX - r.left, my = e.clientY - r.top;
+                const nz = Math.max(0.2, Math.min(2, pipeView.z * Math.exp(-e.deltaY * 0.0015)));
+                pipeView.x = mx - (mx - pipeView.x) * nz / pipeView.z;
+                pipeView.y = my - (my - pipeView.y) * nz / pipeView.z;
+                pipeView.z = nz;
+                applyPipeView();
+            }, { passive: false });
+            list.addEventListener("mousedown", (e) => {
+                const head = e.target.closest(".pipe-node-head");
+                const onEmpty = !e.target.closest(".pipe-node, .pipe-canvas-hud");
+                const mid = e.button === 1;
+                if (!(e.button === 0 || mid)) return;
+                if (head && !mid && e.target.closest("button")) return;
+                if (!head && !onEmpty && !mid) return;
+                e.preventDefault();
+                const sx = e.clientX, sy = e.clientY;
+                let move, up;
+                if (head && !mid) {
+                    const idx = Number(head.dataset.idx);
+                    const st = currentPipe.stages[idx];
+                    const el = head.closest(".pipe-node");
+                    const ox = st.ui?.x ?? el.offsetLeft, oy = st.ui?.y ?? el.offsetTop;
+                    el.style.zIndex = "3";
+                    move = (ev) => {
+                        st.ui = { x: Math.round(ox + (ev.clientX - sx) / pipeView.z), y: Math.round(oy + (ev.clientY - sy) / pipeView.z) };
+                        el.style.left = st.ui.x + "px"; el.style.top = st.ui.y + "px";
+                        drawPipeWires();
+                    };
+                    up = () => { el.style.zIndex = ""; if (st.ui && (st.ui.x !== ox || st.ui.y !== oy)) markPipeMoved(); };
+                } else {
+                    const px = pipeView.x, py = pipeView.y;
+                    list.style.cursor = "grabbing";
+                    move = (ev) => { pipeView.x = px + ev.clientX - sx; pipeView.y = py + ev.clientY - sy; applyPipeView(); };
+                    up = () => { list.style.cursor = "grab"; };
+                }
+                const mm = (ev) => { if (ev.buttons === 0) { done(); return; } move(ev); };
+                const done = () => { window.removeEventListener("mousemove", mm, true); window.removeEventListener("mouseup", done, true); up(); };
+                window.addEventListener("mousemove", mm, true);
+                window.addEventListener("mouseup", done, true);
+            });
+            list.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
+        };
+        const drawPipeWires = () => {
+            const list0 = ov.querySelector("#pipe-stages-list");
+            const list = list0?.querySelector(".pipe-world");
             if (!list || !currentPipe) return;
-            list.style.position = "relative";
             list.querySelector(".pipe-wires")?.remove();
             const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             svg.classList.add("pipe-wires");
-            svg.setAttribute("style", `position:absolute; left:0; top:0; width:${list.scrollWidth}px; height:${list.scrollHeight}px; pointer-events:none; overflow:visible; z-index:2;`);
+            svg.setAttribute("style", `position:absolute; left:0; top:0; width:1px; height:1px; pointer-events:none; overflow:visible; z-index:2;`);
             const base = list.getBoundingClientRect();
-            const ctr = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - base.left + list.scrollLeft + r.width / 2, y: r.top - base.top + list.scrollTop + r.height / 2 }; };
+            const ctr = (el) => { const r = el.getBoundingClientRect(); return { x: (r.left - base.left + r.width / 2) / pipeView.z, y: (r.top - base.top + r.height / 2) / pipeView.z }; };
             let paths = "";
             (currentPipe.stages || []).forEach((st, idx) => {
                 Object.entries(st.inputs || {}).forEach(([inpId, val]) => {
@@ -3404,6 +3514,8 @@ export function initStudioArchitecture(ctx) {
 
 
         const wireEvents = () => {
+            if (pipeView.pid !== (currentPipe && (currentPipe.id || currentPipe.name))) { pipeView.pid = currentPipe && (currentPipe.id || currentPipe.name); pipeView.fitted = false; }
+            try { wirePipeCanvas(); } catch (e) { console.warn("[pipe canvas]", e); }
             setTimeout(drawPipeWires, 30); setTimeout(drawPipeWires, 600);
             ov.querySelectorAll(".pin-unlink").forEach(b => b.onclick = (e) => {
                 e.stopPropagation();
