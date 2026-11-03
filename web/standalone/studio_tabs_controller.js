@@ -29260,12 +29260,13 @@ async function openNarrationEditor() {
 
         const plateContainer = document.createElement("div");
 
+        // align-self: center + fit-content: the notes bar under a narrow (vertical) picture is wider than the picture; a
+        // stretched container left the picture on the left and pushed the layer canvases (inset: 0) off to the right
         plateContainer.style.cssText = `
-
             position: relative;
-
             display: block;
-
+            align-self: center;
+            width: fit-content;
             line-height: 0;
 
             overflow: hidden;
