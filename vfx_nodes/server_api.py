@@ -967,6 +967,15 @@ def register_server_routes():
                     os.makedirs(target_dir, exist_ok=True)
 
                     target_path = os.path.join(target_dir, clean_name)
+                    # never write over a file already in the project (dragging a project file back into the gallery
+                    # truncated it while the browser was still reading it): a free name instead
+                    if os.path.exists(target_path):
+                        stem, ext2 = os.path.splitext(clean_name)
+                        k = 2
+                        while os.path.exists(os.path.join(target_dir, f"{stem}_{k}{ext2}")):
+                            k += 1
+                        clean_name = f"{stem}_{k}{ext2}"
+                        target_path = os.path.join(target_dir, clean_name)
 
                     with open(target_path, "wb") as f:
 

@@ -350,10 +350,12 @@ def _in_comfy_queue(prompt_id: str) -> Optional[bool]:
 def get_run_status(prompt_id: str) -> Dict[str, Any]:
     """Reads /history/<id>. Returns status and output file descriptors (images, video, audio, 3D)."""
     try:
-        with urllib.request.urlopen(f"{COMFY_URL}/history/{prompt_id}", timeout=10) as resp:
+        with urllib.request.urlopen(f"{COMFY_URL}/history/{prompt_id}", timeout=30) as resp:
             hist = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        raise ProcessError(f"Cannot read ComfyUI history: {e}")
+        # ComfyUI busy with a 22B model can take longer than the timeout to answer: that is not a failure of the run.
+        # Report "still running" and let the caller ask again (its own timeout still applies).
+        return {"prompt_id": prompt_id, "status": "running", "outputs": [], "transient": str(e)[:200]}
     entry = hist.get(prompt_id)
     if not entry:
         # Not finished. If ComfyUI no longer has it queued or running (queue cleared, server restarted, prompt

@@ -1599,7 +1599,7 @@ export function initStudioArchitecture(ctx) {
             const onMouseMove = (ev) => {
 
                 if (!isDragging) return;
-
+                if (ev.buttons === 0) { onMouseUp(); return; }   // released somewhere we did not hear about
                 const dx = ev.clientX - startX;
 
                 const dy = ev.clientY - startY;
@@ -1620,15 +1620,12 @@ export function initStudioArchitecture(ctx) {
 
                 dragHandle.style.cursor = "grab";
 
-                window.removeEventListener("mousemove", onMouseMove);
-
-                window.removeEventListener("mouseup", onMouseUp);
-
+                window.removeEventListener("mousemove", onMouseMove, true);
+                window.removeEventListener("mouseup", onMouseUp, true);
             };
-
-            window.addEventListener("mousemove", onMouseMove);
-
-            window.addEventListener("mouseup", onMouseUp);
+            // capture phase: popovers stop mouseup from bubbling, so a bubbling listener never heard the release (drag stuck)
+            window.addEventListener("mousemove", onMouseMove, true);
+            window.addEventListener("mouseup", onMouseUp, true);
 
         };
 
@@ -1678,7 +1675,7 @@ export function initStudioArchitecture(ctx) {
 
         if (headerEl) makeDraggable(pop, headerEl);
 
-        const close = (e) => { if (!pop.isConnected) { window.removeEventListener("mousedown", close, true); return; } if (!pop.contains(e.target) && e.target !== anchor && !(e.target.closest && e.target.closest("[data-vfx-modal]"))) { pop.remove(); window.removeEventListener("mousedown", close, true); } };
+        const close = (e) => { if (!pop.isConnected) { window.removeEventListener("mousedown", close, true); return; } if (e.button === 2) return; if (!pop.contains(e.target) && e.target !== anchor && !(e.target.closest && e.target.closest("[data-vfx-modal]"))) { pop.remove(); window.removeEventListener("mousedown", close, true); } };
 
         setTimeout(() => window.addEventListener("mousedown", close, true), 0);
 
