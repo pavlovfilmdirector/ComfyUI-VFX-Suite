@@ -3361,7 +3361,22 @@ def _job_track_camera(job_id, kind, pid, vid, p):
         tracking_mask = torch.from_numpy(arr)
     mask_mode = {"layers": "Exclude Masked (Dynamic Objects)", "yolo": "Auto YOLO Detect", "none": "Bypass Mask (Full Frame)"}.get(mode, "Auto YOLO Detect")
     density = {"draft": "Draft (2048 pts)", "standard": "Standard (4096 pts)", "dense": "Dense (8192 pts)", "ultra": "Ultra (16384 pts)"}.get(p.get("density", "standard"), "Standard (4096 pts)")
-    _job_update(job_id, message=f"Tracking {len(names)} frames: COLMAP features → matching → GLOMAP (this takes a while, no per-step progress)", progress=10)
+    # a peek at what the solver works with: corner features on a few frames (shown in the studio while it runs)
+    try:
+        prev = []
+        for i in np.linspace(0, len(names) - 1, num=min(10, len(names))).astype(int):
+            im = cv2.imread(os.path.join(tmp, f"frame_{i:04d}.jpg"), cv2.IMREAD_GRAYSCALE)
+            if im is None:
+                continue
+            sc = 640.0 / max(im.shape[:2])
+            sm = cv2.resize(im, (int(im.shape[1] * sc), int(im.shape[0] * sc)))
+            c = cv2.goodFeaturesToTrack(sm, maxCorners=500, qualityLevel=0.01, minDistance=6)
+            pts2 = [] if c is None else [[round(float(x) / sm.shape[1], 4), round(float(y) / sm.shape[0], 4)] for x, y in c.reshape(-1, 2)]
+            prev.append({"frame": int(r0 + i), "points": pts2})
+        _job_update(job_id, stage="prepare", features_preview=prev)
+    except Exception:
+        pass
+    _job_update(job_id, message=f"Tracking {len(names)} frames: COLMAP features → matching → GLOMAP", progress=10, stage="prepare")
     try:
         from .tracker_node import CameraTrackerNode
     except ImportError:  # pragma: no cover
@@ -3373,7 +3388,8 @@ def _job_track_camera(job_id, kind, pid, vid, p):
             focal_length_mode="Fixed / Known Focal" if p.get("focal_fixed") else "Auto Estimate (Refined)",
             focal_length_mm=float(p.get("focal_mm", 28.0) or 28.0),
             mask_mode=mask_mode, camera_height_m=float(p.get("camera_height", 1.55) or 1.55),
-            smooth_camera=bool(p.get("smooth", False)), tracking_mask=tracking_mask, input_path=tmp)
+            smooth_camera=bool(p.get("smooth", False)), tracking_mask=tracking_mask, input_path=tmp,
+            progress_cb=lambda st, pct, txt: _job_update(job_id, stage=st, progress=pct, message=txt or st))
     shutil.rmtree(tmp, ignore_errors=True)
     if "Static camera fallback" in str(report):
         raise ProcessError("Tracking failed: GLOMAP could not solve the camera (not enough parallax / features, or COLMAP/GLOMAP not found)")
@@ -3386,7 +3402,10 @@ def _job_track_camera(job_id, kind, pid, vid, p):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, "w", encoding="utf-8") as f:
             json.dump(scene, f)
-    return {"report": report, "frames": len(names), "points": len(scene["points"]), "focal_mm": cam.get("focal_mm")}
+    _job_update(job_id, stage="done")
+    step = max(1, len(scene["points"]) // 6000)
+    return {"report": report, "frames": len(names), "points": len(scene["points"]), "focal_mm": cam.get("focal_mm"),
+            "cloud_preview": {"points": scene["points"][::step], "colors": (scene["colors"] or [])[::step]}}
 
 
 def _ck_progress(job_id, n, t):

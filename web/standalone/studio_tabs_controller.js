@@ -43363,6 +43363,120 @@ async function openNarrationEditor() {
 
         // Camera tracking (GLOMAP): moving-object masks + lens + point density -> camera and point cloud in the 3D scene
 
+        // A window that shows what the camera solve is doing: the stages, the corner features it starts from, then the
+        // solved point cloud turning in 3D. Purely informative; closing it does not stop the job.
+        function openTrackingShow2D(f0, f1) {
+            document.querySelectorAll(".vfx-track-show").forEach(x => x.remove());
+            const w = document.createElement("div");
+            w.className = "vfx-track-show";
+            w.style.cssText = "position: fixed; z-index: 100001; right: 18px; bottom: 18px; width: 420px; background: rgba(12,12,16,0.97); border: 1px solid #3f3f46; border-radius: 9px; box-shadow: 0 16px 40px rgba(0,0,0,.7); color: #e4e4e7; font-size: 11px; overflow: hidden;";
+            const STAGES = [["prepare", uiText("Preparing frames, finding corners", "Готовлю кадры, ищу уголки")], ["features", uiText("SIFT features (COLMAP)", "Особые точки SIFT (COLMAP)")],
+                ["matching", uiText("Matching between frames", "Сопоставление между кадрами")], ["solve", uiText("Global solve: camera + 3D points (GLOMAP)", "Глобальное решение: камера + 3D-точки (GLOMAP)")],
+                ["cloud", uiText("Building the point cloud", "Собираю облако точек")], ["done", uiText("Done", "Готово")]];
+            w.innerHTML = `<div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #27272a;">
+                    <b>🎥 ${uiText("Camera tracking", "Трекинг камеры")} <span style="opacity: .55; font-weight: 400;">· ${uiText("frames", "кадры")} ${f0}–${f1}</span></b>
+                    <span><span id="ts-time" style="font-family: monospace; opacity: .7; margin-right: 8px;">0:00</span><button class="vfx-btn" id="ts-x" style="padding: 0 6px;">✕</button></span></div>
+                <div style="position: relative; height: 236px; background: #050507;">
+                    <img id="ts-img" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: .55;">
+                    <canvas id="ts-cv" width="420" height="236" style="position: absolute; inset: 0; width: 100%; height: 100%;"></canvas>
+                    <div id="ts-cap" style="position: absolute; left: 8px; bottom: 6px; font-size: 10px; color: #a5f3fc; text-shadow: 0 1px 2px #000;"></div></div>
+                <div id="ts-stages" style="padding: 8px 10px; display: flex; flex-direction: column; gap: 3px;">${STAGES.map(([k, t]) => `<div data-st="${k}" style="opacity: .4;">○ ${t}</div>`).join("")}</div>
+                <div style="height: 4px; background: #18181b;"><div id="ts-bar" style="height: 100%; width: 3%; background: linear-gradient(90deg,#22d3ee,#a78bfa); transition: width .4s;"></div></div>
+                <div id="ts-msg" style="padding: 6px 10px 9px; font-size: 10px; opacity: .7; min-height: 14px;"></div>`;
+            document.body.appendChild(w);
+            const cv = w.querySelector("#ts-cv"), ctx = cv.getContext("2d"), img = w.querySelector("#ts-img"), cap = w.querySelector("#ts-cap");
+            const t0 = Date.now();
+            let alive = true, stage = "prepare", feats = null, featIdx = 0, featShown = 0, cloud = null, ang = 0, job = null;
+            w.querySelector("#ts-x").onclick = () => { alive = false; w.remove(); };
+            const setStage = (st) => {
+                const ix = STAGES.findIndex(x => x[0] === st);
+                w.querySelectorAll("#ts-stages div").forEach((d, i) => {
+                    d.style.opacity = i < ix ? ".85" : (i === ix ? "1" : ".4");
+                    d.style.color = i === ix ? "#67e8f9" : "";
+                    d.textContent = `${i < ix || st === "done" ? "✓" : (i === ix ? "◉" : "○")} ${STAGES[i][1]}`;
+                });
+            };
+            const showFrame = () => {
+                if (!feats || !feats.length) return;
+                const f = feats[featIdx % feats.length];
+                img.src = `/vfx/video/${vlPid()}/${vlVid()}/frame/plate_raw/${f.frame}`;
+                featShown = 0;
+                cap.textContent = `${uiText("frame", "кадр")} ${f.frame} · ${f.points.length} ${uiText("corners the solver can lock onto", "уголков, за которые зацепится решатель")}`;
+            };
+            const draw = () => {
+                if (!alive) return;
+                ctx.clearRect(0, 0, cv.width, cv.height);
+                if (cloud) {
+                    // the solved cloud, turning: x/y ground plane, z up (studio convention)
+                    ang += 0.006;
+                    const ca = Math.cos(ang), sa = Math.sin(ang);
+                    const { pts, cols, c, r } = cloud;
+                    for (let i = 0; i < pts.length; i++) {
+                        const x = pts[i][0] - c[0], y = pts[i][1] - c[1], z = pts[i][2] - c[2];
+                        const rx = x * ca - y * sa, ry = x * sa + y * ca;
+                        const d = 1 / (1 + (ry / r) * 0.6);
+                        const sx = cv.width / 2 + rx / r * 150 * d, sy = cv.height / 2 - z / r * 150 * d + ry / r * 18;
+                        ctx.fillStyle = cols[i];
+                        ctx.fillRect(sx, sy, 1.6 * d, 1.6 * d);
+                    }
+                } else if (feats && feats.length) {
+                    const f = feats[featIdx % feats.length];
+                    featShown = Math.min(f.points.length, featShown + 9);
+                    const bw = cv.width, bh = cv.height;
+                    for (let i = 0; i < featShown; i++) {
+                        const [u, v] = f.points[i];
+                        ctx.strokeStyle = `hsla(${180 + (i * 7) % 90}, 90%, 65%, 0.9)`;
+                        ctx.beginPath(); ctx.arc(u * bw, v * bh, 2.2, 0, Math.PI * 2); ctx.stroke();
+                    }
+                    if (featShown >= f.points.length && (Date.now() / 1000) % 2.2 < 0.03) { featIdx++; showFrame(); }
+                }
+                requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+            const poll = setInterval(async () => {
+                if (!alive) { clearInterval(poll); return; }
+                const sec = Math.round((Date.now() - t0) / 1000);
+                w.querySelector("#ts-time").textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+                const id = vlJob2D && vlJob2D.id;
+                if (!id) return;
+                try { job = await fetch(`/vfx/video/job/${encodeURIComponent(id)}`).then(r => r.json()); } catch (_) { return; }
+                if (!job || job.kind !== "track_camera") return;
+                if (job.stage && job.stage !== stage) { stage = job.stage; setStage(stage); }
+                if (job.features_preview && !feats) { feats = job.features_preview.filter(f => f.points && f.points.length); showFrame(); }
+                w.querySelector("#ts-bar").style.width = `${Math.max(3, job.progress || 0)}%`;
+                if (job.message) w.querySelector("#ts-msg").textContent = job.message;
+            }, 800);
+            setStage("prepare");
+            return {
+                finish(st) {
+                    clearInterval(poll);
+                    if (!alive) return;
+                    const res = st && st.result;
+                    if (!res) { w.querySelector("#ts-msg").textContent = `❌ ${(st && st.message) || uiText("Tracking failed", "Трекинг не удался")}`; w.querySelector("#ts-bar").style.background = "#ef4444"; return; }
+                    setStage("done");
+                    w.querySelector("#ts-bar").style.width = "100%";
+                    w.querySelector("#ts-msg").innerHTML = `✓ ${res.frames} ${uiText("frames", "кадров")} · ${res.points} ${uiText("points", "точек")} · ${Math.round(res.focal_mm || 0)} mm &nbsp; <button class="vfx-btn" id="ts-open" style="padding: 1px 8px;">${uiText("Open in 3D", "Открыть в 3D")}</button>`;
+                    w.querySelector("#ts-open").onclick = () => { try { window.__vfxSwitchMainDimension && window.__vfxSwitchMainDimension("3D"); } catch (_) {} };
+                    const cp = res.cloud_preview;
+                    if (cp && cp.points && cp.points.length) {
+                        const pts = cp.points;
+                        const c = [0, 1, 2].map(k => pts.reduce((a, p) => a + p[k], 0) / pts.length);
+                        const dists = pts.map(p => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])).sort((a, b) => a - b);
+                        const r = Math.max(1e-3, dists[Math.floor(dists.length * 0.9)]);
+                        const zs = pts.map(p => p[2]), zmin = Math.min(...zs), zmax = Math.max(...zs);
+                        const raw = cp.colors || [];
+                        const hasCol = raw.some(cc => cc && (cc[0] + cc[1] + cc[2]) > 0.05);
+                        const sc = raw.some(cc => cc && Math.max(cc[0], cc[1], cc[2]) > 1.5) ? 1 : 255;
+                        const cols = pts.map((p, i) => hasCol && raw[i] ? `rgb(${Math.round(raw[i][0] * sc)},${Math.round(raw[i][1] * sc)},${Math.round(raw[i][2] * sc)})`
+                            : `hsl(${190 + 120 * (p[2] - zmin) / Math.max(1e-3, zmax - zmin)}, 85%, 62%)`);
+                        cloud = { pts, cols, c, r };
+                        img.style.opacity = "0.12";
+                        cap.textContent = uiText(`solved point cloud · ${res.points} points`, `облако точек решения · ${res.points} точек`);
+                    }
+                }
+            };
+        }
+
         async function openTrackCameraDialog2D(anchor) {
 
             try { await refreshVideoState2D(); } catch (_) {}
@@ -43459,8 +43573,10 @@ async function openNarrationEditor() {
 
                 pop.remove();
 
+                const show = openTrackingShow2D(map(clipStart), map(clipEnd));
                 const st = await runVideoJob2D("track_camera", { mask_mode: mm, mask_layers: layers, focal_fixed: o.focal_fixed, focal_mm: o.focal_mm, density: o.density, camera_height: o.height, smooth: o.smooth, start: map(clipStart), end: map(clipEnd) });
 
+                show.finish(st);
                 if (st?.result) {
 
                     showToastNotification(uiText(`Camera solved: ${st.result.frames} frames, ${st.result.points} points, ${Math.round(st.result.focal_mm || 0)} mm — open 3D`, `Камера решена: ${st.result.frames} кадров, ${st.result.points} точек, ${Math.round(st.result.focal_mm || 0)} мм — смотрите в 3D`));

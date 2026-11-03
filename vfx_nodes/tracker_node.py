@@ -94,8 +94,15 @@ class CameraTrackerNode:
         tracking_mask=None,
         manual_mask=None,
         input_path="",
+        progress_cb=None,
         **kwargs
     ):
+        def _stage(name, pct, text=""):
+            if progress_cb:
+                try:
+                    progress_cb(name, pct, text)
+                except Exception:
+                    pass
         # Backward compatibility and sanitization for older graphs
         if "focal_mm" in kwargs and (focal_length_mm == 28.0 or focal_length_mm is None):
             try:
@@ -313,6 +320,7 @@ class CameraTrackerNode:
                     "--SiftExtraction.max_num_features", max_num_features_str,
                     "--SiftExtraction.peak_threshold", peak_threshold_str
                 ]
+                _stage("features", 25, f"COLMAP SIFT: features on {total_frames} frames")
                 subprocess.run(cmd_feat, check=True)
 
                 cmd_match = [
@@ -322,6 +330,7 @@ class CameraTrackerNode:
                     "--SequentialMatching.quadratic_overlap", "1",
                     "--FeatureMatching.use_gpu", "1" if torch.cuda.is_available() else "0"
                 ]
+                _stage("matching", 45, "COLMAP: matching features between neighbouring frames")
                 subprocess.run(cmd_match, check=True)
 
                 os.makedirs(glomap_dir, exist_ok=True)
@@ -331,6 +340,7 @@ class CameraTrackerNode:
                     print("[CameraTracker] glomap.exe not found - falling back to colmap global_mapper (less tested)")
                     cmd_glomap = [COLMAP_BIN, "global_mapper", "--database_path", db_path,
                                   "--image_path", img_dir, "--output_path", glomap_dir]
+                _stage("solve", 65, "GLOMAP: global structure-from-motion (camera path + 3D points)")
                 sub_res = subprocess.run(cmd_glomap, capture_output=True, text=True)
 
                 if sub_res.returncode == 0:
@@ -343,6 +353,7 @@ class CameraTrackerNode:
                 print(f"[CameraTracker] GLOMAP SfM execution note: {e}")
 
         if glomap_success:
+            _stage("cloud", 85, f"Reading the solve: {len(rec.images)} cameras, {len(rec.points3D)} points")
             cam = list(rec.cameras.values())[0]
             fx = cam.params[0]
             cx = cam.params[1] if len(cam.params) > 1 else w / 2.0
