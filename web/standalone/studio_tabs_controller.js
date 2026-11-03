@@ -42172,7 +42172,7 @@ async function openNarrationEditor() {
 
                     ${plate.total_frames ? `${uiText("Plate", "Плейт")}: ${plate.total_frames}f · ${plate.width}×${plate.height} · ${Math.round(plate.fps || 0)}fps${(plate.k1 || plate.k2) ? ` · k1 ${Number(plate.k1).toFixed(3)}` : ""}`
 
-                        : `<span style="color: #fbbf24;">${uiText("Plate not prepared — any process will prepare it first", "Плейт не подготовлен — любой процесс сначала подготовит его")}</span>`}
+                        : `<span style="color: rgba(255,255,255,0.5);" title="${uiText("The video has not been split into frames yet. Nothing to do: the first mask, generation or other process does it automatically (a few seconds).", "Видео ещё не разложено на кадры. Делать ничего не нужно: первая маска, генерация или другой процесс сделает это сам (несколько секунд).")}">ⓘ ${uiText("Frames not extracted yet — done automatically on first use", "Кадры ещё не извлечены — это сделается само при первом процессе")}</span>`}
 
                 </div>
 
@@ -43864,6 +43864,10 @@ async function openNarrationEditor() {
                 (async () => {
                     if (clip.type === "layers") {
                         let last = null;
+                        // the copy takes a few seconds (frames are copied and refitted): show the rows right away
+                        const pending = clip.lids.map((lid, i) => ({ id: `__pasting_${i}`, type: "paint", name: `⏳ ${uiText("Pasting layer…", "Вставляю слой…")}`, visible: true, pending: true }));
+                        try { vlState2D.layers = [...(vlState2D.layers || []), ...pending]; renderVideoLayersPanel2D(); } catch (_) {}
+                        showToastNotification(uiText("Pasting layer… (frames are being copied)", "Вставляю слой… (копирую кадры)"));
                         for (const lid of clip.lids) {
                             const r = await fetch(`/vfx/video/${vlPid()}/${vlVid()}/import_layer`, { method: "POST", headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ src_vid: clip.vid, src_lid: lid, src_size: clip.srcSize || null,
