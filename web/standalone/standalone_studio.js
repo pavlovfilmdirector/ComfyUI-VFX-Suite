@@ -11641,10 +11641,41 @@ let lastMonitorRenderTime = 0;
         }
 
         const leftW = getMainViewportWidth(w);
-
         // 1. Render Left Viewport: 3D Perspective / Ortho
-        renderer.setViewport(0, 0, leftW, h);
-        if (isOrthoMode) {
+        // Looking through a camera (Orbit ⇄ Cam): follow the camera on air, keep ITS frame (16:9, 9:16...) and fit it
+        // inside the viewport with bars - stretching it to the viewport's shape showed more than the camera sees.
+        let gateRect = null;
+        if (isShotCamActive && !isOrthoMode) {
+            const onAir = getActiveMonitorCamera();
+            if (onAir && onAir !== activeCamera) activeCamera = onAir;
+            if (activeCamera !== flyCamera) {
+                const actor = getActiveMonitorCameraActor();
+                const ud = (actor && actor.userData) || {};
+                const iw = Number(ud.imageWidth) || plateWidth || 1920, ih = Number(ud.imageHeight) || plateHeight || 1080;
+                const ga = (iw / Math.max(1, ih)) * (Number(ud.anamorphicSqueeze) || 1);
+                let gw = leftW, gh = gw / ga;
+                if (gh > h) { gh = h; gw = gh * ga; }
+                gateRect = { x: Math.round((leftW - gw) / 2), y: Math.round((h - gh) / 2), w: Math.max(1, Math.round(gw)), h: Math.max(1, Math.round(gh)), a: ga };
+            }
+        }
+        if (gateRect) {
+            renderer.setScissorTest(true);
+            renderer.setViewport(0, 0, leftW, h);
+            renderer.setScissor(0, 0, leftW, h);
+            const keepClear = renderer.getClearColor(new THREE.Color()).clone(), keepAlpha = renderer.getClearAlpha();
+            renderer.setClearColor(0x050506, 1);
+            renderer.clear(true, true, true);
+            renderer.setClearColor(keepClear, keepAlpha);
+            renderer.setViewport(gateRect.x, gateRect.y, gateRect.w, gateRect.h);
+            renderer.setScissor(gateRect.x, gateRect.y, gateRect.w, gateRect.h);
+            activeCamera.aspect = gateRect.a;
+            activeCamera.updateProjectionMatrix();
+        } else {
+            renderer.setViewport(0, 0, leftW, h);
+        }
+        if (gateRect) {
+            // aspect already set to the camera's own frame
+        } else if (isOrthoMode) {
             updateOrthoCameraFrustum();
         } else {
             activeCamera.aspect = leftW / Math.max(1, h);
@@ -11687,6 +11718,7 @@ let lastMonitorRenderTime = 0;
         }
 
         renderer.render(scene, activeCamera);
+        if (gateRect) { renderer.setScissorTest(false); renderer.setViewport(0, 0, leftW, h); }
         renderAxisCompass();
 
         // 2. Render Right Bottom Viewport: Shot Camera Film Gate
