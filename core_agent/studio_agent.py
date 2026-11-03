@@ -65,7 +65,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
             "video_id": "id или название видео (по умолчанию открытое)",
             "title": "короткое имя задачи (рус)",
             "steps": "список шагов [{id:'s1', kind:'<kind из таблицы процессов или image_edit / wait_3d_pose / merge_pose>', "
-                     "title:'по-русски', params:{...}}]; результат прошлого шага: \"$s1.layer\" (id слоя) или \"$s1.image\" (url кадра)",
+                     "title:'на языке пользователя', params:{...}}]; результат прошлого шага: \"$s1.layer\" (id слоя) или \"$s1.image\" (url кадра)",
         },
         "heavy": False,
     },
@@ -873,7 +873,7 @@ OUTPUT_RULES = """
 
 
 
-Сначала ответь пользователю обычным текстом (по-русски, коротко, энергично, деловито).
+Сначала ответь пользователю обычным текстом (на языке пользователя: по-английски, если он пишет по-английски; коротко и по делу).
 
 СТРОЖАЙШЕ ЗАПРЕЩЕНО:
 
@@ -3108,13 +3108,18 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
             except Exception as _fe:
                 started = {"errors": started.get("errors", []) + [str(_fe)]}
         if started.get("job_id"):
-            prose = (prose or "Беру задачу.") + f"\n\n▶ Запустил план из {len(params.get('steps') or [])} шагов на «" + \
-                    f"{started['video'].get('title') or started['video'].get('id')}» (задача `{started['job_id']}`):\n" + \
-                    _sp.plan_lines(params.get("steps")) + "\n\nХод — спросите «статус», остановить — «стоп задачу»."
+            _ru = bool(re.search(r"[а-яё]", (user_message or "").lower()))
+            _vt = started['video'].get('title') or started['video'].get('id')
+            prose = (prose or ("Беру задачу." if _ru else "On it.")) + "\n\n" + (
+                f"▶ Запустил план из {len(params.get('steps') or [])} шагов на «{_vt}» (задача `{started['job_id']}`):\n" if _ru else
+                f"▶ Started a {len(params.get('steps') or [])}-step plan on \"{_vt}\" (task `{started['job_id']}`):\n") + \
+                _sp.plan_lines(params.get("steps")) + ("\n\nХод — спросите «статус», остановить — «стоп задачу»." if _ru else
+                                                       "\n\nType \"status\" for progress, \"stop the task\" to stop it.")
             extra = {"shot_task": {"job_id": started["job_id"], "video_id": started["video"].get("id")}}
             acts = [{"type": "switch_dimension", "dimension": "2D"}]
         else:
-            prose = (prose or "") + "\n\n⚠ План не запустился: " + "; ".join(started.get("errors", [])[:5])
+            prose = (prose or "") + ("\n\n⚠ План не запустился: " if re.search(r"[а-яё]", (user_message or "").lower()) else
+                                     "\n\n⚠ The plan did not start: ") + "; ".join(started.get("errors", [])[:5])
         st["pending"] = None
     elif action:
         acts, extra = to_studio_actions(action, params, studio_ctx)

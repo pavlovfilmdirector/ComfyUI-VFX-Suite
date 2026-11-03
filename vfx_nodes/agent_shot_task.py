@@ -145,6 +145,13 @@ FIRST_FRAME_TEXT = {
              "everything behind with {background}.{dancers} Same camera angle and lens. Photorealistic film still."),
 }
 VARIANT_TITLE = {"bg": "замена фона", "char": "замена персонажа", "both": "фон + персонаж"}
+VARIANT_TITLE_EN = {"bg": "new background", "char": "new character", "both": "background + character"}
+
+
+def _tr(p: Dict[str, Any]):
+    """Messages in the language the user wrote the task in (p[\"lang\"]: ru / en)."""
+    ru = str(p.get("lang") or "ru") == "ru"
+    return lambda r, e: r if ru else e
 
 
 def _dancers_text(d: Optional[Dict[str, Any]]) -> str:
@@ -160,6 +167,8 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
     v = _vls()
     if p.get("steps"):
         return run_free_plan(job_id, pid, vid, p)
+    T = _tr(p)
+    VT = VARIANT_TITLE if str(p.get("lang") or "ru") == "ru" else VARIANT_TITLE_EN
     t_start = time.time()
     info = v.pps.get_info(v.node_id_for(vid)) or {}
     variants = [x for x in (p.get("variants") or []) if x in FIRST_FRAME_TEXT]
@@ -168,18 +177,19 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
     steps: List[Dict[str, Any]] = []
     add = lambda key, title: steps.append({"key": key, "title": title, "status": "todo"})
     if not info.get("total_frames"):
-        add("prepare", "Подготовка плейта (кадры)")
-    add("mask", f"Маска персонажа «{subject}» (SAM)")
+        add("prepare", T("Подготовка плейта (кадры)", "Prepare the plate (frames)"))
+    add("mask", T(f"Маска персонажа «{subject}» (SAM)", f"Mask of the {subject} (SAM)"))
     if p.get("track"):
-        add("track", "Трекинг камеры (GLOMAP)")
-    add("pose", "Поза персонажа (DWPose)")
+        add("track", T("Трекинг камеры (GLOMAP)", "Camera track (GLOMAP)"))
+    add("pose", T("Поза персонажа (DWPose)", "Character pose (DWPose)"))
     if "char" in variants:
-        add("depth", "Карта глубины")
+        add("depth", T("Карта глубины", "Depth map"))
     if dancers:
-        add("dancers", f"Скелеты в 3D: {int(dancers.get('count') or 2)} × {dancers.get('action') or 'танец'} → Pose to Gen")
+        add("dancers", T(f"Скелеты в 3D: {int(dancers.get('count') or 2)} × {dancers.get('action') or 'танец'} → Pose to Gen",
+                         f"Skeletons in 3D: {int(dancers.get('count') or 2)} × {dancers.get('action') or 'dancing'} → Pose to Gen"))
     for var in variants:
-        add(f"ff_{var}", f"Первый кадр: {VARIANT_TITLE[var]} (FLUX)")
-        add(f"ltx_{var}", f"Видео: {VARIANT_TITLE[var]} (LTX union-control)")
+        add(f"ff_{var}", T("Первый кадр", "First frame") + f": {VT[var]} (FLUX)")
+        add(f"ltx_{var}", T("Видео", "Video") + f": {VT[var]} (LTX union-control)")
     v._job_update(job_id, steps=[dict(s) for s in steps], plan=p)
     idx = {s["key"]: i for i, s in enumerate(steps)}
     out: Dict[str, Any] = {"layers": {}, "images": {}, "videos": []}
@@ -208,7 +218,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         str(l.get("text") or l.get("name") or "").strip().lower() == subject.lower()
         or (generic and str(l.get("engine") or "").startswith("sam") and l.get("text"))))
     if m:
-        _log(job_id, steps, i, "done", f"уже есть: {m.get('name')}")
+        _log(job_id, steps, i, "done", T("уже есть", "already there") + f": {m.get('name')}")
     else:
         m = _run_child(job_id, "text_mask", pid, vid, {"text": subject}, steps, i).get("layer") or {}
         _log(job_id, steps, i, "done")
@@ -232,7 +242,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copyfile(prev, dst)
                 out["track"] = {"report": old.get("report"), "reused": True}
-                _log(job_id, steps, i, "done", "камера уже решена для этого диапазона — беру готовую")
+                _log(job_id, steps, i, "done", T("камера уже решена для этого диапазона — беру готовую", "camera already solved for this range - reusing it"))
                 prev = None
         except Exception:
             pass
@@ -248,7 +258,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
     _log(job_id, steps, i, "running")
     pose = _find_layer(pid, vid, lambda l: l.get("type") == "pose" and l.get("source") not in ("3d", "agent_merge"))
     if pose:
-        _log(job_id, steps, i, "done", f"уже есть: {pose.get('name')}")
+        _log(job_id, steps, i, "done", T("уже есть", "already there") + f": {pose.get('name')}")
     else:
         pose = _run_child(job_id, "pose", pid, vid, {"name": f"{subject} pose"}, steps, i).get("layer") or {}
         _log(job_id, steps, i, "done")
@@ -259,7 +269,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         _log(job_id, steps, i, "running")
         depth = _find_layer(pid, vid, lambda l: l.get("type") == "depth")
         if depth:
-            _log(job_id, steps, i, "done", f"уже есть: {depth.get('name')}")
+            _log(job_id, steps, i, "done", T("уже есть", "already there") + f": {depth.get('name')}")
         else:
             depth = _run_child(job_id, "depth", pid, vid, {"engine": "v2"}, steps, i).get("layer") or {}
             _log(job_id, steps, i, "done")
@@ -283,8 +293,10 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
                 break
             left = int((wait_s - (time.time() - t0)) // 60)
             _log(job_id, steps, i, "waiting_user",
-                 f"жду слой Pose to Gen из 3D (ещё ~{left} мин): 3D → добавьте {int(dancers.get('count') or 2)} скелета с анимацией, "
-                 f"поставьте их за персонажем в кадре трекинг-камеры → кнопка Pose to Gen")
+                 T(f"жду слой Pose to Gen из 3D (ещё ~{left} мин): 3D → добавьте {int(dancers.get('count') or 2)} скелета с анимацией, "
+                   f"поставьте их за персонажем в кадре трекинг-камеры → кнопка Pose to Gen",
+                   f"waiting for a Pose to Gen layer from 3D (~{left} min left): 3D → add {int(dancers.get('count') or 2)} animated skeletons, "
+                   f"put them behind the character in the tracked camera's view → Pose to Gen button"))
             time.sleep(5)
         if found:
             time.sleep(3)   # let the last frames land
@@ -292,10 +304,10 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
             control_pose = merged["id"]
             out["layers"]["dancers"] = found["id"]
             out["layers"]["pose_with_dancers"] = merged["id"]
-            _log(job_id, steps, i, "done", f"скелеты добавлены: {found.get('name')}")
+            _log(job_id, steps, i, "done", T("скелеты добавлены", "skeletons added") + f": {found.get('name')}")
         else:
             dancers = None
-            _log(job_id, steps, i, "skipped", "слой из 3D не пришёл — продолжаю без скелетов")
+            _log(job_id, steps, i, "skipped", T("слой из 3D не пришёл — продолжаю без скелетов", "no layer came from 3D - going on without skeletons"))
 
     # 5 variants: first frame (FLUX edit of the plate's first frame) -> LTX union-control video
     try:
@@ -335,7 +347,7 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         ctrl = depth.get("id") if (var == "char" and depth) else control_pose
         r = _run_child(job_id, "ltx_ic_lora", pid, vid, {
             "lora": UNION, "needs": "control", "source_layer": ctrl, "ref_image": url, "prompt": prompt,
-            "start": start, "end": end, "name": f"Agent · {VARIANT_TITLE[var]}",
+            "start": start, "end": end, "name": f"Agent · {VT[var]}",
         }, steps, i)
         lay = r.get("layer") or {}
         out["videos"].append({"variant": var, "layer": lay.get("id"), "name": lay.get("name"), "first_frame": url})
@@ -503,14 +515,14 @@ def run_free_plan(job_id: str, pid: str, vid: str, p: Dict[str, Any]) -> Dict[st
                                     and float(l.get("created_at") or 0) >= t_start - 5)
                 if found:
                     break
-                _log(job_id, steps, i, "waiting_user", str(prm.get("ask") or "жду слой Pose to Gen из 3D"))
+                _log(job_id, steps, i, "waiting_user", str(prm.get("ask") or _tr(p)("жду слой Pose to Gen из 3D", "waiting for a Pose to Gen layer from 3D")))
                 time.sleep(5)
             if found:
                 time.sleep(3)
                 results[sid] = {"layer": found["id"]}
             else:
                 results[sid] = {}
-                _log(job_id, steps, i, "skipped", "слой из 3D не пришёл")
+                _log(job_id, steps, i, "skipped", _tr(p)("слой из 3D не пришёл", "no layer came from 3D"))
                 continue
         elif k == "merge_pose":
             lids = [x for x in (prm.get("layers") or []) if x]

@@ -206,27 +206,31 @@ def _vls():
     return None
 
 
-def status_text(job: Dict[str, Any]) -> str:
+def status_text(job: Dict[str, Any], lang: str = "ru") -> str:
+    T = (lambda r, e: r) if lang == "ru" else (lambda r, e: e)
     icon = {"done": "✅", "skipped": "⏭", "running": "⏳", "waiting_user": "🙋", "todo": "▫️"}
     steps = job.get("steps") or []
     st = job.get("status")
-    head = {"running": "Задача идёт", "done": "Задача готова", "error": "Задача упала", "cancelled": "Задача остановлена"}.get(st, st)
+    head = {"running": T("Задача идёт", "Task running"), "done": T("Задача готова", "Task done"), "error": T("Задача упала", "Task failed"),
+            "cancelled": T("Задача остановлена", "Task stopped")}.get(st, st)
     lines = [f"**{head}** ({job.get('progress', 0)}%)"]
     for i, s in enumerate(steps):
         note = f" — {s['note']}" if s.get("note") and s.get("status") != "done" or (s.get("note") and s.get("status") == "skipped") else ""
         lines.append(f"{icon.get(s.get('status'), '•')} {i + 1}. {s.get('title')}{note}")
     if st == "error":
-        lines.append(f"\nОшибка: {job.get('message')}")
+        lines.append(T("\nОшибка: ", "\nError: ") + str(job.get("message")))
     if st == "done":
         res = job.get("result") or {}
         for v in res.get("videos") or []:
-            lines.append(f"🎞 {v.get('name')} — слой в 2D-видео шота")
+            lines.append(f"🎞 {v.get('name')} — " + T("слой в 2D-видео шота", "a layer on the shot in the Video view"))
     return "\n".join(lines)
 
 
 def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, Any], st: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Returns an agent reply dict, or None when the message is not about a shot task."""
     m = (user_message or "").lower().strip()
+    lang = "ru" if re.search(r"[а-яё]", m) else "en"
+    T = (lambda r, e: r) if lang == "ru" else (lambda r, e: e)
     vls = _vls()
     job_id = st.get("shot_task_job")
     if job_id and vls is not None:
@@ -235,12 +239,12 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
             if re.search(r"пропусти\w*\s+скелет|без\s+скелет|скелеты\s+не\s+нужн|skip\s+(the\s+)?(skeleton|3d|wait)", m):
                 with vls._JOBS_LOCK:
                     vls._JOBS[job_id]["skip_wait"] = True
-                return {"response_ru": "Ок, скелеты пропускаю — иду к вариантам.", "studio_actions": [], "decision": {"action": None}}
+                return {"response_ru": T("Ок, скелеты пропускаю — иду дальше.", "OK, skipping the skeletons - moving on."), "studio_actions": [], "decision": {"action": None}}
             if re.search(r"^(стоп|останови)\w*\s+задач|отмени\w*\s+задач|^stop\s+(the\s+)?task|^cancel\s+(the\s+)?task", m):
                 vls.cancel_job(job_id)
-                return {"response_ru": "Останавливаю задачу.", "studio_actions": [], "decision": {"action": None}}
+                return {"response_ru": T("Останавливаю задачу.", "Stopping the task."), "studio_actions": [], "decision": {"action": None}}
             if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы|^status\b|progress|how\s+is\s+it\s+going", m):
-                return {"response_ru": status_text(job), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
+                return {"response_ru": status_text(job, lang), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
     if not looks_like_shot_task(user_message):
         return None
     video, vids = resolve_video(user_message, project_dir, studio_ctx)
@@ -249,6 +253,7 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
         return {"response_ru": f"Понял задачу, но не понял, какой шот. Назовите видео (например: {names}) или откройте его в 2D.",
                 "studio_actions": [], "decision": {"action": None}}
     plan = build_plan(user_message)
+    plan["lang"] = "ru"
     plan["video_url"] = video.get("videoUrl") or ""
     if not plan["variants"] and not plan.get("track"):
         return None
@@ -296,9 +301,10 @@ def start_free_plan(params: Dict[str, Any], pid: str, project_dir: str, studio_c
         errs.append("video_id: which video? (" + ", ".join(f"{v.get('id')} = {v.get('title')}" for v in vids[:10]) + ")")
     if errs:
         return {"errors": errs}
+    lang = "ru" if re.search(r"[а-яё]", (user_message or "").lower()) else "en"
     try:
         job = vls.start_job("shot_task", pid, video["id"], {"steps": steps, "video_url": video.get("videoUrl") or "",
-                                                            "title": params.get("title") or ""})
+                                                            "title": params.get("title") or "", "lang": lang})
     except Exception as e:   # e.g. ComfyUI not restarted after an update: the job kind is unknown yet
         return {"errors": [f"could not start: {e} (restart ComfyUI)"]}
     st["shot_task_job"] = job["id"]
