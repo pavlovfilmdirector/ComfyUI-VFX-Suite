@@ -2128,6 +2128,7 @@ def register_server_routes():
 
                 ctx["timeline"] = timeline_context[:3000]
 
+            ctx.setdefault("project_id", pid)
             res = _sa.plan_turn(msg, get_project_dir(pid), ctx, agent_config, ui_history=history)
 
             acts = res.get("studio_actions") or []

@@ -2480,8 +2480,22 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
 
 
 
+    # multi-step shot tasks in plain words ("трекинг + новый фон + скелеты + три варианта") -> one server-side job
+    try:
+        import importlib as _il
+        import shot_planner as _sp
+        _il.reload(_sp)
+        _pid = str(studio_ctx.get("project_id") or os.path.basename(os.path.normpath(project_dir)))
+        _shot = _sp.handle(user_message, project_dir, _pid, studio_ctx, st)
+    except Exception as _e:
+        _shot = None
+        print(f"[studio agent] shot planner: {_e}")
+    if _shot:
+        mem.append("user", user_message)
+        mem.append("assistant", _shot["response_ru"])
+        mem.save_state(st)
+        return _shot
     msg_l = (user_message or "").lower()
-
     is_visualize = any(w in msg_l for w in ["визуализир", "показывай действия", "показывая окна", "открывая окна", "покажи в окне", "открой окно", "с визуализацией", "покажи процесс"])
 
     is_stage_confirm = any(w in msg_l for w in ["подтверждени", "по этапам", "по шагам", "сделай кусок", "если утвердили", "поэтапн", "утверждением этапов", "просыпался", "продолжения от пользователя", "кусок показал результат", "по шагам с паузой"])

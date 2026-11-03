@@ -478,3 +478,18 @@ def test_redistort_bends_a_layer_back(tmp_path, monkeypatch):
     assert r["frames"] == 2 and r["layer"]["name"] == "Shot · lens"
     im = cv2.imread(str(out / "frame_0000.png"))
     assert im.shape == (48, 64, 3) and im[24, 32, 0] == 200
+
+
+def test_shot_planner_reads_a_plain_text_task():
+    import importlib, sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core_agent"))
+    sp = importlib.import_module("shot_planner")
+    msg = ("давай сделаем ему трекинг заменим фон на городскую среду типа гето. добавим на фоны пару скелетов пусть это будут "
+           "афроамериканцы танцевать капоэйру. и пусть будет три варианта финального шота с заменой фона с заменой персонажа "
+           "и с заменой фона и персонажа.")
+    assert sp.looks_like_shot_task(msg)
+    p = sp.build_plan(msg)
+    assert p["track"] and p["variants"] == ["bg", "char", "both"]
+    assert "ghetto" in p["background"] and p["dancers"]["count"] == 2 and "capoeira" in p["dancers"]["action"]
+    assert not sp.looks_like_shot_task("сделай глубину")
+    assert sp.build_plan("замени персонажа на рыцаря в доспехах и сделай трекинг")["character"] == "рыцаря в доспехах"

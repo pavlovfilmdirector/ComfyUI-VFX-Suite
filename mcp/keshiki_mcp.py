@@ -294,7 +294,7 @@ TOOLS = [
                   "normal (params.convention directx|opengl), canny, pose, "
                   "text_mask (params.text), track_object, corridor_key, ltx_ic_lora (params.lora, prompt, start, end, ref_image), "
                   "ltx_alpha, relight_frame (params.frame, prompt or light_layer), first_frame, fill, render, montage (params.videos=[{url}], overlap), "
-                  "merge_masks (params.layer_ids, name), video_cutout (params.mask_layer_id, name), track_camera, undistort, redistort (params.layer_id: put a layer back into the lens distortion), composite. Each result is a new layer.",
+                  "merge_masks (params.layer_ids, name), video_cutout (params.mask_layer_id, name), track_camera, undistort, redistort (params.layer_id: put a layer back into the lens distortion), composite, shot_task (a whole multi-step shot task: params.track, subject, background, character, dancers{count,who,action}, variants [bg|char|both], start, end - job.steps shows each step). Each result is a new layer.",
      _schema({"project_id": PID, "video_id": VID, "kind": {"type": S}, "params": {"type": O}, "wait": {"type": B, "default": False}},
              ["project_id", "video_id", "kind"]), t_video_job),
     ("job_status", "Progress / result of a job.", _schema({"job_id": {"type": S}, "family": FAM}, ["job_id"]), t_job_status),

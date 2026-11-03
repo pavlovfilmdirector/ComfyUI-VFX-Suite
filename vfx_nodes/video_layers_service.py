@@ -1123,6 +1123,11 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
         except ImportError:  # pragma: no cover
             from control_pass_service import JOBS as _cp_jobs
         fn = _cp_jobs.get(kind)
+    if not fn and kind == "shot_task":   # a whole multi-step shot task planned by the studio agent (agent_shot_task.py)
+        try:
+            from .agent_shot_task import run_shot_task as fn
+        except ImportError:  # pragma: no cover
+            from agent_shot_task import run_shot_task as fn
     if not fn:
         raise ProcessError(f"Unknown 2D job '{kind}'")
     job_id = f"vjob_{uuid.uuid4().hex[:10]}"
@@ -1132,7 +1137,7 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
 
     def runner():
         try:
-            if kind != "montage":
+            if kind not in ("montage", "shot_task"):
                 ensure_plate_registered(pid, vid)
             res = fn(job_id, kind, pid, vid, params or {})
             _job_update(job_id, status="done", progress=100, message="Done", result=res)
