@@ -44431,7 +44431,7 @@ async function openNarrationEditor() {
                                 <select id="g2-ff-model" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;"><option value="">FLUX.3 Klein</option><option value="qwen">Qwen Image Edit</option></select></label>
                             <input id="g2-ff-scene" placeholder="${uiText("What the 3D shapes become (e.g. park bench, oak tree, lawn)", "Во что превратить 3D-примитивы (напр. скамейка, дуб, газон)")}" style="background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10px; padding: 3px 6px;">
 
-                            <textarea id="g2-ff-desc" rows="2" placeholder="${uiText("Extra notes on the character (optional; without a pose layer this is the description, empty = written by the local Ollama vision model)", "Уточнения по персонажу (необязательно; без слоя позы это описание, пусто — напишет vision-модель Ollama)")}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10px; padding: 4px 6px; resize: vertical;"></textarea>
+                            <textarea id="g2-ff-desc" rows="2" placeholder="${uiText("ONLY the character: look, clothes, action (e.g. a blonde woman in a red dress, flying). The objects go in the line below.", "ТОЛЬКО персонаж: внешность, одежда, действие (напр. блондинка в красном платье, летит). Предметы — в строке ниже.")}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10px; padding: 4px 6px; resize: vertical;"></textarea>
 
                             <button class="vfx-btn vfx-btn-primary" id="g2-ff-go" style="padding: 3px;">${uiText("Generate the frame", "Сгенерировать кадр")}</button>
 
@@ -44653,6 +44653,12 @@ async function openNarrationEditor() {
                         const descEl = pop.querySelector("#g2-ff-desc");
 
                         if (!ffChar && !descEl.value.trim()) { showToastNotification(uiText("Pick the character image or describe the character", "Выберите изображение персонажа или опишите его"), true); return; }
+                        {
+                            // a whole scene prompt pasted into the character field breaks the template (positions are lost)
+                            const dv = descEl.value.toLowerCase();
+                            const sceneWords = (dv.match(/\b(bench|tree|statue|park|lawn|sky|grass|building|street|room|скамейк|дерев|стату|парк|газон|небо|трав|улиц|комнат)/g) || []).length;
+                            if (dv.length > 260 && sceneWords >= 2) showToastNotification(uiText("The character field looks like a whole scene description: put the objects in «What the 3D shapes become», keep only the character here", "В поле персонажа похоже описание всей сцены: предметы перенесите в строку «Во что превратить 3D-примитивы», здесь оставьте только персонажа"), true);
+                        }
 
                         const btn = pop.querySelector("#g2-ff-go"); btn.disabled = true; btn.textContent = uiText("Generating…", "Генерирую…");
 
