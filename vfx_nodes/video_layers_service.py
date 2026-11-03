@@ -1112,7 +1112,7 @@ def start_job(kind: str, pid: str, vid: str, params: Dict[str, Any]) -> Dict[str
     fn = {
         "prepare": _job_prepare, "depth": _job_preprocess, "normal": _job_preprocess, "canny": _job_preprocess, "pose": _job_preprocess,
         "detect_all": _job_detect_all, "track_object": _job_track_object,
-        "corridor_key": _job_corridor_key, "undistort": _job_undistort, "track_camera": _job_track_camera,
+        "corridor_key": _job_corridor_key, "undistort": _job_undistort, "redistort": _job_redistort, "track_camera": _job_track_camera,
         "ltx_alpha": _job_ltx_ic_lora, "ltx_ic_lora": _job_ltx_ic_lora,
         "fill": _job_fill, "render": _job_render, "video_cutout": _job_video_cutout, "layer_to_video": _job_layer_to_video,
         "mask_grow": _job_mask_grow, "merge_masks": _job_merge_masks, "first_frame": _job_first_frame, "text_mask": _job_text_mask, "composite": _job_composite, "relight_frame": _job_relight_frame, "montage": _job_montage,
@@ -1633,6 +1633,60 @@ def _job_undistort(job_id, kind, pid, vid, p):
     except Exception as e:   # the undistort itself is done; the extras must not fail the job
         _job_update(job_id, message=f"Undistorted (lens data not written: {e})")
     return res
+
+
+def _job_redistort(job_id, kind, pid, vid, p):
+    """A layer made on the straightened (undistorted) plate - a generated shot, a composite - is bent back into the
+    original lens, so it lines up with the real footage again. New rgb layer «<name> · lens»."""
+    lid = _safe(str(p.get("layer_id") or ""))
+    man = load_manifest(pid, vid)
+    src = next((l for l in man["layers"] if l.get("id") == lid), None)
+    if not src or lid == "plate_undist":
+        raise ProcessError("Choose the layer to put back into the lens")
+    und = next((l for l in man["layers"] if l.get("id") == "plate_undist"), None)
+    lens = (und or {}).get("lens") or {}
+    info = pps.get_info(node_id_for(vid)) or {}
+    k1 = float(p.get("k1", lens.get("k1", info.get("k1", 0.0))) or 0.0)
+    k2 = float(p.get("k2", lens.get("k2", info.get("k2", 0.0))) or 0.0)
+    if abs(k1) < 1e-6 and abs(k2) < 1e-6:
+        raise ProcessError("This video has no lens distortion yet: run Lens (undistort) first")
+    w, h = int(info.get("width") or lens.get("width") or 1920), int(info.get("height") or lens.get("height") or 1080)
+    focal = float(max(w, h))
+    K = np.array([[focal, 0, w / 2.0], [0, focal, h / 2.0], [0, 0, 1]], np.float64)
+    dist = np.array([k1, k2, 0, 0, 0], np.float64)
+    gx, gy = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    pts = np.stack([gx.ravel(), gy.ravel()], axis=1).reshape(-1, 1, 2)
+    m = cv2.undistortPoints(pts, K, dist, P=K).reshape(h, w, 2)
+    mx, my = m[..., 0].astype(np.float32), m[..., 1].astype(np.float32)
+    total = int(info.get("total_frames") or 0)
+    layer = _add_layer(pid, vid, "rgb", f"{src.get('name') or lid} · lens", extra={"source": "redistort", "of": lid, "k1": k1, "k2": k2})
+    out_dir = _layer_dir(pid, vid, layer["id"])
+    n = 0
+    for i in range(total):
+        if _cancelled(job_id):
+            raise ProcessError("Stopped")
+        fp = frame_path(pid, vid, lid, i)
+        if not fp:
+            continue
+        img = cv2.imread(fp, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            continue
+        if img.shape[:2] != (h, w):
+            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_CUBIC)
+        out = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        cv2.imwrite(os.path.join(out_dir, f"frame_{i:04d}.png"), out, [int(cv2.IMWRITE_PNG_COMPRESSION), 1])
+        n += 1
+        if i % 10 == 0:
+            _job_update(job_id, message=f"Back into the lens: frame {i + 1}/{total}", progress=int(100 * (i + 1) / max(1, total)))
+    if not n:
+        raise ProcessError("The layer has no frames")
+    man = load_manifest(pid, vid)
+    for l in man["layers"]:
+        if l.get("id") == layer["id"]:
+            l["frames"] = n
+            layer = l
+    save_manifest(pid, vid, man)
+    return {"layer": layer, "frames": n}
 
 
 def _publish_undistort(pid: str, vid: str, k1: float, k2: float) -> Dict[str, Any]:

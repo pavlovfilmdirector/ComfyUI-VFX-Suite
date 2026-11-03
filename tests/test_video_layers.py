@@ -452,3 +452,29 @@ def test_publish_undistort_writes_layer_lens_and_stmaps(tmp_path, monkeypatch):
     assert _json.load(open(tmp_path / "v" / "lens" / "lens.json"))["stmap_convention"].startswith("Nuke")
     vls._publish_undistort("p", "v", 0.05, 0.0)   # again: the same layer is updated, not duplicated
     assert len(store["layers"]) == 1
+
+
+def test_redistort_bends_a_layer_back(tmp_path, monkeypatch):
+    import cv2, numpy as np
+    from vfx_nodes import video_layers_service as vls
+    monkeypatch.setattr(vls.pps, "get_info", lambda *a, **k: {"width": 64, "height": 48, "total_frames": 2})
+    src = tmp_path / "src"; src.mkdir()
+    for i in range(2):
+        cv2.imwrite(str(src / f"frame_{i:04d}.png"), np.full((48, 64, 3), 200, np.uint8))
+    store = {"layers": [{"id": "vl_a", "type": "rgb", "name": "Shot"},
+                        {"id": "plate_undist", "type": "rgb", "name": "Undistort", "lens": {"k1": -0.2, "k2": 0.0}}]}
+    monkeypatch.setattr(vls, "load_manifest", lambda pid, vid: store)
+    monkeypatch.setattr(vls, "save_manifest", lambda pid, vid, m: store.update(m))
+    out = tmp_path / "out"
+    def add_layer(pid, vid, t, n, extra=None, **k):
+        store["layers"].append({"id": "vl_new", "type": t, "name": n}); return store["layers"][-1]
+    monkeypatch.setattr(vls, "_add_layer", add_layer)
+    monkeypatch.setattr(vls, "_layer_dir", lambda pid, vid, lid: str(out if lid == "vl_new" else src))
+    monkeypatch.setattr(vls, "frame_path", lambda pid, vid, lid, i: str(src / f"frame_{i:04d}.png"))
+    monkeypatch.setattr(vls, "_cancelled", lambda j: False)
+    monkeypatch.setattr(vls, "_job_update", lambda *a, **k: None)
+    out.mkdir()
+    r = vls._job_redistort("j", "redistort", "p", "v", {"layer_id": "vl_a"})
+    assert r["frames"] == 2 and r["layer"]["name"] == "Shot · lens"
+    im = cv2.imread(str(out / "frame_0000.png"))
+    assert im.shape == (48, 64, 3) and im[24, 32, 0] == 200

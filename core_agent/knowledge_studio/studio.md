@@ -103,6 +103,7 @@
 | canny | Контуры Canny для управления геометрией | low_threshold, high_threshold |
 | pose | Скелетная поза человека (DWPose / OpenPose) | — |
 | track_camera | 3D-трекинг движения камеры GLOMAP/COLMAP | Экспорт траектории в .CHAN |
+| redistort | Вернуть слой (сделанный на выпрямленном плейте) в дисторсию исходного объектива: новый слой «… · lens» | params: layer_id; нужен Lens (undistort) |
 | first_frame | Генерация ключевого первого кадра под позу и окружение | guide_layer, pose_layer, ref_image, prompt |
 | ltx_ic_lora | Видеогенерация LTX с управляющей LoRA | lora ("clean-plate", "layout-to-render", "union-control"), prompt, needs |
 | relight_frame | Переосвещение кадра (Qwen Edit 2511) | azimuth (0–360°), elevation (-90..90°), intensity, color (#hex) |

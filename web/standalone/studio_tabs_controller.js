@@ -42241,6 +42241,8 @@ async function openNarrationEditor() {
                             style="width: 16px; height: 16px; padding: 0; background: ${isDec2D ? 'rgba(2,132,199,0.35)' : 'transparent'}; border: 1px solid ${isDec2D ? '#38bdf8' : 'transparent'}; border-radius: 3px; font-size: 10px; line-height: 14px; opacity: ${isDec2D ? '1.0' : '0.45'}; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;">🧩</button>`;
                     })()}
 
+                    ${(l.type === "rgb" && l.id !== "plate_undist" && vlState2D.layers.some(x => x.id === "plate_undist")) ? `<button class="vfx-btn vl2d-redist" data-lid="${l.id}" ${tipAttr("Put back into the lens: bend this layer (made on the straightened plate) with the original lens distortion, as a new layer", "Вернуть в объектив: изогнуть этот слой (сделанный на выпрямленном плейте) обратно дисторсией исходного объектива, новым слоем")}
+                        style="width: 16px; height: 16px; padding: 0; background: transparent; border: none; color: #67e8f9; display: flex; align-items: center; justify-content: center; font-size: 10px;">◎</button>` : ""}
                     <button class="vfx-btn vl2d-export" data-lid="${l.id}" ${tipAttr("Add this layer as a separate video", "Добавить слой как отдельное видео")}
 
                         style="width: 16px; height: 16px; padding: 0; background: transparent; border: none; color: rgba(255,255,255,0.55); display: flex; align-items: center; justify-content: center;">
@@ -42488,7 +42490,7 @@ async function openNarrationEditor() {
 
                 row.onclick = (e) => {
 
-                    if (e.target.closest(".vl2d-eye, .vl2d-del, .vl2d-inv, .vl2d-bw, .vl2d-alpha, .vl2d-export, .vl2d-solo, .vl2d-morph, .vl2d-grow")) return;
+                    if (e.target.closest(".vl2d-eye, .vl2d-redist, .vl2d-del, .vl2d-inv, .vl2d-bw, .vl2d-alpha, .vl2d-export, .vl2d-solo, .vl2d-morph, .vl2d-grow")) return;
 
 
 
@@ -42776,6 +42778,11 @@ async function openNarrationEditor() {
 
 
 
+            vlPanel2D.querySelectorAll(".vl2d-redist").forEach(b => b.onclick = async (e) => {
+                e.stopPropagation();
+                const st = await runVideoJob2D("redistort", { layer_id: b.dataset.lid });
+                if (st && st.result && st.result.layer) { vlState2D.selected = st.result.layer.id; vlState2D.selLayerIds = [st.result.layer.id]; renderVideoLayersPanel2D(); updateVideoOverlays2D(); }
+            });
             vlPanel2D.querySelectorAll(".vl2d-export").forEach(b => b.onclick = async () => {
 
                 const l = vlState2D.layers.find(x => x.id === b.dataset.lid);
