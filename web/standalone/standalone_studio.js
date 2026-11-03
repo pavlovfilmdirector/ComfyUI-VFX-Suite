@@ -588,6 +588,7 @@ export async function initStandaloneLayoutStudio() {
                         <button class="vfx-btn" id="btn-toggle-bones" ${tipAttr('Show / hide the skeleton of the selected character', 'Показать / скрыть кости выбранного персонажа')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#f59e0b;"><i data-lucide="bone" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-pose-from-3d" ${tipAttr('Pose to Gen: characters -> OpenPose layer through the camera (joints hidden behind objects are dropped)', 'Pose to Gen: персонажи -> слой позы OpenPose через камеру (суставы, закрытые объектами, не рисуются)')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="image" style="width:13px; height:13px;"></i></button>
                         <button class="vfx-btn" id="btn-render-from-3d" ${tipAttr('Layout to Gen: scene + characters rendered through the camera -> RGB layer', 'Layout to Gen: сцена + персонажи через камеру -> RGB-слой')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="box" style="width:13px; height:13px;"></i></button>
+                        <button class="vfx-btn" id="btn-pose-occlude" ${tipAttr('Pose to Gen: hide joints behind objects - Auto (only through the tracked shot camera) / On / Off', 'Pose to Gen: прятать суставы за предметами — Авто (только в трекинг-камере) / Вкл / Выкл')} style="height:26px; padding:0 6px; font-size:9.5px; color:#22d3ee;">👁 Auto</button>
                         <button class="vfx-btn" id="btn-render-cams-package" ${tipAttr('Render every camera into its own layered video: Layout to Gen (scene + characters), Pose to Gen, Depth. Re-rendering updates the same layers', 'Рендер каждой камеры в отдельное видео со слоями: Layout to Gen (сцена + персонажи), Pose to Gen, Depth. Повторный рендер обновляет те же слои')} style="width:26px; height:26px; min-width:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#22d3ee;"><i data-lucide="layers" style="width:13px; height:13px;"></i></button>
 
                         <input type="file" id="file-mesh-input" accept=".glb,.gltf,.obj,.fbx" style="display:none;" />
@@ -6392,7 +6393,12 @@ let lastMonitorRenderTime = 0;
             const outW = opts.width || plateWidth || 1920, outH = opts.height || plateHeight || 1080;
             // occlusion: joints behind set dressing (boxes, meshes, GLB props) are left out, like a real OpenPose detection would
             const OCC_TYPES = new Set(["box", "sphere", "cylinder", "cone", "torus", "mesh", "glb"]);
-            const occluders = opts.occlude === false ? [] : [...threeObjectsMap.values()].filter(o => OCC_TYPES.has(o.userData.type) && o.visible !== false);
+            // auto (default): only through the tracked shot camera - there the set dressing stands in for real foreground
+            // in the footage; through a free camera the whole skeleton is drawn. The 3D bar button switches auto / on / off.
+            let occMode = opts.occlude === true ? "on" : (opts.occlude === false ? "off" : "auto");
+            if (occMode === "auto") { try { occMode = localStorage.getItem("vfx_pose_occlude") || "auto"; } catch (_) {} }
+            const occOn = (c) => occMode === "on" || (occMode === "auto" && c === shotCamera);
+            const occluders = occMode === "off" ? [] : [...threeObjectsMap.values()].filter(o => OCC_TYPES.has(o.userData.type) && o.visible !== false);
             const occRay = new THREE.Raycaster();
             const jointHidden = (from, joint) => {
                 const dir = joint.clone().sub(from); const dist = dir.length(); if (dist < 1e-4) return false;
@@ -6433,7 +6439,7 @@ let lastMonitorRenderTime = 0;
                             const pts = characterOpenPose3D(characterRigs.get(o.userData.id)); if (!pts) return;
                             people.push(pts.map(v => {
                                 if (!v) return null;
-                                if (occluders.length && jointHidden(camPos, v)) return null;   // a prop stands between the camera and this joint
+                                if (occluders.length && occOn(cam) && jointHidden(camPos, v)) return null;   // a prop stands between the camera and this joint
                                 const n = v.clone().project(cam);
                                 if (!dbg) dbg = { cam: cam.getWorldPosition(new THREE.Vector3()).toArray().map(x => +x.toFixed(2)), joint: v.toArray().map(x => +x.toFixed(2)), ndc: n.toArray().map(x => +x.toFixed(2)) };
                                 if (n.z < -1 || n.z > 1) return null;    // behind the camera / clipped
@@ -7576,6 +7582,20 @@ let lastMonitorRenderTime = 0;
                 .catch(err => { logMsg(`ERROR: pose from 3D: ${err.message}`); if (typeof window.__vfxToast === "function") window.__vfxToast(uiText(`Pose from 3D: ${err.message}`, `Поза из 3D: ${err.message}`), true); })
                 .finally(() => { pb.disabled = false; });
         };
+        const occBtn = document.getElementById("btn-pose-occlude");
+        if (occBtn) {
+            const lab = { auto: uiText("👁 Auto", "👁 Авто"), on: uiText("👁 Hide", "👁 Прятать"), off: uiText("👁 Full", "👁 Целиком") };
+            const paintOcc = () => { let m = "auto"; try { m = localStorage.getItem("vfx_pose_occlude") || "auto"; } catch (_) {} occBtn.textContent = lab[m] || lab.auto; };
+            paintOcc();
+            occBtn.onclick = () => {
+                let m = "auto"; try { m = localStorage.getItem("vfx_pose_occlude") || "auto"; } catch (_) {}
+                const next = m === "auto" ? "on" : (m === "on" ? "off" : "auto");
+                try { localStorage.setItem("vfx_pose_occlude", next); } catch (_) {}
+                paintOcc();
+                if (typeof window.__vfxToast === "function") window.__vfxToast({ auto: uiText("Joints behind objects: hidden only through the tracked camera", "Суставы за предметами: прячутся только в трекинг-камере"),
+                    on: uiText("Joints behind objects: always hidden", "Суставы за предметами: прячутся всегда"), off: uiText("Joints behind objects: skeleton always drawn whole", "Суставы за предметами: скелет всегда целиком") }[next], false);
+            };
+        }
         const cpb = document.getElementById("btn-render-cams-package");
         if (cpb) cpb.onclick = () => {
             cpb.disabled = true;
