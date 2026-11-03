@@ -10626,6 +10626,19 @@ async function openNarrationEditor() {
         }
     }
     window.__vfxSyncGeneratedImagesToGallery = syncGeneratedImagesToGallery;
+    // a picture made inside a dialog (first frame, relight) goes to the gallery at once, labelled with what it is
+    window.__vfxAddGenImage = (img, kindEn, kindRu) => {
+        if (!img || !img.url || !Array.isArray(mediaImages1D)) return;
+        if (mediaImages1D.some(i => i.url === img.url)) return;
+        const t = new Date();
+        const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+        mediaImages1D.unshift({ id: `img_ff_${Date.now()}`, title: `${uiText(kindEn, kindRu)} · ${hhmm}`, badge: uiText(kindEn, kindRu).toUpperCase().slice(0, 12),
+            url: img.url, fallbackUrl: null, comment: img.title || "", layerDataUrl: null, layerVisible: true });
+        const pid = (currentProject && currentProject.id) || "sandbox_playground";
+        try { saveProject1DImages(pid); } catch (_) {}
+        if (currentProject) currentProject.mediaImages1D = mediaImages1D;
+        try { renderTopViewportBar(); } catch (_) {}
+    };
 
     setTimeout(() => { try { syncTrackScenes(); syncGeneratedMeshesToScenes3D(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); ensureDefaultLevelExists(); } catch (_) {} }, 1500);
 
@@ -44347,7 +44360,7 @@ async function openNarrationEditor() {
 
                         btn.disabled = false; btn.textContent = uiText("Relight", "Переосветить");
 
-                        if (st && st.result && st.result.image) { refImg = st.result.image; renderRef(); showToastNotification(uiText("Relit first frame ready", "Первый кадр переосвещён")); }
+                        if (st && st.result && st.result.image) { refImg = st.result.image; renderRef(); try { window.__vfxAddGenImage && window.__vfxAddGenImage(st.result.image, "Relight", "Релайт"); } catch (_) {} showToastNotification(uiText("Relit first frame ready", "Первый кадр переосвещён")); }
 
                     };
 
@@ -44376,7 +44389,7 @@ async function openNarrationEditor() {
 
                         if (st && st.result && st.result.description && !descEl.value.trim()) descEl.value = st.result.description;
 
-                        if (st && st.result && st.result.image) { refImg = st.result.image; renderRef(); showToastNotification(uiText("First frame ready — check it, then Run", "Первый кадр готов — проверьте и жмите «Запустить»")); }
+                        if (st && st.result && st.result.image) { refImg = st.result.image; renderRef(); try { window.__vfxAddGenImage && window.__vfxAddGenImage(st.result.image, "First frame", "Первый кадр"); } catch (_) {} showToastNotification(uiText("First frame ready — check it, then Run", "Первый кадр готов — проверьте и жмите «Запустить»")); }
 
                     };
 
