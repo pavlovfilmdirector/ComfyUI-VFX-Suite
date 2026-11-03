@@ -20,6 +20,17 @@ if not defined PY (
   set /p "PY=Path to python.exe: "
 )
 if defined PY set "PY=%PY:"=%"
+:: a pasted path often brings spaces / a tab at either end: trim them
+if defined PY for /f "tokens=* delims= 	" %%A in ("%PY%") do set "PY=%%A"
+:trim_py
+if defined PY if "%PY:~-1%"==" " set "PY=%PY:~0,-1%" & goto trim_py
+if defined PY if not exist "%PY%" if /i not "%PY%"=="python" (
+  echo.
+  echo  Not found: "%PY%"
+  echo  Check the path to python.exe and run install.bat again.
+  pause
+  exit /b 1
+)
 if not defined PY set "PY=python"
 
 "%PY%" install.py %*
