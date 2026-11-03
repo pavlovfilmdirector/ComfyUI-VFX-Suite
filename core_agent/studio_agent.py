@@ -1103,10 +1103,10 @@ def gpu_busy() -> Optional[str]:
 
             return f"{run.get('label') or run.get('node_title') or 'генерация'} — {round(run.get('percent') or 0)}%"
 
-        if d.get("video_jobs"):
-
-            j = d["video_jobs"][0]
-
+        # a shot_task only orchestrates (its own steps show up as separate jobs) - waiting for the user is not GPU work
+        jobs = [j for j in (d.get("video_jobs") or []) if j.get("kind") != "shot_task"]
+        if jobs:
+            j = jobs[0]
             return f"{j.get('kind')} — {round(j.get('progress') or 0)}%"
 
         if d.get("pending"):
