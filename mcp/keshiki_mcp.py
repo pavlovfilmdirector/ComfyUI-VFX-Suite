@@ -63,7 +63,7 @@ def _wait(family, job_id, timeout=3600):
     while time.time() - t0 < timeout:
         j = _get(JOB_PATHS[family].format(_q(job_id)))
         if j.get("status") not in ("running", "queued", "starting"):
-            return j
+            return _slim(j)
         time.sleep(3)
     return {"id": job_id, "status": "running", "message": f"still running after {timeout} s - poll job_status"}
 
@@ -139,8 +139,18 @@ def t_video_job(a):
     return _wait("video", j["id"])
 
 
+_BULKY = ("cloud_preview", "features_preview", "frames_preview", "points", "colors")
+
+
+def _slim(j):
+    """Job payloads carry studio previews (point clouds, feature dots) - far too big for a model's context."""
+    if isinstance(j, dict):
+        return {k: (f"<{len(v)} items omitted>" if k in _BULKY and isinstance(v, (list, dict)) else _slim(v)) for k, v in j.items()}
+    return j
+
+
 def t_job_status(a):
-    return _get(JOB_PATHS[a.get("family", "video")].format(_q(a["job_id"])))
+    return _slim(_get(JOB_PATHS[a.get("family", "video")].format(_q(a["job_id"]))))
 
 
 def t_cancel_job(a):
