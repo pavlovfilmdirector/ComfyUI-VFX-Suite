@@ -44463,6 +44463,7 @@ async function openNarrationEditor() {
 
                                 <select id="g2-ff-pose" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;"><option value="">—</option>${vlState2D.layers.filter(l => l.type === "pose").map(l => `<option value="${l.id}">${esc(l.name || l.id)}</option>`).join("")}</select></label>
 
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;" ${tipAttr("Two steps: first the set (shapes become objects, no people), then the character is drawn where the skeleton is. Slower (two generations), but a statue or a mannequin next to the skeleton can no longer take the character's place.", "В два шага: сначала сцена (примитивы → предметы, без людей), потом персонаж рисуется на месте скелета. Дольше (две генерации), зато статуя или манекен рядом со скелетом больше не займут место персонажа.")}><input type="checkbox" id="g2-ff-two"> ${uiText("Two steps: set first, then the character", "В два шага: сначала сцена, потом персонаж")}</label>
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 10.5px;" ${tipAttr("Which model draws the first frame", "Какая модель рисует первый кадр", "FLUX.3 Klein: fast, follows the skeleton pose closely, can mix up objects. Qwen Image Edit: keeps the layout and objects better, follows the skeleton less exactly, slower (~1 min).", "FLUX.3 Klein: быстро, точно держит позу скелета, может путать предметы. Qwen Image Edit: лучше держит лейаут и предметы, позу скелета держит менее точно, медленнее (~1 мин).")}>${uiText("Model", "Модель")}
                                 <select id="g2-ff-model" style="flex: 1; min-width: 0; background: #0f0f11; color: #fff; border: 1px solid #333; font-size: 10.5px;"><option value="">FLUX.3 Klein</option><option value="qwen">Qwen Image Edit</option></select></label>
                             <input id="g2-ff-scene" placeholder="${uiText("What the 3D shapes become (e.g. park bench, oak tree, lawn)", "Во что превратить 3D-примитивы (напр. скамейка, дуб, газон)")}" style="background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; color: #e2e8f0; font-size: 10px; padding: 3px 6px;">
@@ -44728,6 +44729,7 @@ async function openNarrationEditor() {
 
                             pose_layer: pop.querySelector("#g2-ff-pose").value || undefined, scene: pop.querySelector("#g2-ff-scene").value.trim() || undefined,
                             model: pop.querySelector("#g2-ff-model")?.value || undefined,
+                            two_step: pop.querySelector("#g2-ff-two")?.checked || undefined,
 
                             seed: Math.floor(Math.random() * 2 ** 31)
 

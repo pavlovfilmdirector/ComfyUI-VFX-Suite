@@ -1380,6 +1380,46 @@ def _first_frame_qwen(job_id, pid, vid, p, scene_bgr, idx):
             "seconds": res["seconds"], "prompt_used": instruction}
 
 
+def _first_frame_two_step(job_id, pid, vid, p, scene_bgr, idx, desc):
+    """Two passes so the set dressing and the character cannot be confused (a statue next to the skeleton became
+    the 'character'): 1) the plain 3D shapes become real objects, no people; 2) the skeleton is drawn over THAT
+    picture and replaced by the character, everything else kept."""
+    try:
+        from .image_generate_service import run_image_generate
+    except ImportError:  # pragma: no cover
+        from image_generate_service import run_image_generate
+    import base64
+    scene_txt = str(p.get("scene") or "").strip()
+    _job_update(job_id, message="Step 1/2: the set (3D shapes → real objects, no people)…", progress=10)
+    r1 = run_image_generate({
+        "mode": "edit", "source": _png_data_url(scene_bgr), "megapixels": float(p.get("megapixels", 1.0)),
+        "prompt": ("Turn the plain coloured 3D shapes into real objects" + (f": {scene_txt}" if scene_txt else "") +
+                   ". Keep every object exactly where it is, with the same size, and the same camera angle. "
+                   "No people, no characters, no figures in the picture. One coherent photograph."),
+        "seed": p.get("seed") or None, "run_tag": job_id,
+    })
+    set_img = cv2.imdecode(np.frombuffer(base64.b64decode(r1["image"].split(",", 1)[1]), np.uint8), cv2.IMREAD_COLOR)
+    if set_img is None:
+        raise ProcessError("Step 1 returned no picture")
+    set_name = _save_first_frame(pid, vid, r1["image"], prefix="set")
+    pz = _layer_frame_bgr(pid, vid, p["pose_layer"], idx)
+    if pz is None:
+        raise ProcessError(f"The pose layer has no frame {idx}")
+    g2 = set_img.copy()
+    pz = cv2.resize(pz, (g2.shape[1], g2.shape[0]))
+    m = pz.max(axis=2) > 30
+    g2[m] = pz[m]
+    _job_update(job_id, message="Step 2/2: the character where the skeleton is…", progress=55)
+    r2 = run_image_generate({
+        "mode": "edit", "source": _png_data_url(g2), "megapixels": float(p.get("megapixels", 1.0)),
+        "prompt": (f"Replace the coloured stick-figure skeleton with {desc}: exactly where the skeleton is, in exactly its "
+                   "pose, limb positions and size. Keep everything else in the picture unchanged - the objects, the light, "
+                   "the camera. One coherent photograph, no skeleton lines."),
+        "seed": p.get("seed") or None, "run_tag": job_id,
+    })
+    return {"image": _save_first_frame(pid, vid, r2["image"]), "set_image": set_name, "seed": r2.get("seed"), "description": desc, "two_step": True}
+
+
 def _first_frame_klein_refs(job_id, pid, vid, p, scene_bgr, idx):
     """The recipe that keeps the character's look (tested on the car shot): image 1 = the scene (layout render,
     the base Klein keeps), image 2 = the skeleton alone (role pose), image 3 = the character (role reference),
@@ -1531,6 +1571,8 @@ def _job_first_frame(job_id, kind, pid, vid, p):
     if not desc:
         raise ProcessError("Describe the character in the prompt (no local vision model found to do it automatically)")
     gl = next((l for l in load_manifest(pid, vid).get("layers", []) if l.get("id") == guide), {})
+    if p.get("two_step") and p.get("pose_layer"):
+        return _first_frame_two_step(job_id, pid, vid, p, g, idx, desc)
     instruction = FIRST_FRAME_PROMPT.format(desc=desc)
     scene_txt = str(p.get("scene") or "").strip()
     if p.get("pose_layer"):
