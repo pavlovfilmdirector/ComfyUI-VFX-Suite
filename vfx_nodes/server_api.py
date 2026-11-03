@@ -6229,6 +6229,34 @@ def register_server_routes():
 
 
 
+        @routes.post("/vfx/layout_render/save_to_project")
+        async def save_layout_render_to_project(request):
+            """The baked 3D layout lives in a global cache that the next bake overwrites: a copy goes into the
+            project's source_video folder so it can be used like any other video (generation, layers, composite)."""
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+            pid = _sanitize_id(str(data.get("project_id") or "sandbox_playground"))
+            vid_path = os.path.join(LAYOUT_RENDER_DIR, "layout_render.mp4")
+            frames = sorted(f for f in os.listdir(LAYOUT_RENDER_DIR) if f.startswith("frame_") and f.endswith(".png")) if os.path.isdir(LAYOUT_RENDER_DIR) else []
+            newest = max((os.path.getmtime(os.path.join(LAYOUT_RENDER_DIR, f)) for f in frames), default=0)
+            if frames and (not os.path.exists(vid_path) or os.path.getmtime(vid_path) < newest):
+                try:
+                    import subprocess
+                    fps = str(float(data.get("fps") or 24))
+                    await asyncio.to_thread(subprocess.run, ["ffmpeg", "-y", "-framerate", fps, "-i", os.path.join(LAYOUT_RENDER_DIR, "frame_%04d.png"),
+                                                             "-c:v", "libx264", "-pix_fmt", "yuv420p", vid_path], capture_output=True, timeout=120)
+                except Exception as ex:
+                    LOGGER.warning(f"layout render -> mp4 failed: {ex}")
+            if not os.path.exists(vid_path):
+                return add_cors_headers(web.json_response({"error": "No baked layout yet"}, status=404))
+            dst_dir = os.path.join(get_project_dir(pid), "source_video")
+            os.makedirs(dst_dir, exist_ok=True)
+            name = f"Baked_3D_Layout_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
+            shutil.copyfile(vid_path, os.path.join(dst_dir, name))
+            return add_cors_headers(web.json_response({"ok": True, "url": f"/vfx/project_file/{pid}/source_video/{name}", "frames": len(frames)}))
+
         @routes.get("/vfx/layout_render.mp4")
 
         async def get_layout_render_video(request):

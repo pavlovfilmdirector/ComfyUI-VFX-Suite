@@ -10272,7 +10272,15 @@ async function openNarrationEditor() {
             }
 
             let changed = false;
-
+            // a fresh bake: keep a copy inside the project, so the video works for generation / layers like any other
+            let projectUrl = null;
+            if (forceBakeTime) {
+                try {
+                    const sv = await fetch("/vfx/layout_render/save_to_project", { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ project_id: currentProject?.id || "sandbox_playground", fps }) }).then(r => r.json());
+                    if (sv && sv.url) projectUrl = sv.url;
+                } catch (_) {}
+            }
             let existingVid = mediaVideos2D.find(v => v.id === "baked_layout_sequence" || v.badge === "BAKED");
 
             if (!existingVid) {
@@ -10294,10 +10302,8 @@ async function openNarrationEditor() {
 
                         posterUrl: "/vfx/layout_render/0?t=" + bakeTime,
 
-                        videoUrl: "/vfx/layout_render.mp4?t=" + bakeTime,
-
-                        url: "/vfx/layout_render.mp4?t=" + bakeTime,
-
+                        videoUrl: projectUrl || ("/vfx/layout_render.mp4?t=" + bakeTime),
+                        url: projectUrl || ("/vfx/layout_render.mp4?t=" + bakeTime),
                         totalFrames: totalF,
 
                         fps: fps,
@@ -10329,9 +10335,11 @@ async function openNarrationEditor() {
 
                 existingVid.posterUrl = "/vfx/layout_render/0?t=" + bakeTime;
 
-                existingVid.videoUrl = "/vfx/layout_render.mp4?t=" + bakeTime;
-
-                existingVid.url = "/vfx/layout_render.mp4?t=" + bakeTime;
+                // keep the project copy made at bake time; only a new bake replaces it
+                if (projectUrl || !String(existingVid.videoUrl || "").startsWith("/vfx/project_file/")) {
+                    existingVid.videoUrl = projectUrl || ("/vfx/layout_render.mp4?t=" + bakeTime);
+                    existingVid.url = existingVid.videoUrl;
+                }
 
                 existingVid.totalFrames = totalF;
 
