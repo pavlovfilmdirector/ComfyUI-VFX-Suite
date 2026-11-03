@@ -281,7 +281,10 @@ def run_shot_task(job_id: str, kind: str, pid: str, vid: str, p: Dict[str, Any])
         i = idx["dancers"]
         wait_s = float(p.get("dancers_wait_min", 40)) * 60
         t0 = time.time()
-        found = None
+        # a Pose to Gen layer the user already made for this shot (e.g. the task is run again) is used right away
+        found = _find_layer(pid, vid, lambda l: l.get("type") == "pose" and l.get("source") == "3d")
+        if found:
+            wait_s = 0
         while time.time() - t0 < wait_s:
             if v._cancelled(job_id):
                 raise v.ProcessError("Stopped")

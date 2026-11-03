@@ -3171,12 +3171,27 @@ def plan_turn(user_message: str, project_dir: str, studio_ctx: Dict[str, Any], a
 
                     acts.insert(0, {"type": "switch_dimension", "dimension": "1D"})
 
+    if not (prose or "").strip():
+        # the model returned only a decision block (or nothing readable): never show an empty "…"
+        _ru = bool(re.search(r"[а-яё]", (user_message or "").lower()))
+        if action:
+            _t = ACTIONS.get(action, {}).get("title", action)
+            prose = (f"Запускаю: {_t}." if _ru else f"Running: {_t}.") if not confirm else (f"Предлагаю: {_t}. Запускать?" if _ru else f"Suggested: {_t}. Run it?")
+        else:
+            prose = ("Не до конца понял, что сделать. Скажите, пожалуйста, иначе — например: «замени фон на …», «вырежи девушку», «статус»."
+                     if _ru else "I did not quite get what to do. Could you put it another way - e.g. \"replace the background with …\", \"cut out the girl\", \"status\"?")
+        try:
+            import shot_planner as _sp1
+            _v1 = _sp1._vls()
+            if st.get("shot_task_job") and _v1 is not None:
+                _j1 = _v1.get_job(st["shot_task_job"])
+                if _j1.get("status") == "running":
+                    prose += "\n\n" + _sp1.status_text(_j1, "ru" if _ru else "en")
+        except Exception:
+            pass
     mem.append("user", user_message)
-
     mem.append("assistant", prose, **({"action": action, "params": params} if action and not confirm else {}))
-
     mem.save_state(st)
-
     return {"response_ru": prose or "…", "studio_actions": acts, "decision": {"action": action, "params": params, "confirm": confirm},
 
             "model_used": model, "seconds": round(time.time() - t0, 1), **extra}

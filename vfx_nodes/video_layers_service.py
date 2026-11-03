@@ -39,9 +39,12 @@ except ImportError:  # pragma: no cover
 
 _ID_RE = re.compile(r"[^A-Za-z0-9_\-]")
 LAYER_TYPES = ("mask", "matte", "alpha", "depth", "normal", "canny", "pose", "plate")
-_JOBS: Dict[str, Dict[str, Any]] = {}
-_JOBS_LOCK = threading.Lock()
-_GPU_LOCK = threading.Lock()
+# Several routes importlib.reload() this module (to pick up code edits without a ComfyUI restart). A reload re-runs
+# this file in the SAME module dict, so the job table and the locks are kept from the previous run: otherwise every
+# running job (e.g. a shot task waiting for Pose to Gen, whose route reloads this module) lost its record and crashed.
+_JOBS: Dict[str, Dict[str, Any]] = globals().get("_JOBS") or {}
+_JOBS_LOCK = globals().get("_JOBS_LOCK") or threading.Lock()
+_GPU_LOCK = globals().get("_GPU_LOCK") or threading.Lock()
 
 
 def _safe(v: str, fb: str = "x") -> str:

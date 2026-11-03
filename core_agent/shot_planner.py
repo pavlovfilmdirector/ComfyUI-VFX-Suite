@@ -235,6 +235,13 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
     job_id = st.get("shot_task_job")
     if job_id and vls is not None:
         job = vls.get_job(job_id)
+        if job.get("status") == "not_found" and re.search(r"статус|ждешь|ждёшь|завис|подвис|готово|^status|stuck|done", m):
+            st["shot_task_job"] = None
+            return {"response_ru": T("Задача прервалась: ComfyUI перезапускали, и её запись пропала. Готовые слои (маска, поза, глубина, "
+                                     "трекинг, Pose to Gen) остались — отправьте задачу ещё раз, я возьму их и продолжу с того же места.",
+                                     "The task was interrupted (ComfyUI restarted and its record is gone). The layers it made are kept - "
+                                     "send the task again and I will reuse them and continue."),
+                    "studio_actions": [], "decision": {"action": None}}
         if job.get("status") != "not_found":
             if re.search(r"пропусти\w*\s+скелет|без\s+скелет|скелеты\s+не\s+нужн|skip\s+(the\s+)?(skeleton|3d|wait)", m):
                 with vls._JOBS_LOCK:
@@ -260,6 +267,9 @@ def handle(user_message: str, project_dir: str, pid: str, studio_ctx: Dict[str, 
                         T("\n\nНапишите «готово» — я сам нажму Pose to Gen, или «пропусти скелеты».",
                           "\n\nType \"done\" and I will run Pose to Gen myself, or \"skip the skeletons\".") + "\n\n" + status_text(job, lang),
                         "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
+            short_ack = len(m.split()) <= 3 and re.search(r"^(готово|готов|ок|окей|ok|okay|done|сделал\w*|ну\s*\??|и\s*\??|\?+|ага|да|yes|next|дальше)\W*$", m)
+            if job.get("status") == "running" and short_ack:
+                return {"response_ru": status_text(job, lang), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
             if re.search(r"статус|как\s+дела|прогресс|что\s+с\s+задач|готов[оа]?\s*\?|на\s+каком\s+шаге|где\s+мы|^status\b|progress|how\s+is\s+it\s+going|ждешь|ждёшь|завис|подвис|waiting|stuck", m):
                 return {"response_ru": status_text(job, lang), "studio_actions": [], "decision": {"action": None}, "shot_task": {"job_id": job_id}}
     if not looks_like_shot_task(user_message):
