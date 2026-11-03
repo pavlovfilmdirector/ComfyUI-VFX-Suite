@@ -10626,6 +10626,26 @@ async function openNarrationEditor() {
         }
     }
     window.__vfxSyncGeneratedImagesToGallery = syncGeneratedImagesToGallery;
+    // videos the studio made itself (camera renders with Layout / Pose / Depth layers) that lost their gallery card
+    async function syncStudioCanvasesToGallery() {
+        try {
+            const pid = (currentProject && currentProject.id) || "sandbox_playground";
+            const r = await fetch(`/vfx/video/${encodeURIComponent(pid)}/canvases`).then(x => x.ok ? x.json() : null);
+            if (!r || !Array.isArray(r.videos)) return;
+            let changed = false;
+            for (const v of r.videos) {
+                if (mediaVideos2D.some(m => m.id === v.id)) continue;
+                if (typeof isAssetDeletedLocal === "function" && isAssetDeletedLocal(v.id, pid)) continue;
+                const named = (v.layers || []).filter(Boolean);
+                mediaVideos2D.push({ id: v.id, title: named.includes("Layout to Gen") ? `3D · ${uiText("camera render", "рендер камеры")}` : uiText("Studio video", "Видео студии"),
+                    badge: "3D CAM", type: "html5", videoUrl: v.videoUrl, url: v.videoUrl, posterUrl: v.posterUrl, comment: named.join(", ") });
+                changed = true;
+            }
+            if (changed) { try { saveProject2DVideos(); } catch (_) {} try { renderTopViewportBar(); } catch (_) {} }
+        } catch (_) {}
+    }
+    window.__vfxSyncStudioCanvases = syncStudioCanvasesToGallery;
+    setTimeout(syncStudioCanvasesToGallery, 2500);
     // a picture made inside a dialog (first frame, relight) goes to the gallery at once, labelled with what it is
     window.__vfxAddGenImage = (img, kindEn, kindRu) => {
         if (!img || !img.url || !Array.isArray(mediaImages1D)) return;
@@ -10640,7 +10660,7 @@ async function openNarrationEditor() {
         try { renderTopViewportBar(); } catch (_) {}
     };
 
-    setTimeout(() => { try { syncTrackScenes(); syncGeneratedMeshesToScenes3D(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); ensureDefaultLevelExists(); } catch (_) {} }, 1500);
+    setTimeout(() => { try { syncTrackScenes(); syncGeneratedMeshesToScenes3D(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); } catch (_) {} ensureDefaultLevelExists(); } catch (_) {} }, 1500);
 
     let activeScene3DId = mediaScenes3D[0]?.id || null;
 
@@ -68486,7 +68506,7 @@ function renderActiveCustomTab() {
                 return (best && bestScore > 0) ? best.id : (mediaScenes3D[0]?.id || null);
             })();
 
-            setTimeout(() => { try { syncTrackScenes(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); } catch (_) {} }, 800);
+            setTimeout(() => { try { syncTrackScenes(); syncBakedLayoutToGallery(); syncGeneratedVideosToGallery(); syncGeneratedImagesToGallery(); try { syncStudioCanvasesToGallery(); } catch (_) {} } catch (_) {} }, 800);
 
 
 

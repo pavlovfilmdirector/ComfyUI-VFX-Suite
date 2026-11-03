@@ -8109,6 +8109,34 @@ def register_server_routes():
 
 
 
+        @routes.get("/vfx/video/{project_id}/canvases")
+        async def vfx_video_list_canvases(request):
+            """Videos the studio created itself (camera renders, blank canvases) that exist on disk with their layers:
+            the gallery uses it to bring back cards it lost."""
+            pid = _sanitize_id(request.match_info["project_id"])
+            root = os.path.join(get_project_dir(pid), "video")
+            out = []
+            if os.path.isdir(root):
+                for vid in sorted(os.listdir(root)):
+                    if not vid.startswith("vid_canvas_"):
+                        continue
+                    vdir = os.path.join(root, vid)
+                    mp4 = os.path.join(vdir, f"{vid}.mp4")
+                    lj = os.path.join(vdir, "layers.json")
+                    if not (os.path.isfile(mp4) and os.path.isfile(lj)):
+                        continue
+                    try:
+                        layers = json.load(open(lj, encoding="utf-8")).get("layers", [])
+                    except Exception:
+                        layers = []
+                    named = [l.get("name") for l in layers if l.get("id") != "vl_paint_sketch"]
+                    if not named:
+                        continue
+                    out.append({"id": vid, "videoUrl": f"/vfx/project_file/{pid}/video/{vid}/{vid}.mp4",
+                                "posterUrl": f"/vfx/project_file/{pid}/video/{vid}/plate/raw/frame_0000.jpg",
+                                "layers": named, "mtime": os.path.getmtime(vdir)})
+            return add_cors_headers(web.json_response({"videos": out}))
+
         @routes.get("/vfx/video/{project_id}/{video_id}/state")
 
         async def vfx_video_state(request):
