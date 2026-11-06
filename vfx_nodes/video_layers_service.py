@@ -3245,6 +3245,16 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
     if h > w:  # portrait: fix the width instead
         tw = th
         th = max(mult, int(round(h * tw / max(1, w) / mult)) * mult)
+    export_exr = bool(p.get("export_exr") or p.get("exr"))
+    exr_dir = None
+    if export_exr:
+        exr_dir = os.path.join(get_project_dir(pid), "exports", f"{_safe(layer['name'])}_exr")
+        os.makedirs(exr_dir, exist_ok=True)
+        try:
+            import imageio.v3 as iio
+        except ImportError:
+            iio = None
+            print("[VFX-Suite] imageio not available for EXR export")
     chunk_ref = ref_name  # later chunks start from a frame we already generated, so the look carries over
     # Chunks overlap: chunk k starts `overlap` frames before chunk k-1 ends, is guided by the frame already
     # generated there, and the overlapping frames are cross-faded - no visible jump at the chunk borders.
@@ -3359,8 +3369,21 @@ def _job_ltx_ic_lora(job_id, kind, pid, vid, p):
                 rgba[..., :3] = _bgr(layer.get("color") or "#ffffff")
                 rgba[..., 3] = m
                 cv2.imwrite(dst, rgba)
+                if export_exr and exr_dir and iio is not None:
+                    exr_fn = os.path.join(exr_dir, f"frame_{r0 + start + i:04d}.exr")
+                    try:
+                        iio.imwrite(exr_fn, (m.astype(np.float32) / 255.0))
+                    except Exception as err:
+                        print(f"[VFX-Suite] EXR export error on frame {r0 + start + i}: {err}")
             else:
                 cv2.imwrite(dst, fr)
+                if export_exr and exr_dir and iio is not None:
+                    exr_fn = os.path.join(exr_dir, f"frame_{r0 + start + i:04d}.exr")
+                    try:
+                        fr_rgb = cv2.cvtColor(fr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+                        iio.imwrite(exr_fn, fr_rgb)
+                    except Exception as err:
+                        print(f"[VFX-Suite] EXR export error on frame {r0 + start + i}: {err}")
             written += 1
         if (needs == "first_frame" or continuity) and got and ci + 1 < len(starts):
             import folder_paths
