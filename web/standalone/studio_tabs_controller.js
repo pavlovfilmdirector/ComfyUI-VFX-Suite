@@ -5632,6 +5632,7 @@ async function openNarrationEditor() {
 
         }
 
+
     }
 
 
@@ -50775,6 +50776,24 @@ async function openNarrationEditor() {
 
         {
 
+            id: "innovations",
+
+            lucide: "sparkles",
+
+            tEn: "Innovations & Roadmap",
+
+            tRu: "Нововведения и Roadmap",
+
+            dEn: "Catalog of community innovations: 4K/8K Tiled Fusion, AI Transitions, 4D Retake, Pro Alpha EXR, and MoCap.",
+
+            dRu: "Каталог нововведений: Tiled Fusion 4K/8K, AI-переходы, 4D Retake, Pro Alpha EXR и MoCap.",
+
+            api: "Docs / Roadmap"
+
+        },
+
+        {
+
             id: "agent",
 
             lucide: "bot",
@@ -52390,6 +52409,17 @@ async function openNarrationEditor() {
                 </div>
 
 
+
+                <!-- Community Innovations Quick Jump Banner -->
+                <div style="margin-bottom: 6px;">
+                    <button id="btn-details-to-innovations" class="vfx-btn" style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 6px 9px; background: linear-gradient(90deg, rgba(56,189,248,0.12), rgba(168,85,247,0.16)); border: 1px solid rgba(56,189,248,0.35); border-radius: 4px; color: #fff; cursor: pointer; transition: all 0.15s ease;" ${tipAttr('View community innovations and roadmap catalog', 'Каталог нововведений и дорожная карта (10 технологий)')}>
+                        <span style="display:flex; align-items:center; gap:6px; font-size:10px; font-weight:600;">
+                            <i data-lucide="sparkles" style="width:12px; height:12px; color:#38bdf8;"></i>
+                            <span>${uiText("Community Innovations & Roadmap (10)", "Нововведения и Roadmap (10 фич)")}</span>
+                        </span>
+                        <span style="font-size:9px; color:#93c5fd; font-family:'JetBrains Mono',monospace;">${uiText("Open >", "Открыть >")}</span>
+                    </button>
+                </div>
 
                 <!-- Header -->
 
@@ -57689,6 +57719,11 @@ async function openNarrationEditor() {
 
             newLvlBtn.onclick = () => createNewLevel();
 
+        }
+
+        const innBtn = containerEl.querySelector("#btn-details-to-innovations");
+        if (innBtn) {
+            innBtn.onclick = () => switchTab("innovations");
         }
 
 
@@ -68565,6 +68600,11 @@ function renderActiveCustomTab() {
 
         }
 
+        else if (activeTab === "innovations") {
+            renderInnovationsTab();
+        }
+
+
 
 
         applyTooltipsToExistingVfxDom();
@@ -68580,6 +68620,657 @@ function renderActiveCustomTab() {
     // 14. STARTUP PROJECT MODAL & BOOT
 
     // =========================================================================
+
+    
+
+    // =========================================================================
+    // 13.5 INNOVATIONS & ROADMAP CATALOG (10 ITEMS)
+    // =========================================================================
+
+    const VFX_INNOVATIONS = [
+        {
+            id: "tiled_fusion",
+            category: "video",
+            icon: "grid",
+            titleEn: "Tiled Video Generation (4K/8K)",
+            titleRu: "Пространственный тайлинг видео (4K/8K)",
+            status: "workflow",
+            statusText: "Воркфлоу готов",
+            statusColor: "#34d399",
+            badge: "4K/8K Native",
+            shortDescRu: "Генерация 4K/8K без нехватки VRAM: сетка 2x2, Latent Blending и фильтрация промпта от дублирования объектов.",
+            shortDescEn: "Ultra-high resolution video generation (4K/8K) via 2x2 spatial grid, Latent Blending, and prompt de-duplication.",
+            repo: "",
+            workflowFile: "workflows/LTX-2.5/LTX-2.5_V2V_TiledFusion_Native_4K_8K.json",
+            fullDescRu: `<b>Двухстадийный процесс пространственного тайлинга видео:</b><br><br>
+<b>1. Стадия 1 (Master Pass):</b> генерация шота в базовом разрешении (768p/1080p), задающая композицию сцены, свет, персонажей и движение камеры.<br>
+<b>2. Стадия 2 (Tiled Fusion):</b> апскейл латента в 4K/8K и покадровый диффузионный проход по перекрывающимся тайлам (размер 512–1024 px, overlap 64–256 px) с низким денойзом (0.35–0.45).<br>
+<b>3. Latent Blending:</b> бесшовное взвешенное смешивание зон нахлеста на каждом шаге денойза (Tiled Fusion Sampler), полностью устраняющее стыки и мерцание.`,
+            rulesRu: `<b>КРИТИЧЕСКОЕ ПРАВИЛО ПРОМПТА:</b> В промпте тайловой стадии (Stage 2) указывать ТОЛЬКО дескрипторы стиля, света и микродеталей (<i>cinematic 8k, raw film grain, photorealistic details, sharp focus</i>). Ни в коем случае НЕ называть персонажей и объекты, чтобы избежать эффекта клонирования (появления персонажа в каждом отдельном тайле)!<br><br>
+<b>Безопасный VAE:</b> Для предотвращения ошибки CUDA OOM при декодировании 4K видео выставлять <code>temporal_size: 32</code> или <code>64</code>, <code>temporal_overlap: 8</code> или <code>16</code>.`,
+            presetPrompt: "cinematic 8k, raw 35mm film grain, hyperdetailed textures, photorealistic sharp focus, subtle atmospheric dust, master lighting, anamorphic lens flare",
+            agentQuery: "Как настроить двухстадийный воркфлоу LTX-2.5 Tiled Fusion для генерации 4K видео без появления клонов объектов в тайлах?"
+        },
+        {
+            id: "ai_transitions",
+            category: "video",
+            icon: "wand-2",
+            titleEn: "AI Video Transitions (Seam)",
+            titleRu: "Кинематографические AI-переходы (Seam)",
+            status: "community",
+            statusText: "Архитектура Seam",
+            statusColor: "#38bdf8",
+            badge: "jdnichollsc/seam",
+            shortDescRu: "Бесшовные переходы между Шотом А и Шотом Б через LTX (Whip Pan, Zoom Through, Smoke Dissolve, Fluid Morph).",
+            shortDescEn: "Seamless AI camera transitions between Shot A and Shot B via LTX video interpolation.",
+            repo: "https://github.com/jdnichollsc/seam",
+            workflowFile: "workflows/LTX-2.5/video_ltx2_5_flf2v.json",
+            fullDescRu: `<b>Технология кинематографических AI-склеек на базе LTX-Video:</b><br><br>
+Входные данные: последний кадр Шота А (First Frame) и первый кадр Шота Б (Last Frame). Модель LTX синтезирует динамический переход с сохранением инерции движения камеры и формы объектов.<br><br>
+<b>Готовые режиссерские пресеты:</b>
+<ul style="margin: 4px 0 0 16px; padding: 0;">
+  <li><b>Whip Pan:</b> резкий панорамный размыв камеры с подхватом следующей сцены.</li>
+  <li><b>Zoom Through:</b> наезд вглубь объекта (окно, линза, глаз) с вылетом в новую локацию.</li>
+  <li><b>Smoke / Fog Dissolve:</b> клубы дыма или тумана заполняют кадр и рассеиваются в новый шот.</li>
+  <li><b>Fluid Morph:</b> гидродинамическое перетекание поверхностей.</li>
+  <li><b>Light Flare:</b> оптическая вспышка контрового света.</li>
+</ul>`,
+            rulesRu: `Длительность перехода рекомендуется в пределах 17–33 кадров (0.7–1.3 сек при 24 fps). Регулируйте параметр <code>stretch</code> и силу привязки первого/последнего кадра для плавности ускорения.`,
+            presetPrompt: "cinematic whip pan transition, high speed horizontal camera motion blur, smooth momentum transfer, anamorphic streak, seamless cut",
+            agentQuery: "Помоги составить промпт и настроить переход между двумя шотами через LTX First & Last Frame."
+        },
+        {
+            id: "multi_keyframe",
+            category: "video",
+            icon: "film",
+            titleEn: "Multi-Keyframe Sequencer (2–8)",
+            titleRu: "Мульти-кадровый секвенсор (2–8 кадров)",
+            status: "community",
+            statusText: "Архитектура Seam",
+            statusColor: "#c084fc",
+            badge: "jdnichollsc/seam",
+            shortDescRu: "Последовательный кондишенинг движения по цепочке из 2–8 изображений через LTX Multi-Guide.",
+            shortDescEn: "Multi-keyframe sequence conditioning (2-8 images) via LTX Multi-Guide nodes.",
+            repo: "https://github.com/jdnichollsc/seam",
+            workflowFile: "workflows/LTX-2.5/video_ltx2_5_flf2v.json",
+            fullDescRu: `<b>Генерация единого видеошота по заданной траектории ключевых состояний:</b><br><br>
+В отличие от стандартного I2V (где модель быстро теряет контроль к концу клипа), Multi-Keyframe связывает цепочку из 2, 4 или до 8 референсных кадров, расставленных по таймлайну (например, кадры 0, 24, 48, 72, 96).<br><br>
+Ноды <code>LTXAddVideoICLoRAGuide</code> или <code>LTXVAddGuide</code> привязывают каждый референс к конкретному <code>frame_idx</code>, и диффузия строит математически связную интерполяцию без деградации внешности персонажа.`,
+            rulesRu: `При расстановке 4+ кадров следите за постоянством освещения и пропорций персонажа между референсами. Рекомендуемый шаг между ключами — от 16 до 32 кадров.`,
+            presetPrompt: "continuous cinematic tracking shot, steady motion, character performing action across keyframes, consistent lighting, 24fps",
+            agentQuery: "Как подключить 4 ключевых кадра в LTX-Video через Multi-Guide для плавного действия?"
+        },
+        {
+            id: "pro_alpha_exr",
+            category: "vfx",
+            icon: "scissors",
+            titleEn: "Pro Alpha Generator & 16-bit EXR",
+            titleRu: "Субпиксельный ротоскопинг в 16-bit EXR",
+            status: "ready",
+            statusText: "Готово в коде",
+            statusColor: "#22c55e",
+            badge: "OpenEXR Half-Float",
+            shortDescRu: "Субпиксельное восстановление полупрозрачных краев (волосы/дым) через LTX Alpha-Gen IC-LoRA с выводом в 16-bit OpenEXR.",
+            shortDescEn: "Subpixel diffusion alpha restoration with 16-bit half-float OpenEXR sequence export.",
+            repo: "https://github.com/rik-python/ComfyUI-Comfy-Pro-Alpha-Generator",
+            workflowFile: "vfx_nodes/video_layers_service.py",
+            fullDescRu: `<b>Киношный ротоскопинг студийного уровня:</b><br><br>
+1. <b>Гибридный выбор объекта:</b> интерактивный клик точками по превью (SAM 2) или семантическое выделение текстом (SAM 3.1).<br>
+2. <b>Диффузионная субпиксельная доработка:</b> грубая маска передается в LTX Alpha-Gen IC-LoRA, которая нативно восстанавливает сложнейшие микродетали (отдельные волоски, мех, клубы дыма, полупрозрачное стекло, motion blur).<br>
+3. <b>Экспорт 16-bit OpenEXR:</b> модуль <code>vfx_nodes/video_layers_service.py</code> автоматически сохраняет секвенции масок в формате <code>frame_%04d.exr</code> (half-float) для Foundry Nuke и DaVinci Resolve.`,
+            rulesRu: `В коде используется <code>imageio.v3.imwrite(..., m.astype(np.float32) / 255.0)</code>, так как стандартная сборка OpenCV на Windows не поддерживает запись OpenEXR.`,
+            presetPrompt: "perfect alpha matte, crisp subpixel hair strands, transparent smoke edge, motion blur preserving matte, black background",
+            agentQuery: "Как включить экспорт 16-битных EXR масок для слоя в Keshiki VFX Suite?"
+        },
+        {
+            id: "reshoot_4d",
+            category: "3d",
+            icon: "video",
+            titleEn: "Camera Re-Shoot & 4D Retake",
+            titleRu: "Виртуальная пересъемка дубля (4D Retake)",
+            status: "community",
+            statusText: "Вдохновение reshoot-4d",
+            statusColor: "#38bdf8",
+            badge: "itsmetamike/reshoot-4d",
+            shortDescRu: "4D Capture персонажа и пересъемка сцены новой камерой в 3D с фоторил-рендером Wan/ReDirector + LTX.",
+            shortDescEn: "4D scene/actor reconstruction and virtual camera re-shooting with photoreal diffusion pass.",
+            repo: "https://github.com/itsmetamike/reshoot-4d",
+            workflowFile: "workflows/LTX-2.5/LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json",
+            fullDescRu: `<b>Возможность переснять неудачный ракурс камеры прямо на посте без повторных съемок с актером:</b><br><br>
+1. <b>4D Capture:</b> реконструкция динамического 4D Gaussian Splatting и геометрии человека из одного видео через 4DAnyone / GVHMR + Depth Anything 3.<br>
+2. <b>Виртуальная камера в 3D:</b> оператор расставляет новую кинематографическую траекторию камеры в 3D-вьюпорте Keshiki, облетая персонажа.<br>
+3. <b>Двухстадийный фоторил:</b> первый проход геометрии (Wan Fun-Control / ReDirector) + финишная диффузионная текстуризация через LTX-2.5 Layout-to-Render.<br>
+4. <b>Smart Caching:</b> изменение оптики камеры (фокус, угол, DOF) не сбрасывает тяжелый 4D-кэш сцены.`,
+            rulesRu: `Сохраняйте исходную калибровку угла обзора оригинальной камеры перед заданием новой траектории для сохранения правильной перспективы актера.`,
+            presetPrompt: "cinematic camera orbit shot, photorealistic character, dynamic lighting matching background, 8k textures, shallow depth of field",
+            agentQuery: "Как работает концепция 4D Retake и пересъемки ракурса камеры в Keshiki Studio?"
+        },
+        {
+            id: "motion_previs",
+            category: "3d",
+            icon: "camera",
+            titleEn: "3D Motion Previs & Cine Camera",
+            titleRu: "3D Превизуализация и Режиссерская Камера",
+            status: "community",
+            statusText: "Вдохновение Previs Studio",
+            statusColor: "#f59e0b",
+            badge: "comfyui-motion-previs",
+            shortDescRu: "Библиотека кинематографических траекторий (Dolly, Crane, Orbit, Shake, Whip Pan) и интерактивный IK-риг.",
+            shortDescEn: "Cinematic camera trajectory presets (Dolly, Crane, Orbit, Shake) and interactive mannequin IK-rig.",
+            repo: "https://github.com/navarisun1982/comfyui-motion-previs-studio",
+            workflowFile: "web/standalone/modules/ue5_viewport_utils.js",
+            fullDescRu: `<b>Эргономика виртуального съемочного павильона в 3D-вьюпорте Keshiki:</b><br><br>
+<ul style="margin: 4px 0 0 16px; padding: 0;">
+  <li><b>Кинематографические пресеты камеры:</b> готовые операторские движения в один клик: <i>Dolly In/Out, Crane up/down, 360 Orbit, Handheld camera shake</i> (с физическим шумом линзы) и <i>Whip Pan</i>.</li>
+  <li><b>Интерактивный IK-риг для манекена:</b> Inverse Kinematics для быстрой ручной корректировки положения конечностей и позы персонажа прямо во вьюпорте Three.js без необходимости перезапекать FBX в Blender.</li>
+  <li><b>Синхронизация с монитором:</b> лайв-превью из объектива камеры в реальном времени.</li>
+</ul>`,
+            rulesRu: `Используйте кнопку «+ Cam» в панели Details для быстрого спавна камеры с предустановленным фокусным расстоянием (35mm / 50mm / 85mm).`,
+            presetPrompt: "dramatic low angle crane shot, slow upward camera movement, cinematic lighting, 50mm anamorphic prime lens",
+            agentQuery: "Какие режиссерские пресеты движения камеры доступны в 3D-павильоне Keshiki?"
+        },
+        {
+            id: "video_to_mocap",
+            category: "3d",
+            icon: "user-check",
+            titleEn: "AI Video-to-Mocap (SMPL-X)",
+            titleRu: "AI Video-to-Mocap в мировых координатах",
+            status: "community",
+            statusText: "Вдохновение WHAM",
+            statusColor: "#06b6d4",
+            badge: "WHAM / GVHMR",
+            shortDescRu: "Извлечение чистой 3D-анимации скелета (SMPL-X FBX с root motion) из одного видео футажа для манекена.",
+            shortDescEn: "Monocular video-to-mocap extraction in world coordinates (SMPL-X FBX with root motion).",
+            repo: "https://github.com/yohanshin/WHAM",
+            workflowFile: "",
+            fullDescRu: `<b>Захват движений живого человека без маркерного костюма:</b><br><br>
+Нейросеть WHAM / GVHMR анализирует обычный видеоролик со съемочной площадки, оценивает траекторию камеры и извлекает точную биомеханику человека в абсолютных мировых координатах.<br><br>
+На выходе формируется стандартный <code>.fbx</code> скелет SMPL-X с ротациями всех суставов и чистым root motion, который мгновенно надевается на 3D-манекен Keshiki Studio или импортируется в Unreal Engine / Blender.`,
+            rulesRu: `Для максимальной точности мокапа видео должно содержать актёра в полный рост без сильного смаза конечностей на скорости 30+ fps.`,
+            presetPrompt: "precise human motion capture, accurate joint rotations, full body root motion, perfectly tracked animation",
+            agentQuery: "Как преобразовать видео с живым человеком в 3D FBX анимацию через WHAM для манекена сцены?"
+        },
+        {
+            id: "generative_motion",
+            category: "3d",
+            icon: "activity",
+            titleEn: "Generative Motion Synthesis",
+            titleRu: "Процедурный биомеханический моушен",
+            status: "community",
+            statusText: "Вдохновение Motorica",
+            statusColor: "#ec4899",
+            badge: "Motorica AI",
+            shortDescRu: "Нейросетевой процедурный синтез траекторий ходьбы/бега по сплайнам со смешиванием стилей и физикой веса.",
+            shortDescEn: "Procedural generative character locomotion along splines with style blending and weight physics.",
+            repo: "https://www.motorica.ai/",
+            workflowFile: "",
+            fullDescRu: `<b>Генеративная кинематика персонажей нового поколения:</b><br><br>
+Вместо зацикленных статичных клипов движения используется диффузионный синтез походки прямо по сплайну в 3D-сцене.<br><br>
+Персонаж естественным образом наклоняется на поворотах, переносит центр тяжести, перешагивает препятствия и плавно смешивает стили (например, переход от расслабленной походки к настороженному бегу через <i>Style Blending</i> и <i>Motion In-Betweening</i>).`,
+            rulesRu: `Сплайны пути персонажа можно рисовать прямо по геометрии уровня в 3D-редакторе сцены Keshiki.`,
+            presetPrompt: "realistic character locomotion, biomechanical foot planting, natural weight shifting, spline path traversal",
+            agentQuery: "Как работает процедурный синтез движения по сплайнам на базе принципов Motorica AI?"
+        },
+        {
+            id: "ltx_loras_workflows",
+            category: "tools",
+            icon: "download-cloud",
+            titleEn: "LTX LoRAs & Dedicated Workflows",
+            titleRu: "Официальные LoRA и Выделенные Воркфлоу",
+            status: "ready",
+            statusText: "Готово в репозитории",
+            statusColor: "#22c55e",
+            badge: "Scripts & Workflows",
+            shortDescRu: "Скрипт загрузки недостающих LoRA (Instant-Shave, Pose-Control 19B) и воркфлоу Ingredients и Water Simulation.",
+            shortDescEn: "Auto-download script for missing official LoRAs and dedicated workflows for Ingredients & Water Simulation.",
+            repo: "https://ltx.io/ltx-community",
+            workflowFile: "tools/download_missing_ltx_loras.ps1",
+            fullDescRu: `<b>Полный арсенал официальных моделей LTX-2.5:</b><br><br>
+1. <b>Скрипт загрузки:</b> <code>tools/download_missing_ltx_loras.ps1</code> автоматически скачивает недостающие официальные модели:
+<ul style="margin: 4px 0 0 16px; padding: 0;">
+  <li><code>ltx-video-2b-v0.9.1_lora_instant-shave.safetensors</code> (удаление растительности, бритье бороды).</li>
+  <li><code>ltx-video-19b-pose-control.safetensors</code> (управление скелетом для большой 19B модели).</li>
+</ul>
+<br>
+2. <b>Новые визуальные воркфлоу ComfyUI:</b>
+<ul style="margin: 4px 0 0 16px; padding: 0;">
+  <li><code>workflows/LTX-2.5/LTX-2.5_V2V_ICLoRA_Ingredients.json</code> — разборка и компоновка ингредиентов / предметов.</li>
+  <li><code>workflows/LTX-2.5/LTX-2.5_V2V_ICLoRA_Water_Simulation.json</code> — эффекты воды, брызг и симуляции жидкостей.</li>
+</ul>`,
+            rulesRu: `Скрипт загружает модели напрямую в <code>B:\\StabilityMatrix2\\ComfyUI\\models\\loras\\ltx\\</code> с проверкой существования файлов.`,
+            presetPrompt: "photorealistic water simulation, fluid dynamics, splash droplets, transparent liquid flow, caustic reflections",
+            agentQuery: "Как запустить скрипт скачивания LoRA и протестировать воркфлоу Water Simulation?"
+        },
+        {
+            id: "wsl2_engine",
+            category: "system",
+            icon: "terminal",
+            titleEn: "Headless Linux Engine (WSL2)",
+            titleRu: "Перенос бэкенда генерации в Linux (WSL2)",
+            status: "roadmap",
+            statusText: "Архитектура ROADMAP",
+            statusColor: "#8b5cf6",
+            badge: "24GB Pure VRAM",
+            shortDescRu: "Освобождение до 2.5 ГБ видеопамяти от Windows DWM, FlashAttention-2/3, Triton и ускорение инференса 22B на 15–30%.",
+            shortDescEn: "WSL2 headless ComfyUI engine freeing up 2.5GB VRAM from DWM, FlashAttention-2/3, and no WDDM throttling.",
+            repo: "",
+            workflowFile: "docs/ROADMAP_RU.md",
+            fullDescRu: `<b>Максимальная производительность генерации кинокадров:</b><br><br>
+В среде Windows служба Desktop Window Manager (DWM) постоянно резервирует ~1.5–2.5 ГБ VRAM и при превышении лимита переносит память в медленную WDDM Shared RAM, замедляя инференс тяжелых моделей (LTX-2.5 22B) в 5–10 раз.<br><br>
+<b>Перенос ComfyUI в WSL2 на диск ext4 дает:</b>
+<ul style="margin: 4px 0 0 16px; padding: 0;">
+  <li>Все чистые 24 ГБ памяти RTX 3090/4090 доступны только для LTX.</li>
+  <li>Нативная работа FlashAttention-2, FlashAttention-3, Triton и SageAttention.</li>
+  <li>Прирост скорости инференса на 15–30%.</li>
+  <li>Интерфейс студии открывается в браузере Windows как обычно на <code>http://127.0.0.1:8188</code>.</li>
+</ul>`,
+            rulesRu: `При работе в WSL2 рекомендуется настраивать ComfyUI с аргументом <code>--listen 0.0.0.0</code> и монтировать модели через быстрый симлинк.`,
+            presetPrompt: "high throughput video rendering, native flash attention, zero memory throttling, 24gb allocation",
+            agentQuery: "Какие преимущества дает запуск ComfyUI в WSL2 для видеогенерации LTX-2.5?"
+        }
+    ];
+
+    let currentInnovationsFilter = "all";
+    let currentInnovationsSearch = "";
+
+    function renderInnovationsTab() {
+        const items = VFX_INNOVATIONS;
+        const total = items.length;
+        const readyCount = items.filter(x => x.status === "ready" || x.status === "workflow").length;
+        const commCount = items.filter(x => x.status === "community").length;
+
+        customTabPane.innerHTML = `
+            <div style="flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; overflow: hidden; padding-bottom: 8px;">
+                <!-- Header -->
+                <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 8px 10px; border-radius: 6px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 26px; height: 26px; border-radius: 6px; background: linear-gradient(135deg, rgba(56,189,248,0.3), rgba(168,85,247,0.3)); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(56,189,248,0.4);">
+                            <i data-lucide="sparkles" style="width: 14px; height: 14px; color: #38bdf8;"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; color: #fff; font-size: 11px; letter-spacing: 0.3px;">${uiText("INNOVATIONS & ROADMAP", "НОВОВВЕДЕНИЯ И ROADMAP")}</div>
+                            <div style="font-size: 9px; color: rgba(255,255,255,0.5);">${uiText("Open community technologies & LTX workflows", "Каталог технологий, чтобы ничего не забыть")}</div>
+                        </div>
+                    </div>
+                    <button id="btn-inn-view-roadmap" class="vfx-btn" style="font-size: 9.5px; padding: 4px 8px; display: flex; align-items: center; gap: 5px; color: #93c5fd; border-color: rgba(56,189,248,0.35); background: rgba(56,189,248,0.08);" ${tipAttr('Read full ROADMAP_RU.md documentation', 'Читать полный текст дорожной карты')}>
+                        <i data-lucide="book-open" style="width: 11px; height: 11px;"></i>
+                        <span>${uiText("ROADMAP.md", "Документация")}</span>
+                    </button>
+                </div>
+
+                <!-- Search & Filters -->
+                <div style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;">
+                    <div style="position: relative;">
+                        <input id="inn-search-input" type="text" class="ue-input" placeholder="${uiText('Search innovations, technologies, models...', 'Поиск по технологиям, моделям, репозиториям...')}" value="${String(currentInnovationsSearch || '').replace(/"/g, '&quot;')}" style="width: 100%; font-size: 10px; padding: 5px 26px 5px 8px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;" />
+                        <i data-lucide="search" style="position: absolute; right: 8px; top: 7px; width: 12px; height: 12px; color: rgba(255,255,255,0.4); pointer-events: none;"></i>
+                    </div>
+
+                    <div style="display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px;">
+                        <button class="vfx-btn inn-filter-btn" data-filter="all" style="font-size: 9px; padding: 2px 7px; border-radius: 3px; ${currentInnovationsFilter === 'all' ? 'background:rgba(255,255,255,0.18); color:#fff; border-color:rgba(255,255,255,0.3); font-weight:600;' : 'background:transparent; color:rgba(255,255,255,0.6);'}">
+                            ${uiText("All", "Все")} (${total})
+                        </button>
+                        <button class="vfx-btn inn-filter-btn" data-filter="ready" style="font-size: 9px; padding: 2px 7px; border-radius: 3px; ${currentInnovationsFilter === 'ready' ? 'background:rgba(34,197,94,0.2); color:#4ade80; border-color:rgba(34,197,94,0.4); font-weight:600;' : 'background:transparent; color:rgba(255,255,255,0.6);'}">
+                            🟢 ${uiText("In VFX Suite", "В студии")} (${readyCount})
+                        </button>
+                        <button class="vfx-btn inn-filter-btn" data-filter="community" style="font-size: 9px; padding: 2px 7px; border-radius: 3px; ${currentInnovationsFilter === 'community' ? 'background:rgba(56,189,248,0.2); color:#38bdf8; border-color:rgba(56,189,248,0.4); font-weight:600;' : 'background:transparent; color:rgba(255,255,255,0.6);'}">
+                            🔵 ${uiText("Inspirations", "Вдохновение")} (${commCount})
+                        </button>
+                        <button class="vfx-btn inn-filter-btn" data-filter="video" style="font-size: 9px; padding: 2px 7px; border-radius: 3px; ${currentInnovationsFilter === 'video' ? 'background:rgba(168,85,247,0.2); color:#c084fc; border-color:rgba(168,85,247,0.4); font-weight:600;' : 'background:transparent; color:rgba(255,255,255,0.6);'}">
+                            ⚡ LTX
+                        </button>
+                        <button class="vfx-btn inn-filter-btn" data-filter="3d" style="font-size: 9px; padding: 2px 7px; border-radius: 3px; ${currentInnovationsFilter === '3d' ? 'background:rgba(245,158,11,0.2); color:#fbbf24; border-color:rgba(245,158,11,0.4); font-weight:600;' : 'background:transparent; color:rgba(255,255,255,0.6);'}">
+                            🎭 3D & 4D
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Cards Grid List -->
+                <div id="inn-cards-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px;">
+                </div>
+            </div>
+        `;
+
+        function populateInnovationCards() {
+            const list = customTabPane.querySelector("#inn-cards-container");
+            if (!list) return;
+            list.innerHTML = "";
+
+            const filtered = VFX_INNOVATIONS.filter(item => {
+                if (currentInnovationsFilter === "ready" && item.status !== "ready" && item.status !== "workflow") return false;
+                if (currentInnovationsFilter === "community" && item.status !== "community") return false;
+                if (currentInnovationsFilter === "video" && item.category !== "video") return false;
+                if (currentInnovationsFilter === "3d" && item.category !== "3d") return false;
+
+                if (currentInnovationsSearch.trim()) {
+                    const q = currentInnovationsSearch.toLowerCase();
+                    const text = (item.titleRu + " " + item.titleEn + " " + item.shortDescRu + " " + item.badge + " " + (item.repo || "")).toLowerCase();
+                    if (!text.includes(q)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                list.innerHTML = `
+                    <div style="padding: 24px; text-align: center; color: rgba(255,255,255,0.4); font-size: 11px;">
+                        ${uiText("No innovations found for this search/filter.", "Нововведений по данному запросу не найдено.")}
+                    </div>
+                `;
+                return;
+            }
+
+            filtered.forEach(item => {
+                const card = document.createElement("button");
+                card.className = "vfx-btn inn-card-btn";
+                card.style.cssText = `
+                    width: 100%;
+                    text-align: left;
+                    padding: 8px 10px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 5px;
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 10px;
+                    cursor: pointer;
+                    transition: all 0.16s ease;
+                `;
+                card.onmouseenter = () => {
+                    card.style.background = "rgba(255,255,255,0.07)";
+                    card.style.borderColor = "rgba(56,189,248,0.4)";
+                    card.style.transform = "translateX(2px)";
+                };
+                card.onmouseleave = () => {
+                    card.style.background = "rgba(255,255,255,0.03)";
+                    card.style.borderColor = "rgba(255,255,255,0.08)";
+                    card.style.transform = "none";
+                };
+
+                card.innerHTML = `
+                    <div style="width: 28px; height: 28px; border-radius: 6px; background: rgba(0,0,0,0.4); border: 1px solid ${item.statusColor}44; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">
+                        <i data-lucide="${item.icon}" style="width: 14px; height: 14px; color: ${item.statusColor};"></i>
+                    </div>
+                    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
+                            <div style="font-weight: 600; color: #fff; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${uiText(item.titleEn, item.titleRu)}
+                            </div>
+                            <span style="font-size: 8px; font-family: 'JetBrains Mono', monospace; padding: 1px 5px; border-radius: 3px; background: ${item.statusColor}18; color: ${item.statusColor}; border: 1px solid ${item.statusColor}33; white-space: nowrap; flex-shrink: 0;">
+                                ${item.statusText}
+                            </span>
+                        </div>
+                        <div style="font-size: 9px; color: rgba(255,255,255,0.6); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                            ${uiText(item.shortDescEn, item.shortDescRu)}
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center; margin-top: 2px;">
+                            <span style="font-size: 8.5px; font-family: 'JetBrains Mono', monospace; color: #94a3b8; background: rgba(255,255,255,0.04); padding: 1px 4px; border-radius: 2px;">
+                                ${item.badge}
+                            </span>
+                            <span style="font-size: 8.5px; color: #38bdf8; margin-left: auto; display: flex; align-items: center; gap: 2px;">
+                                ${uiText("Details", "Подробнее")} <i data-lucide="chevron-right" style="width: 10px; height: 10px;"></i>
+                            </span>
+                        </div>
+                    </div>
+                `;
+
+                card.onclick = () => openInnovationModal(item);
+                list.appendChild(card);
+            });
+
+            refreshLucideIcons(list);
+        }
+
+        populateInnovationCards();
+
+        // Search event
+        const searchInp = customTabPane.querySelector("#inn-search-input");
+        if (searchInp) {
+            searchInp.oninput = (e) => {
+                currentInnovationsSearch = e.target.value;
+                populateInnovationCards();
+            };
+        }
+
+        // Filter buttons
+        customTabPane.querySelectorAll(".inn-filter-btn").forEach(btn => {
+            btn.onclick = () => {
+                currentInnovationsFilter = btn.dataset.filter;
+                renderInnovationsTab();
+            };
+        });
+
+        // Roadmap full reader button
+        const roadmapBtn = customTabPane.querySelector("#btn-inn-view-roadmap");
+        if (roadmapBtn) {
+            roadmapBtn.onclick = () => openRoadmapReaderModal();
+        }
+
+        refreshLucideIcons(customTabPane);
+    }
+
+    function openInnovationModal(item) {
+        let overlay = document.getElementById("vfx-innovation-modal-overlay");
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.id = "vfx-innovation-modal-overlay";
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(4, 5, 10, 0.78);
+                backdrop-filter: blur(6px);
+                z-index: 99999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 16px;
+            `;
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = "flex";
+
+        overlay.innerHTML = `
+            <div style="background: #0f1117; border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; width: 100%; max-width: 620px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 45px rgba(0,0,0,0.8); overflow: hidden;">
+                <!-- Modal Header -->
+                <div style="background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 9px;">
+                        <div style="width: 30px; height: 30px; border-radius: 6px; background: rgba(0,0,0,0.5); border: 1px solid ${item.statusColor}55; display: flex; align-items: center; justify-content: center;">
+                            <i data-lucide="${item.icon}" style="width: 16px; height: 16px; color: ${item.statusColor};"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; color: #fff; font-size: 13px;">${uiText(item.titleEn, item.titleRu)}</div>
+                            <div style="display: flex; gap: 6px; align-items: center; margin-top: 2px;">
+                                <span style="font-size: 8.5px; font-family: 'JetBrains Mono', monospace; padding: 1px 5px; border-radius: 2px; background: ${item.statusColor}22; color: ${item.statusColor}; border: 1px solid ${item.statusColor}44;">
+                                    ${item.statusText}
+                                </span>
+                                <span style="font-size: 8.5px; font-family: 'JetBrains Mono', monospace; color: #94a3b8;">
+                                    ${item.badge}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="btn-inn-modal-close" class="vfx-btn" style="padding: 4px 8px; font-size: 13px; color: rgba(255,255,255,0.6); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer;">
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Modal Body -->
+                <div style="padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-size: 11px; color: rgba(255,255,255,0.85); line-height: 1.5;">
+                    <!-- Description -->
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 10px 12px;">
+                        <div style="font-size: 10px; font-weight: 700; color: #38bdf8; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                            <i data-lucide="info" style="width: 11px; height: 11px;"></i>
+                            <span>${uiText("Technology Overview", "Суть Технологии и Архитектура")}</span>
+                        </div>
+                        <div>${item.fullDescRu}</div>
+                    </div>
+
+                    <!-- Rules & Guidelines -->
+                    <div style="background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.25); border-radius: 6px; padding: 10px 12px;">
+                        <div style="font-size: 10px; font-weight: 700; color: #fbbf24; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                            <i data-lucide="alert-triangle" style="width: 11px; height: 11px;"></i>
+                            <span>${uiText("Key Rules & Parameters", "Важные Правила и Настройки")}</span>
+                        </div>
+                        <div style="font-size: 10.5px; color: #fef3c7;">${item.rulesRu}</div>
+                    </div>
+
+                    <!-- Preset Prompt -->
+                    ${item.presetPrompt ? `
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.7);">${uiText("Recommended Preset / Prompt:", "Рекомендуемый Промпт / Пресет:")}</span>
+                            <button id="btn-inn-copy-prompt" class="vfx-btn" style="font-size: 9px; padding: 2px 7px; color: #38bdf8; display: flex; align-items: center; gap: 4px;">
+                                <i data-lucide="copy" style="width: 10px; height: 10px;"></i>
+                                <span>${uiText("Copy", "Скопировать")}</span>
+                            </button>
+                        </div>
+                        <div style="background: #08090d; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; padding: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #a5f3fc; line-height: 1.4; user-select: all;">
+                            ${item.presetPrompt}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Reference Link -->
+                    ${item.repo ? `
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 5px; padding: 6px 10px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.65);">
+                            <i data-lucide="external-link" style="width: 12px; height: 12px;"></i>
+                            <span>${uiText("Source Repository:", "Исходный репозиторий:")}</span>
+                            <span style="font-family: 'JetBrains Mono', monospace; color: #fff;">${item.repo.replace('https://github.com/', '')}</span>
+                        </div>
+                        <a href="${item.repo}" target="_blank" class="vfx-btn" style="font-size: 9.5px; padding: 3px 8px; color: #38bdf8; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            <span>Открыть ↗</span>
+                        </a>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <!-- Modal Footer Action Bar -->
+                <div style="background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.08); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; flex-shrink: 0;">
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button id="btn-inn-ask-agent" class="vfx-btn" style="padding: 5px 10px; font-size: 10.5px; font-weight: 600; color: #a78bfa; border-color: rgba(167,139,250,0.35); background: rgba(167,139,250,0.1); display: flex; align-items: center; gap: 5px;">
+                            <i data-lucide="bot" style="width: 12px; height: 12px;"></i>
+                            <span>${uiText("Ask AI Director", "Спросить ИИ-Режиссера")}</span>
+                        </button>
+                        ${item.workflowFile ? `
+                        <button id="btn-inn-open-wf" class="vfx-btn" style="padding: 5px 10px; font-size: 10.5px; font-weight: 600; color: #34d399; border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.1); display: flex; align-items: center; gap: 5px;">
+                            <i data-lucide="play" style="width: 12px; height: 12px;"></i>
+                            <span>${uiText("Workflow / File", "Воркфлоу / Файл")}</span>
+                        </button>
+                        ` : ''}
+                    </div>
+                    <button id="btn-inn-modal-dismiss" class="vfx-btn" style="padding: 5px 12px; font-size: 10.5px;">
+                        ${uiText("Close", "Закрыть")}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const closeBtn = overlay.querySelector("#btn-inn-modal-close");
+        const dismissBtn = overlay.querySelector("#btn-inn-modal-dismiss");
+        const close = () => { overlay.style.display = "none"; };
+        if (closeBtn) closeBtn.onclick = close;
+        if (dismissBtn) dismissBtn.onclick = close;
+        overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+        const copyBtn = overlay.querySelector("#btn-inn-copy-prompt");
+        if (copyBtn && item.presetPrompt) {
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(item.presetPrompt).then(() => {
+                    showToastNotification(uiText("Preset prompt copied to clipboard!", "Промпт скопирован в буфер!"));
+                });
+            };
+        }
+
+        const askBtn = overlay.querySelector("#btn-inn-ask-agent");
+        if (askBtn) {
+            askBtn.onclick = () => {
+                close();
+                switchTab("agent");
+                setTimeout(() => {
+                    const inp = document.getElementById("agent-tab-input") || document.getElementById("vfx-agent-dock-input");
+                    if (inp) {
+                        inp.value = item.agentQuery;
+                        inp.focus();
+                    }
+                }, 120);
+            };
+        }
+
+        const wfBtn = overlay.querySelector("#btn-inn-open-wf");
+        if (wfBtn && item.workflowFile) {
+            wfBtn.onclick = () => {
+                close();
+                if (typeof openWorkflowPrevizModal === "function") {
+                    openWorkflowPrevizModal();
+                } else {
+                    navigator.clipboard.writeText(item.workflowFile);
+                    showToastNotification(uiText(`File path copied: ${item.workflowFile}`, `Путь к файлу скопирован: ${item.workflowFile}`));
+                }
+            };
+        }
+
+        refreshLucideIcons(overlay);
+    }
+
+    async function openRoadmapReaderModal() {
+        let overlay = document.getElementById("vfx-roadmap-reader-overlay");
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.id = "vfx-roadmap-reader-overlay";
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(4, 5, 10, 0.82);
+                backdrop-filter: blur(8px);
+                z-index: 99999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 16px;
+            `;
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = "flex";
+
+        overlay.innerHTML = `
+            <div style="background: #0d0e14; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; width: 100%; max-width: 800px; height: 85vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.85); overflow: hidden;">
+                <div style="background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="book-open" style="width: 16px; height: 16px; color: #38bdf8;"></i>
+                        <span style="font-weight: 700; color: #fff; font-size: 13px;">docs/ROADMAP_RU.md</span>
+                    </div>
+                    <button id="btn-roadmap-reader-close" class="vfx-btn" style="padding: 4px 8px; font-size: 13px;">✕</button>
+                </div>
+                <div id="roadmap-reader-body" style="padding: 16px; overflow-y: auto; flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: rgba(255,255,255,0.8); line-height: 1.6; white-space: pre-wrap; user-select: text;">
+                    Загрузка ROADMAP_RU.md...
+                </div>
+            </div>
+        `;
+
+        const closeBtn = overlay.querySelector("#btn-roadmap-reader-close");
+        const close = () => { overlay.style.display = "none"; };
+        if (closeBtn) closeBtn.onclick = close;
+        overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+        try {
+            const res = await fetch("/vfx/docs/roadmap");
+            const data = await res.json();
+            const bodyEl = overlay.querySelector("#roadmap-reader-body");
+            if (bodyEl) {
+                bodyEl.innerText = data.content || data.error || "Файл не найден";
+            }
+        } catch (err) {
+            const bodyEl = overlay.querySelector("#roadmap-reader-body");
+            if (bodyEl) bodyEl.innerText = "Ошибка загрузки: " + err;
+        }
+        refreshLucideIcons(overlay);
+    }
+
 
     async function loadProjectsAndLibraries() {
 

@@ -9501,6 +9501,19 @@ subprocess.Popen(cmd, cwd=cwd, creationflags=flags)
 
             return add_cors_headers(web.json_response({"allow_cloud": cloud_services_allowed()}))
 
+        @routes.get("/vfx/docs/roadmap")
+        async def vfx_docs_roadmap(request):
+            try:
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                roadmap_path = os.path.join(base_dir, "docs", "ROADMAP_RU.md")
+                if os.path.exists(roadmap_path):
+                    with open(roadmap_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    return add_cors_headers(web.json_response({"ok": True, "content": content}))
+                return add_cors_headers(web.json_response({"ok": False, "error": "ROADMAP_RU.md not found"}, status=404))
+            except Exception as e:
+                return add_cors_headers(web.json_response({"ok": False, "error": str(e)}, status=500))
+
 
 
         @routes.post("/vfx/system/reload")
